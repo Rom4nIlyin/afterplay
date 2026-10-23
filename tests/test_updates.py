@@ -78,7 +78,8 @@ class UpdateValidationTests(unittest.TestCase):
             archive=tmp/'release.zip';make_archive(archive);metadata=json.dumps(release(archive)).encode()
             updater=update.AppUpdater(target,target/'data')
             def network(url):return io.BytesIO(metadata if url==update.LATEST_URL else archive.read_bytes())
-            with patch.object(update,'open_url',side_effect=network),patch.dict(os.environ,{'LOCALAPPDATA':str(tmp/'cache')}):
+            release_info=update.release_info
+            with patch.object(update,'open_url',side_effect=network),patch.object(update,'release_info',side_effect=lambda info:release_info(info,current='1.2.0')),patch.dict(os.environ,{'LOCALAPPDATA':str(tmp/'cache')}):
                 state=updater.prepare({})
             self.assertTrue(state['prepared']);self.assertFalse(state['busy'])
             self.assertEqual((target/'Updater.exe').read_bytes(),b'old')

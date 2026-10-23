@@ -117,7 +117,7 @@ class Replay:
             if key in args:cfg[key]=int(args[key])
         for key in ('capture_mode','quality_mode','preset','encoder'):
             if key in args:cfg[key]=str(args[key])
-        for key in ('audio_follow_window','cursor'):
+        for key in ('audio_follow_window','cursor','capture_border'):
             if key in args:
                 if not isinstance(args[key],bool):raise ValueError('Ожидался переключатель: '+key)
                 cfg[key]=args[key]
@@ -230,7 +230,8 @@ class Replay:
             self._process_reader=None;self.audio_error=''
             self.video_source=VideoSource(hwnd=window['hwnd'] if window else None,
                                           monitor_index=None if window else monitor['wgc_index'],
-                                          fps=self.settings['fps'],cursor=self.settings['cursor'])
+                                          fps=self.settings['fps'],cursor=self.settings['cursor'],
+                                          capture_border=self.settings['capture_border'])
             self.window_hwnd=window['hwnd'] if window else None
             monitor={'width':self.video_source.width,'height':self.video_source.height}
             self.output_size=video_quality.output_size(self.settings,monitor['width'],monitor['height'])

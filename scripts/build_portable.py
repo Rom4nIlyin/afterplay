@@ -53,7 +53,7 @@ def compile_components(target):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', default='1.3.0')
+    parser.add_argument('--version', default='1.3.1')
     args = parser.parse_args()
     if os.name != 'nt' or sys.version_info[:2] != (3, 13) or struct.calcsize('P') != 8:
         parser.error('Use Windows x64 and 64-bit Python 3.13.')

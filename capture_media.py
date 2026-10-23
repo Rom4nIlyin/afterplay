@@ -35,13 +35,13 @@ class AudioTimeline:
         return start,bytes(output)
 
 class VideoSource:
-    def __init__(self,*,hwnd=None,monitor_index=None,fps=60,cursor=True):
+    def __init__(self,*,hwnd=None,monitor_index=None,fps=60,cursor=True,capture_border=False):
         from windows_capture import WindowsCapture
         self.ready=threading.Event();self.lock=threading.Lock()
         self.first=None;self.latest=None;self.serial=0;self.error='';self.closed=False
         self.received=0;self.dropped=0;self.last_read=0;self.clock_fallback=False
         self.capture=WindowsCapture(window_hwnd=hwnd,monitor_index=monitor_index,
-                                    cursor_capture=cursor,draw_border=None,
+                                    cursor_capture=cursor,draw_border=capture_border,
                                     minimum_update_interval=max(1,int(1000/fps)))
         @self.capture.event
         def on_frame_arrived(frame,capture_control):
