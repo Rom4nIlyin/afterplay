@@ -75,7 +75,8 @@ def main():
         z.extractall(runtime)
     site = runtime / 'Lib/site-packages'
     run([sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
-         '--only-binary=:all:', '--target', site, '-r', ROOT / 'requirements-lock.txt'])
+         '--only-binary=:all:', '--no-binary=proxy_tools', '--target', site,
+         '-r', ROOT / 'requirements-lock.txt'])
     for dll in (site / 'pywin32_system32').glob('*.dll'):
         shutil.copy2(dll, runtime / dll.name)
     (runtime / 'python313._pth').write_text(
