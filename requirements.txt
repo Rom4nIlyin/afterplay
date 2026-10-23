@@ -1,0 +1,7 @@
+pywebview==6.2.1
+Pillow==13.0.0
+imageio-ffmpeg==0.6.0
+PyAudioWPatch==0.2.12.9
+pystray==0.19.5
+Send2Trash==2.1.0
+pywin32==312

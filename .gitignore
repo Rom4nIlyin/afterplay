@@ -1,0 +1,31 @@
+# User data must stay local
+/data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+settings.json
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.ts
+*.wav
+*.pcm
+*.log
+
+# Generated runtimes, builds and downloads
+/runtime/
+/.venv/
+/build/
+/dist/
+/prerequisites/
+/backups/
+/work/
+*.exe
+*.dll
+*.zip
+*.pyc
+__pycache__/
+.DS_Store
+.env
+.env.*

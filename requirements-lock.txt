@@ -1,0 +1,15 @@
+bottle==0.13.4
+cffi==2.1.1
+clr_loader==0.3.1
+imageio-ffmpeg==0.6.0
+pillow==13.0.0
+proxy_tools==0.1.0
+PyAudioWPatch==0.2.12.9
+pycparser==3.12
+pystray==0.19.5
+pythonnet==3.2.1
+pywebview==6.2.1
+pywin32==312
+Send2Trash==2.1.0
+six==1.17.0
+typing_extensions==4.16.0
