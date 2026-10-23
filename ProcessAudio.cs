@@ -45,10 +45,15 @@ namespace GameClipsAudio {
    finally { done.Set(); } return 0;
   }
  }
+ public sealed class AudioPacket {
+  public byte[] Data { get; set; }
+  public ulong Qpc100ns { get; set; }
+  public uint Flags { get; set; }
+ }
  public sealed class ProcessCapture : IDisposable {
   [DllImport("Mmdevapi.dll", CharSet=CharSet.Unicode)]
   static extern int ActivateAudioInterfaceAsync(string path, ref Guid iid, ref PropVariant param, ICompletion completion, out IAsyncOperation operation);
-  readonly ConcurrentQueue<byte[]> packets=new ConcurrentQueue<byte[]>();
+  readonly ConcurrentQueue<AudioPacket> packets=new ConcurrentQueue<AudioPacket>();
   readonly AutoResetEvent signal=new AutoResetEvent(false);
   readonly ManualResetEvent stop=new ManualResetEvent(false);
   IAudioClient client; ICapture capture; Thread thread;
@@ -86,14 +91,16 @@ namespace GameClipsAudio {
       try {
        byte[] buffer=new byte[checked((int)frames*8)];
        if((flags&2)==0 && data!=IntPtr.Zero)Marshal.Copy(data,buffer,0,buffer.Length);
-       packets.Enqueue(buffer); byte[] discarded; while(packets.Count>64)packets.TryDequeue(out discarded);
+       packets.Enqueue(new AudioPacket { Data=buffer,Qpc100ns=qpc,Flags=flags });
+       AudioPacket discarded; while(packets.Count>128)packets.TryDequeue(out discarded);
       } finally { Check(capture.ReleaseBuffer(frames)); }
       Check(capture.GetNextPacketSize(out count));
      }
     }
    } catch(Exception e) { Error=e.Message; }
   }
-  public byte[] Read() { byte[] block; return packets.TryDequeue(out block)?block:null; }
+  public AudioPacket ReadPacket() { AudioPacket block; return packets.TryDequeue(out block)?block:null; }
+  public byte[] Read() { AudioPacket block=ReadPacket();return block==null?null:block.Data; }
   public void Dispose() {
    if(disposed)return;disposed=true;
    stop.Set(); if(thread!=null)thread.Join(2000);

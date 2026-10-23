@@ -12,7 +12,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('app.py', 'replay.py', 'desktop.py', 'process_audio.py', 'ProcessAudio.cs',
+FILES = ('app.py', 'replay.py', 'capture_media.py', 'video_quality.py', 'desktop.py', 'process_audio.py', 'runtime_trust.py', 'ProcessAudio.cs',
          'Launcher.cs', 'ReplayNotification.cs', 'Install-Shortcuts.ps1', 'README.md',
          'THIRD-PARTY.md', 'FFmpeg-COPYING.GPLv3.txt', 'CHANGELOG.md')
 PYTHON_URL = 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-embed-amd64.zip'
@@ -51,7 +51,7 @@ def compile_components(target):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', default='1.1')
+    parser.add_argument('--version', default='1.2.0')
     args = parser.parse_args()
     if os.name != 'nt' or sys.version_info[:2] != (3, 13) or struct.calcsize('P') != 8:
         parser.error('Use Windows x64 and 64-bit Python 3.13.')

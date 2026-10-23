@@ -25,3 +25,13 @@ dependencies retain distribution metadata and licenses under runtime/Lib/site-pa
 Process-specific audio uses the public Windows WASAPI process loopback API:
 https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_process_loopback_params
 Its source is included as ProcessAudio.cs and process_audio.py.
+
+Windows Capture 2.0.1 (MIT): https://github.com/NiiightmareXD/windows-capture
+PyAV 19.0.2 (BSD-3-Clause): https://github.com/PyAV-Org/PyAV
+PyAV wheels include their own FFmpeg libraries; applicable licenses and build
+information are retained in av-*.dist-info and av.libs in the distribution.
+NumPy 2.5.4 (BSD-3-Clause): https://numpy.org
+OpenCV Python 5.0.0.93: https://github.com/opencv/opencv-python
+Bundled wheels retain component licenses and notices in their dist-info folders.
+The capture bridge uses PyAV for raw video / PCM packet multiplexing, without
+re-encoding video before the separate FFmpeg process.

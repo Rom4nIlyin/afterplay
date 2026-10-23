@@ -13,3 +13,7 @@ pywin32==312
 Send2Trash==2.1.0
 six==1.17.0
 typing_extensions==4.16.0
+windows-capture==2.0.1
+av==19.0.2
+numpy==2.5.4
+opencv-python==5.0.0.93

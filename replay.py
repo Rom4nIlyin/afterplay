@@ -16,11 +16,13 @@ import threading
 import time
 import uuid
 import process_audio
+import video_quality
+from capture_media import VideoSource,MediaMux
 
 NO_WINDOW = 0x08000000
 MINUTES = (1,3,5,10,15,20,30)
 DEFAULTS = {'seconds':300, 'fps':60, 'mbps':20, 'monitor':'primary', 'audio':'default',
-            'audio_mode':'system', 'game_pid':0, 'game_path':''}
+            'audio_mode':'system', 'game_pid':0, 'game_path':'',**video_quality.DEFAULTS}
 
 def monitors():
     class Info(ctypes.Structure):
@@ -33,7 +35,7 @@ def monitors():
         ctypes.windll.user32.GetMonitorInfoW(wintypes.HMONITOR(handle),ctypes.byref(info))
         r=info.rcMonitor
         result.append({'id':info.szDevice,'x':r.left,'y':r.top,'width':r.right-r.left,'height':r.bottom-r.top,
-                       'primary':bool(info.dwFlags&1)})
+                       'primary':bool(info.dwFlags&1),'wgc_index':len(result)+1})
         return True
     ctypes.windll.user32.EnumDisplayMonitors(None,None,callback(visit),0)
     return sorted(result,key=lambda m:not m['primary'])
@@ -93,6 +95,8 @@ class Replay:
             self.settings['audio_mode']='none'
             self.settings['audio']='default'
         self.encoder='h264_nvenc'
+        self.video_source=None;self.muxer=None;self.mux_thread=None
+        self.duplicate_frames=0;self.dropped_frames=0
         self._audio_queue=queue.Queue(maxsize=64)
 
     def devices(self):
@@ -107,10 +111,21 @@ class Replay:
         cfg={**self.settings}
         if 'fps' in args:
             cfg['fps']=int(args['fps'])
-            if cfg['fps'] not in {30,60}:raise ValueError('FPS должен быть 30 или 60')
         if 'mbps' in args:
             cfg['mbps']=int(args['mbps'])
-            if cfg['mbps'] not in {10,20,35,50}:raise ValueError('Неподдерживаемый битрейт')
+        for key in ('max_mbps','cq','height','audio_bitrate','audio_offset_ms'):
+            if key in args:cfg[key]=int(args[key])
+        for key in ('capture_mode','quality_mode','preset','encoder'):
+            if key in args:cfg[key]=str(args[key])
+        for key in ('audio_follow_window','cursor'):
+            if key in args:
+                if not isinstance(args[key],bool):raise ValueError('Ожидался переключатель: '+key)
+                cfg[key]=args[key]
+        if 'window_hwnd' in args and int(args['window_hwnd']):
+            window=next((a for a in process_audio.applications() if a['hwnd']==int(args['window_hwnd'])),None)
+            if not window:raise ValueError('Окно закрыто. Обновите список приложений.')
+            cfg.update(window_hwnd=window['hwnd'],window_pid=window['pid'],window_path=window['path'],window_title=window['title'])
+        video_quality.validate(cfg)
         if 'monitor' in args:cfg['monitor']=str(args['monitor'])
         if 'audio' in args:cfg['audio']=str(args['audio'])
         if 'audio_mode' in args:
@@ -125,6 +140,9 @@ class Replay:
                 target=next((a for a in process_audio.applications() if a['pid']==pid),None)
                 if not target:raise ValueError('Выбранное окно закрыто. Обнови список приложений.')
                 cfg['game_pid']=pid;cfg['game_path']=target['path']
+        if cfg['capture_mode']=='window' and not cfg['window_path']:raise ValueError('Выберите окно для записи')
+        if cfg['capture_mode']=='window' and cfg['audio_follow_window'] and cfg['audio_mode']=='game':
+            cfg['game_pid']=cfg['window_pid'];cfg['game_path']=cfg['window_path']
         if cfg['audio_mode'] in {'game','exclude'}:
             if not process_audio.supported():raise ValueError('Звук отдельного приложения требует Windows 11 или build 20348+')
             if not cfg['game_path']:raise ValueError('Выбери игру или приложение для записи звука')
@@ -142,35 +160,24 @@ class Replay:
                     'audio_name':self.audio_name,'audio_peak':round(self.audio_peak,4),
                     'audio_recent':time.monotonic()-self.last_signal<3,'engine':self.engine,
                     'encoder':self.encoder,
+                    'duplicate_frames':self.duplicate_frames,'dropped_frames':self.dropped_frames,
+                    'late_audio_ms':round(self.muxer.late_audio_frames/(self._audio_rate or 48000)*1000,1) if self.muxer else 0,
+                    'output_size':getattr(self,'output_size',None),
                     'settings':self.settings,'hotkey_ok':self.hotkey_ok,'saving':self.saving,
                     'last_saved':self.last_saved,'disk_bytes':sum(r['path'].stat().st_size for r in rows if r['path'].exists())}
 
     def _capture_command(self,monitor,audio,backend):
-        cfg=self.settings;fps=cfg['fps']
-        cmd=[self.suite.ff(),'-hide_banner','-loglevel','warning','-thread_queue_size','256']
-        if backend=='Desktop Duplication':
-            cmd+=['-f','lavfi','-i',f'ddagrab=output_idx=0:framerate={fps}:draw_mouse=1:dup_frames=1']
-        else:
-            cmd+=['-f','gdigrab','-framerate',str(fps),'-draw_mouse','1','-offset_x',str(monitor['x']),
-                  '-offset_y',str(monitor['y']),'-video_size',f'{monitor["width"]}x{monitor["height"]}','-i','desktop']
+        cfg=self.settings
+        cmd=[self.suite.ff(),'-hide_banner','-loglevel','warning','-thread_queue_size','512',
+             '-probesize','32768','-analyzeduration','0','-f','nut','-colorspace','bt709','-color_range','tv','-i','pipe:0','-map','0:v:0']
         if audio:
-            cmd+=['-thread_queue_size','256','-f','f32le','-ar',str(audio['rate']),'-ac',str(audio['channels']),
-                  '-probesize','32','-analyzeduration','0','-i','pipe:0','-map','0:v:0','-map','1:a:0',
-                  '-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a','192k']
-        else:cmd+=['-map','0:v:0','-an']
-        if self.encoder=='h264_nvenc':
-            cmd+=['-c:v','h264_nvenc','-preset','p4','-tune','ll','-rc','cbr','-forced-idr','1']
-        else:
-            if backend=='Desktop Duplication':cmd+=['-vf','hwdownload,format=bgra,format=yuv420p']
-            else:cmd+=['-pix_fmt','yuv420p']
-            cmd+=['-c:v','libx264','-preset','ultrafast','-tune','zerolatency']
-        cmd+=['-b:v',f'{cfg["mbps"]}M',
-              '-maxrate',f'{cfg["mbps"]}M','-bufsize',f'{cfg["mbps"]*2}M','-bf','0','-g',str(fps*2),
-              '-force_key_frames','expr:gte(t,n_forced*2)','-fps_mode','cfr','-r',str(fps),
-              '-f','segment','-segment_time','2','-reset_timestamps','1','-segment_format','mpegts',
+            cmd+=['-map','0:a:0','-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
+        else:cmd+=['-an']
+        cmd+=video_quality.encoder_options(cfg,self.encoder,monitor['width'],monitor['height'])
+        cmd+=[
+              '-f','segment','-segment_time','2','-reset_timestamps','0','-segment_format','mpegts',
               '-segment_list',str(self.session/'segments.csv'),'-segment_list_type','csv',
               '-progress','pipe:1','-nostats','-y',str(self.session/'seg-%07d.ts')]
-        if audio:cmd.insert(len(cmd)-1,'-shortest')
         return cmd
 
     def start(self):
@@ -179,14 +186,23 @@ class Replay:
             if self.saving:raise ValueError('Дождись сохранения клипа')
             self.phase='starting';self.error='';self.stop_event=threading.Event()
             self.media_time=0.;self.audio_peak=0.;self.last_signal=0.
+            self.duplicate_frames=0;self.dropped_frames=0
         try:
-            needed=max(2*1024**3,int(self.settings['mbps']*1000000/8*(self.settings['seconds']+10)*3.2)+512*1024**2)
+            bitrate=self.settings['mbps'] if self.settings['quality_mode']=='cbr' else self.settings['max_mbps']
+            needed=max(2*1024**3,int(bitrate*1000000/8*(self.settings['seconds']+10)*3.2)+512*1024**2)
             if shutil.disk_usage(self.root).free<needed:
                 raise ValueError(f'Для буфера и сохранения нужно минимум {needed/1024**3:.1f} ГБ свободного места')
             screens=monitors()
             monitor=next((m for m in screens if m['id']==self.settings['monitor']),None)
             if self.settings['monitor']=='primary':monitor=next((m for m in screens if m['primary']),None)
-            if not monitor:raise ValueError('Выбранный экран недоступен')
+            if self.settings['capture_mode']=='monitor' and not monitor:raise ValueError('Выбранный экран недоступен')
+            window=None
+            if self.settings['capture_mode']=='window':
+                candidates=[a for a in process_audio.applications() if a['path'].lower()==self.settings['window_path'].lower()]
+                window=next((a for a in candidates if a['hwnd']==self.settings['window_hwnd'] and a['pid']==self.settings['window_pid']),None)
+                if not window and len(candidates)==1:window=candidates[0]
+                if not window:raise ValueError('Выбранное окно недоступно. Запустите приложение и обновите список.')
+                if window['minimized']:raise ValueError('Разверните окно перед включением записи')
             audio=None
             mode=self.settings['audio_mode']
             if mode=='system':
@@ -195,35 +211,44 @@ class Replay:
                 if self.settings['audio']=='default':audio=next((d for d in devices if d['default']),None)
                 if not audio:raise ValueError('Устройство системного звука недоступно. Выбери его заново.')
             elif mode in {'game','exclude'}:
-                target=process_audio.resolve_target(self.settings)
+                target=window if window and self.settings['audio_follow_window'] and mode=='game' else process_audio.resolve_target(self.settings)
                 audio={'name':('Только ' if mode=='game' else 'Всё кроме ')+target['name'],
                        'pid':target['pid'],'rate':48000,'channels':2,'process':True,'exclude':mode=='exclude'}
             self.audio_name=audio['name'] if audio else 'Без звука'
-            check=subprocess.run([self.suite.ff(),'-v','error','-f','lavfi','-i','color=s=128x128:r=1',
+            check=subprocess.run([self.suite.ff(),'-v','error','-f','lavfi','-i','color=s=640x360:r=30',
                                   '-frames:v','1','-c:v','h264_nvenc','-f','null','-'],
                                  stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
                                  creationflags=NO_WINDOW,timeout=15)
-            self.encoder='h264_nvenc' if check.returncode==0 else 'libx264'
+            choice=self.settings['encoder']
+            if choice=='h264_nvenc' and check.returncode:raise ValueError('NVENC недоступен. Выберите автоматический кодировщик или CPU.')
+            self.encoder=('h264_nvenc' if check.returncode==0 else 'libx264') if choice=='auto' else choice
             self.session=self.root/uuid.uuid4().hex;self.session.mkdir()
             (self.session/'.game-clips-buffer').write_text('Owned rolling buffer; no original media.',encoding='utf-8')
-            # Primary output is DXGI index 0. Other screens use their exact GDI rectangle.
-            self.engine='Desktop Duplication' if monitor['primary'] else 'GDI'
-            self._audio_queue=queue.Queue(maxsize=64)
+            self.engine='Windows Graphics Capture · '+('окно' if window else 'экран')
+            self._audio_queue=queue.Queue(maxsize=256)
             self._audio_stream=None;self._audio_manager=None;self._process_capture=None
             self._process_reader=None;self.audio_error=''
+            self.video_source=VideoSource(hwnd=window['hwnd'] if window else None,
+                                          monitor_index=None if window else monitor['wgc_index'],
+                                          fps=self.settings['fps'],cursor=self.settings['cursor'])
+            self.window_hwnd=window['hwnd'] if window else None
+            monitor={'width':self.video_source.width,'height':self.video_source.height}
+            self.output_size=video_quality.output_size(self.settings,monitor['width'],monitor['height'])
+            self._audio_rate=audio['rate'] if audio else 0
             if audio:self._open_audio(audio)
             log=self.suite.data/'logs'/f'replay-{self.session.name}.log'
             self.logfile=open(log,'wb')
             cmd=self._capture_command(monitor,audio,self.engine)
-            self.proc=subprocess.Popen([str(x) for x in cmd],stdin=subprocess.PIPE if audio else subprocess.DEVNULL,
+            self.proc=subprocess.Popen([str(x) for x in cmd],stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE,stderr=self.logfile,creationflags=NO_WINDOW)
-            if audio:
-                threading.Thread(target=self._audio_writer,args=(audio,self.proc),daemon=True).start()
+            self.muxer=MediaMux(self.video_source,self._audio_queue,audio,self.settings['fps'],self.stop_event,self.settings['audio_offset_ms'],self.output_size)
+            self.mux_thread=threading.Thread(target=self.muxer.write,args=(self.proc.stdin,),daemon=True)
+            self.mux_thread.start()
             threading.Thread(target=self._progress_reader,args=(self.proc,),daemon=True).start()
             self.started=time.monotonic()
             self.phase='recording'
             self.suite.log('replay_start',monitor=monitor,system_audio=self.audio_name,microphone=False,
-                           encoder=self.encoder,settings=self.settings)
+                           encoder=self.encoder,output_size=self.output_size,settings=self.settings)
             threading.Thread(target=self._maintain,args=(audio,),daemon=True).start()
             return self.state()
         except Exception as e:
@@ -247,11 +272,14 @@ class Replay:
                 peak=max((abs(x) for x in samples[::16]),default=0.)
                 self.audio_peak=peak
                 if peak>.00003:self.last_signal=time.monotonic()
-                try:self._audio_queue.put_nowait(data)
+                timestamp=clock.get('input_buffer_adc_time',0)
+                if abs(timestamp-time.perf_counter())>30:timestamp=time.perf_counter()-frames/device['rate']
+                packet=(timestamp,data)
+                try:self._audio_queue.put_nowait(packet)
                 except queue.Full:
                     try:self._audio_queue.get_nowait()
                     except queue.Empty:pass
-                    try:self._audio_queue.put_nowait(data)
+                    try:self._audio_queue.put_nowait(packet)
                     except queue.Full:pass
             return (None,pa.paContinue)
         self._audio_stream=self._audio_manager.open(format=pa.paFloat32,channels=device['channels'],rate=device['rate'],
@@ -261,53 +289,45 @@ class Replay:
         try:
             while not self.stop_event.is_set():
                 if capture.Error:raise RuntimeError(str(capture.Error))
-                block=capture.Read()
+                block=capture.ReadPacket()
                 if block is None:self.stop_event.wait(.005);continue
-                data=bytes(block)
+                data=bytes(block.Data)
+                timestamp=int(block.Qpc100ns)/10000000
+                if int(block.Flags)&4 or abs(timestamp-time.perf_counter())>30:
+                    timestamp=time.perf_counter()-len(data)/(48000*2*4)
                 samples=array.array('f');samples.frombytes(data)
                 peak=max((abs(x) for x in samples[::16]),default=0.)
                 self.audio_peak=peak
                 if peak>.00003:self.last_signal=time.monotonic()
-                try:self._audio_queue.put_nowait(data)
+                packet=(timestamp,data)
+                try:self._audio_queue.put_nowait(packet)
                 except queue.Full:
                     try:self._audio_queue.get_nowait()
                     except queue.Empty:pass
-                    try:self._audio_queue.put_nowait(data)
+                    try:self._audio_queue.put_nowait(packet)
                     except queue.Full:pass
         except Exception as e:self.audio_error=str(e)
-
-    def _audio_writer(self,device,proc):
-        # Supply clocked silence when no application is playing audio. WASAPI loopback
-        # otherwise produces no packets and can prevent the video muxer from starting.
-        frames=1024;nbytes=frames*device['channels']*4;period=frames/device['rate']
-        silence=bytes(nbytes);pending=bytearray();deadline=time.monotonic()
-        try:
-            while not self.stop_event.is_set() and proc.poll() is None:
-                while len(pending)<nbytes:
-                    try:pending.extend(self._audio_queue.get_nowait())
-                    except queue.Empty:break
-                if len(pending)>=nbytes:
-                    block=bytes(pending[:nbytes]);del pending[:nbytes]
-                else:block=silence
-                proc.stdin.write(block);proc.stdin.flush()
-                deadline+=period
-                delay=deadline-time.monotonic()
-                if delay>0:self.stop_event.wait(delay)
-                elif delay<-.5:deadline=time.monotonic()
-        except (OSError,ValueError):pass
-        finally:
-            try:proc.stdin.close()
-            except (OSError,ValueError):pass
 
     def _progress_reader(self,proc):
         for line in iter(proc.stdout.readline,b''):
             if line.startswith(b'out_time_us='):
                 try:self.media_time=max(self.media_time,int(line.strip().split(b'=')[1])/1000000)
                 except ValueError:pass
+            for key,attr in ((b'dup_frames=', 'duplicate_frames'),(b'drop_frames=','dropped_frames')):
+                if line.startswith(key):
+                    try:setattr(self,attr,int(line.strip().split(b'=')[1]))
+                    except ValueError:pass
 
     def _maintain(self,audio):
         last_device_check=0
         while not self.stop_event.wait(.5):
+            if getattr(self,'window_hwnd',None) and ctypes.windll.user32.IsIconic(wintypes.HWND(self.window_hwnd)):
+                self.error='Окно свёрнуто. Разверните его и включите повтор заново.'
+                self.stop();self.phase='error';break
+            media_error=self.muxer.error if self.muxer else ''
+            if media_error:
+                self.error='Ошибка захвата: '+media_error
+                self.stop();self.phase='error';break
             if self.audio_error:
                 self.error='Ошибка захвата звука приложения: '+self.audio_error
                 self.stop();self.phase='error';break
@@ -351,6 +371,11 @@ class Replay:
             if self.phase=='stopping':return self.state()
             if self.phase=='off' and self.proc is None:return self.state()
             self.phase='stopping';self.stop_event.set();proc=self.proc
+        source=getattr(self,'video_source',None)
+        if source:
+            source.stop();self.video_source=None
+        writer=getattr(self,'mux_thread',None)
+        if writer and writer is not threading.current_thread():writer.join(timeout=3)
         if proc and proc.poll() is None:
             try:proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
@@ -400,14 +425,17 @@ class Replay:
                 time.sleep(.1)
             selected,skip,duration=select_segments(rows,cutoff,self.settings['seconds'])
             job.update(message='Сохранение последних '+str(round(duration))+' секунд',progress=10)
-            for i,row in enumerate(selected):
-                shutil.copy2(row['path'],stage/row['path'].name)
-            listing=stage/'concat.txt'
-            listing.write_text(''.join(f"file '{r['path'].name}'\nduration {r['end']-r['start']:.9f}\n" for r in selected),encoding='utf-8')
+            # MPEG-TS timestamps remain continuous across the rolling segments.
+            # Joining their bytes preserves the original A/V clock without the
+            # concat demuxer's per-file duration rounding.
+            listing=stage/'capture.ts'
+            with listing.open('wb') as output:
+                for row in selected:
+                    with row['path'].open('rb') as source:shutil.copyfileobj(source,output,1024*1024)
             name='Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.mp4'
             target=self.suite.data/'exports'/name
             partial=target.with_suffix('.partial.mp4')
-            cmd=[self.suite.ff(),'-hide_banner','-loglevel','error','-ss',f'{max(0,skip):.6f}','-f','concat','-safe','1',
+            cmd=[self.suite.ff(),'-hide_banner','-loglevel','error','-ss',f'{max(0,skip):.6f}',
                  '-i',str(listing),'-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
                  '-c','copy','-video_track_timescale','90000','-avoid_negative_ts','make_zero','-movflags','+faststart','-y',str(partial)]
             proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=NO_WINDOW)

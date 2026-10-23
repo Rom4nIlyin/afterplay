@@ -38,7 +38,12 @@ def applications():
             try:
                 path=ctypes.create_unicode_buffer(32768);size=wintypes.DWORD(len(path))
                 if kernel.QueryFullProcessImageNameW(handle,0,path,ctypes.byref(size)):
-                    result[pid.value]={'pid':pid.value,'path':path.value,'name':Path(path.value).name,'title':title.value}
+                    rect=wintypes.RECT();user.GetWindowRect(hwnd,ctypes.byref(rect))
+                    candidate={'pid':pid.value,'hwnd':int(hwnd),'path':path.value,'name':Path(path.value).name,'title':title.value,
+                               'width':rect.right-rect.left,'height':rect.bottom-rect.top,'minimized':bool(user.IsIconic(hwnd))}
+                    previous=result.get(pid.value)
+                    if not previous or candidate['width']*candidate['height']>previous['width']*previous['height']:
+                        result[pid.value]=candidate
             finally:kernel.CloseHandle(handle)
         return True
     user.EnumWindows(callback(visit),0)

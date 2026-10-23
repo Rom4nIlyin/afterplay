@@ -503,6 +503,8 @@ def server_for(suite, token=None, port=0):
     return server,token
 
 def main():
+    from runtime_trust import prepare_runtime
+    prepared_components = prepare_runtime(BASE)
     parser=argparse.ArgumentParser()
     parser.add_argument('--mode',choices=['clips'],default='clips')
     parser.add_argument('--serve',action='store_true')
@@ -511,6 +513,7 @@ def main():
     parser.add_argument('--report-url',action='store_true')
     args=parser.parse_args()
     suite=Suite(args.data)
+    if prepared_components:suite.log('portable_components_prepared',components=prepared_components)
     suite.app_mode=args.mode
     suite.test_control=args.report_url
     if os.name=='nt' and not args.serve:
@@ -551,7 +554,8 @@ def main():
                 suite.window.evaluate_js("tab='replay';render()")
                 time.sleep(1)
                 report['controls']=suite.window.evaluate_js("({minutes:[...document.querySelector('#replaySeconds').options].map(o=>Number(o.value)/60),audio:[...document.querySelector('#replayAudioMode').options].map(o=>o.value),hasApp:!!document.querySelector('#replayApplication'),hasSave:!!document.querySelector('#replaySave'),body:document.body.innerText.slice(0,2500)})")
-                report['ok']=bool(report.get('ready') and report['controls']['minutes']==[1,3,5,10,15,20,30] and len(report['controls']['audio'])==4)
+                report['capture']=suite.window.evaluate_js("({modes:[...document.querySelector('#replayCaptureMode').options].map(o=>o.value),fps:[...document.querySelector('#replayFPS').options].map(o=>Number(o.value)),quality:[...document.querySelector('#replayQuality').options].map(o=>o.value),hasOffset:!!document.querySelector('#replayOffset'),hasResolution:!!document.querySelector('#replayHeight')})")
+                report['ok']=bool(report.get('ready') and report['controls']['minutes']==[1,3,5,10,15,20,30] and len(report['controls']['audio'])==4 and report['capture']['modes']==['monitor','window'] and report['capture']['fps']==[24,30,60,90,120] and len(report['capture']['quality'])==3 and report['capture']['hasOffset'] and report['capture']['hasResolution'])
                 report['engine']='Microsoft Edge WebView2 / pywebview'
                 atomic_json(suite.data/f'verification-native-{args.mode}.json',report)
             finally:

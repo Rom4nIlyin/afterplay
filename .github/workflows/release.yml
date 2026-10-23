@@ -1,0 +1,51 @@
+name: Portable release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without v
+        required: true
+        default: '1.2.0'
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+concurrency:
+  group: portable-release
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+          architecture: x64
+      - name: Build and verify portable bundle
+        shell: pwsh
+        run: |
+          $version = $env:RELEASE_VERSION -replace '^v', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
+          python -m pip install -r requirements-lock.txt
+          python -m unittest discover -s tests
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+          python scripts/build_portable.py --version $version
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          $bundle = "build/portable-$version/Game Clips Portable"
+          & "$bundle/runtime/python.exe" -c 'import av, windows_capture, pyaudiowpatch, webview; print("Portable imports OK")'
+          if ($LASTEXITCODE -ne 0) { throw 'Portable runtime failed' }
+          "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
+      - name: Publish ZIP and SHA-256
+        shell: pwsh
+        run: |
+          $assets = @(Get-ChildItem dist/*.zip, dist/*.sha256 | ForEach-Object FullName)
+          gh release create $env:RELEASE_TAG @assets --target $env:GITHUB_SHA --title "Game Clips $env:RELEASE_TAG" --notes-file CHANGELOG.md --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+
