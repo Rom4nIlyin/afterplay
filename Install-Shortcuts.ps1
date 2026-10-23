@@ -1,10 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$shell = New-Object -ComObject WScript.Shell
-foreach ($folder in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {
-    $link = $shell.CreateShortcut((Join-Path $folder 'Game Clips.lnk'))
-    $link.TargetPath = Join-Path $PSScriptRoot 'Game Clips.exe'
-    $link.WorkingDirectory = $PSScriptRoot
-    $link.IconLocation = (Join-Path $PSScriptRoot 'Game Clips.exe') + ',0'
-    $link.Description = 'Game Clips — видеотека и повтор последних 1–30 минут'
-    $link.Save()
-}
+$python = Join-Path $PSScriptRoot 'runtime\python.exe'
+if (-not (Test-Path -LiteralPath $python)) { throw 'Распакуйте портативный архив целиком.' }
+& $python -c "import sys; from shortcuts import create_shortcut; create_shortcut(sys.argv[1]); create_shortcut(sys.argv[1], 'programs')" $PSScriptRoot
+if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать ярлыки Game Clips.' }

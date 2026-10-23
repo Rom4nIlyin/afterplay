@@ -1,0 +1,83 @@
+/* Standard keeps the original palette. All interactive states share these tokens. */
+:root {
+ --sidebar:#141718;--input:#181e1e;--input-line:#34403a;--secondary:#202627;
+ --hover:#304743;--pressed:#42635c;--hover-text:#ffffff;
+ --primary-hover:#b6ebe5;--primary-pressed:#61a99f;--on-accent:#142621;
+ --danger:#3b2927;--danger-line:#67423b;--danger-text:#efb4aa;--danger-hover:#713a34;--danger-pressed:#994c43;
+ --subtle:#8b9b93;--strong:#c7d7cd;--notice:#302d212f;--notice-line:#544e3b;--notice-text:#c7bd9c;
+ --hero-start:#1d2d2b;--hero-end:#17201f;--hero-line:#354e47;--orb:#263d34;
+ --audio:#111a16;--track:#2a3b35;--dialog:#171d1c;--success:#354337;
+ --success-line:#627b62;--success-text:#e1eadc;--error:#4b302e;--error-text:#ffe5df;--error-line:#976455;
+ --shadow:#0006;
+}
+:root[data-theme="dark"] {
+ color-scheme:dark;--bg:#090b10;--sidebar:#0e1118;--panel:#141821;--panel2:#1a202b;
+ --line:#303847;--text:#edf2fc;--muted:#a3aec1;--subtle:#9ba9bd;--strong:#e1e9fa;
+ --input:#0d121b;--input-line:#384456;--secondary:#202938;
+ --hover:#304765;--pressed:#42638e;--hover-text:#ffffff;
+ --primary-hover:#b8d3ff;--primary-pressed:#6b9eea;--on-accent:#101d32;
+ --hero-start:#18253b;--hero-end:#111a29;--hero-line:#344762;--orb:#233754;
+ --audio:#101b28;--track:#2b3c54;--dialog:#141b28;
+ --notice:#292718;--notice-line:#655c35;--notice-text:#e0d39b;
+ --success:#213b33;--success-line:#527f6c;--success-text:#d2f5e3;
+}
+:root[data-theme="dark"] .clips {--accent:#94bcfa;--accent-rgb:148,188,250}
+:root[data-theme="light"] {
+ color-scheme:light;--bg:#f1f4f6;--sidebar:#ffffff;--panel:#ffffff;--panel2:#e9eef2;
+ --line:#cbd4dc;--text:#182733;--muted:#526573;--subtle:#526674;--strong:#213c4c;
+ --input:#f8fafb;--input-line:#b9c8d1;--secondary:#e5edf1;
+ --hover:#c4e0e4;--pressed:#91c4cc;--hover-text:#102f39;
+ --primary-hover:#167180;--primary-pressed:#084957;--on-accent:#ffffff;
+ --danger:#fff0ed;--danger-line:#d0a197;--danger-text:#9c3325;--danger-hover:#f5c2b7;--danger-pressed:#e79888;
+ --hero-start:#e3f2f0;--hero-end:#f8fbfa;--hero-line:#b3d4d1;--orb:#d4eae4;
+ --audio:#eef7f2;--track:#cadbd3;--dialog:#ffffff;
+ --notice:#fff8e7;--notice-line:#d7bd7e;--notice-text:#66501d;
+ --success:#e0f1e6;--success-line:#80a58d;--success-text:#244a32;
+ --error:#fff0ec;--error-text:#8c3022;--error-line:#c18476;--shadow:#152a3b22;
+}
+:root[data-theme="light"] .clips {--accent:#116272;--accent-rgb:17,98,114}
+.sidebar{background:var(--sidebar)}
+header,.check{color:var(--text)}
+.brand small,.nav-label,.local-badge,.side-version,footer,#breadcrumb span,.header-right,
+.field small,.hint,.panel-title,.audio-level small,.replay-hotkey,.replay-hotkey>span:last-child,
+.file-size,.hero-art .seal,.hash{color:var(--subtle)}
+label,.section-title small{color:var(--muted)}
+.library-info b,.notice b,.kbd{color:var(--strong)}
+input,select,textarea{background:var(--input);border-color:var(--input-line);color:var(--text)}
+input::placeholder,textarea::placeholder{color:var(--subtle)}
+select:disabled,input:disabled{opacity:.55;cursor:not-allowed}
+.icon-button{color:var(--muted)}
+button.secondary{background:var(--secondary);border-color:var(--input-line);color:var(--text)}
+button.primary{color:var(--on-accent)}
+button.danger{background:var(--danger);border-color:var(--danger-line);color:var(--danger-text)}
+button{transition:background-color .13s,color .13s,border-color .13s,box-shadow .13s}
+.clips button:enabled:hover{background:var(--hover);border-color:var(--accent);color:var(--hover-text);filter:none}
+.clips button:enabled:active{background:var(--pressed);border-color:var(--accent);color:var(--hover-text);filter:none}
+.clips button.primary:enabled:hover{background:var(--primary-hover);color:var(--on-accent)}
+.clips button.primary:enabled:active{background:var(--primary-pressed);color:var(--on-accent)}
+.clips button.danger:enabled:hover,.clips .clip-delete:enabled:hover,.clips .delete-export:enabled:hover{background:var(--danger-hover);border-color:var(--danger-line);color:var(--danger-text)}
+.clips button.danger:enabled:active,.clips .clip-delete:enabled:active,.clips .delete-export:enabled:active{background:var(--danger-pressed);color:#fff}
+button:disabled,button:disabled:hover,button:disabled:active{cursor:not-allowed;filter:none;opacity:.4}
+button:enabled:focus-visible,.clip-card:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.nav-button .count{background:var(--panel2);color:var(--muted)}
+.replay-hero,.hero{background:linear-gradient(120deg,var(--hero-start),var(--hero-end));border-color:var(--hero-line)}
+.replay-orb{background:var(--orb);border-color:var(--hero-line)}
+.replay-orb.active{background:var(--danger);border-color:var(--danger-line);color:var(--danger-text)}
+.replay-track,.audio-meter,.progress{background:var(--track)}
+.replay-time small{color:var(--subtle)}
+.audio-level{background:var(--audio);border-color:var(--hero-line)}
+.notice{background:var(--notice);border-color:var(--notice-line);color:var(--notice-text)}
+.pill{background:rgba(var(--accent-rgb),.08);border-color:rgba(var(--accent-rgb),.25);color:var(--accent)}
+.stat-icon{background:var(--panel2);color:var(--accent)}
+.clip-tags span{background:var(--panel2);border-color:var(--line);color:var(--muted)}
+.clip-card:active{border-color:var(--accent);background:var(--hover)}
+.job{background:var(--panel2);border-color:var(--input-line);box-shadow:0 8px 35px var(--shadow)}
+.job small{color:var(--muted)}
+.toast{background:var(--success);border-color:var(--success-line);color:var(--success-text);box-shadow:0 8px 40px var(--shadow)}
+.toast.error{background:var(--error);border-color:var(--error-line);color:var(--error-text)}
+dialog{background:var(--dialog);border-color:var(--input-line);box-shadow:0 25px 100px var(--shadow)}
+.result-path{background:var(--input);border-color:var(--input-line);color:var(--strong)}
+.kbd{border-color:var(--input-line)}
+.release-notes{font:11px 'Segoe UI',sans-serif;white-space:pre-wrap;overflow:auto;max-height:240px;color:var(--muted);background:var(--input);padding:14px;border-radius:8px;margin-top:18px}
+.hero p{color:var(--muted)}
+@media(prefers-reduced-motion:reduce){button,.clip-card{transition:none}}

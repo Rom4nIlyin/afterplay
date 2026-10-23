@@ -81,6 +81,8 @@ class Suite:
         self.desktop = None
         self.app_mode = 'clips'
         self.test_control = False
+        from app_update import AppUpdater
+        self.updater = AppUpdater(BASE,self.data)
 
     @contextmanager
     def db(self):
@@ -361,7 +363,38 @@ class Suite:
             self._saved_cfg = json.loads(json.dumps(self.cfg))
         if action == 'state':
             return {'settings': self.cfg, 'jobs':list(self.jobs.values())[-15:], 'clips':self.clips(),
+                    'updates':self.updater.state(),
                     'replay':self.replay.state() if self.replay else None}
+        if action=='appearance_config':
+            theme=arg.get('theme')
+            if theme not in {'standard','dark','light'}:raise ValueError('Неизвестная тема')
+            self.cfg.setdefault('appearance',{})['theme']=theme
+            self.save_cfg()
+            return self.cfg['appearance']
+        if action=='shortcut_desktop':
+            from shortcuts import create_shortcut
+            return {'path':str(create_shortcut(BASE))}
+        if action=='shortcut_taskbar':
+            from shortcuts import taskbar_shortcut
+            return taskbar_shortcut(BASE)
+        if action=='autostart_config':
+            from shortcuts import set_autostart
+            result=set_autostart(BASE,arg.get('enabled'))
+            self.cfg.setdefault('desktop',{}).setdefault(self.app_mode,{})['autostart']=result['enabled']
+            self.save_cfg()
+            return result
+        if action=='update_check':
+            if self.updater.busy or any(j['status']=='running' and j['label']=='Проверка обновлений' for j in self.jobs.values()):raise ValueError('Дождитесь завершения проверки или загрузки')
+            return self.job('Проверка обновлений',lambda j:self.updater.check())
+        if action in {'update_prepare','update_install'}:
+            if self.replay and (self.replay.phase in {'starting','recording','stopping'} or self.replay.saving):
+                raise ValueError('Перед обновлением остановите запись и дождитесь сохранения клипа')
+            if any(j['status']=='running' for j in self.jobs.values()):raise ValueError('Дождитесь завершения текущих операций')
+            if not self.desktop:raise ValueError('Установка обновления доступна в окне портативной программы')
+            if action=='update_prepare':return self.job('Обновление Game Clips',self.updater.prepare)
+            result=self.updater.launch()
+            threading.Timer(.5,self.desktop.exit).start()
+            return result
         if action=='desktop_config':
             choice=arg.get('close_action')
             if choice not in {'close','tray'}:raise ValueError('Некорректное действие крестика')
@@ -391,6 +424,9 @@ class Suite:
         if action.startswith('replay_'):
             if not self.replay:raise ValueError('Повтор доступен только в Game Clips')
             if action=='replay_devices':return self.replay.devices()
+            if action=='replay_applications':
+                import process_audio
+                return {'applications':process_audio.applications()}
             if action=='replay_config':return self.replay.configure(arg)
             if action=='replay_start':return self.job('Включение повтора',lambda j:self.replay.start())
             if action=='replay_stop':return self.job('Остановка повтора',lambda j:self.replay.stop())
@@ -459,7 +495,7 @@ def server_for(suite, token=None, port=0):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
-                if route in {'','index.html','style.css','ui.js','replay-ui.js','clips.ico','clips-recording.ico'}:
+                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','clips.ico','clips-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
                 elif route.startswith('thumb/'):
                     cid=route.split('/')[-1]
@@ -556,6 +592,9 @@ def main():
                 report['controls']=suite.window.evaluate_js("({minutes:[...document.querySelector('#replaySeconds').options].map(o=>Number(o.value)/60),audio:[...document.querySelector('#replayAudioMode').options].map(o=>o.value),hasApp:!!document.querySelector('#replayApplication'),hasSave:!!document.querySelector('#replaySave'),body:document.body.innerText.slice(0,2500)})")
                 report['capture']=suite.window.evaluate_js("({modes:[...document.querySelector('#replayCaptureMode').options].map(o=>o.value),fps:[...document.querySelector('#replayFPS').options].map(o=>Number(o.value)),quality:[...document.querySelector('#replayQuality').options].map(o=>o.value),hasOffset:!!document.querySelector('#replayOffset'),hasResolution:!!document.querySelector('#replayHeight')})")
                 report['ok']=bool(report.get('ready') and report['controls']['minutes']==[1,3,5,10,15,20,30] and len(report['controls']['audio'])==4 and report['capture']['modes']==['monitor','window'] and report['capture']['fps']==[24,30,60,90,120] and len(report['capture']['quality'])==3 and report['capture']['hasOffset'] and report['capture']['hasResolution'])
+                suite.window.evaluate_js("tab='settings';render()")
+                report['preferences']=suite.window.evaluate_js("({themes:[...document.querySelector('#interfaceTheme').options].map(o=>o.value),autostart:!!document.querySelector('#launchAtLogin'),desktop:!!document.querySelector('[data-action=shortcut-desktop]'),taskbar:!!document.querySelector('[data-action=shortcut-taskbar]'),updates:!!document.querySelector('[data-action=update-check]')})")
+                report['ok']=bool(report['ok'] and report['preferences']['themes']==['standard','dark','light'] and all(report['preferences'][key] for key in ('autostart','desktop','taskbar','updates')))
                 report['engine']='Microsoft Edge WebView2 / pywebview'
                 atomic_json(suite.data/f'verification-native-{args.mode}.json',report)
             finally:
