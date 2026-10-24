@@ -1,6 +1,6 @@
 """Visible, opt-in desktop replay with NVENC and WASAPI output loopback.
 
-No microphone, game injection, keyboard logger, or autostart.
+No microphone or game injection; optional allowlist automation lives in auto_record.
 """
 import array
 import csv
@@ -16,6 +16,7 @@ import threading
 import time
 import uuid
 import process_audio
+import storage
 import video_quality
 from capture_media import VideoSource,MediaMux
 
@@ -81,15 +82,15 @@ def select_segments(rows,cutoff,seconds):
 class Replay:
     def __init__(self,suite):
         self.suite=suite
-        self.root=suite.data/'replay-buffer'
-        self.root.mkdir(exist_ok=True)
+        self.root=storage.buffer_dir(suite)
+        self.root.mkdir(parents=True,exist_ok=True)
         self.lock=threading.RLock()
         self.stop_event=threading.Event()
         self.proc=None;self.session=None;self.started=None
         self.phase='off';self.error='';self.audio_name='';self.engine=''
         self.media_time=0.;self.audio_peak=0.;self.last_signal=0.;self.saving=False
         self.last_saved=None;self.hotkey_ok=False;self.hotkey_thread=None;self.hotkey_tid=None
-        self.tray=None
+        self.tray=None;self.auto_owned=False;self.hotkeys=None
         self.settings={**DEFAULTS,**suite.cfg.get('replay',{})}
         if 'audio_mode' not in suite.cfg.get('replay',{}) and self.settings['audio']=='none':
             self.settings['audio_mode']='none'
@@ -163,7 +164,7 @@ class Replay:
                     'duplicate_frames':self.duplicate_frames,'dropped_frames':self.dropped_frames,
                     'late_audio_ms':round(self.muxer.late_audio_frames/(self._audio_rate or 48000)*1000,1) if self.muxer else 0,
                     'output_size':getattr(self,'output_size',None),
-                    'settings':self.settings,'hotkey_ok':self.hotkey_ok,'saving':self.saving,
+                    'settings':self.settings,'hotkey_ok':bool(self.hotkeys and self.hotkeys.ok),'hotkey_error':self.hotkeys.error if self.hotkeys else '', 'saving':self.saving,
                     'last_saved':self.last_saved,'disk_bytes':sum(r['path'].stat().st_size for r in rows if r['path'].exists())}
 
     def _capture_command(self,monitor,audio,backend):
@@ -367,7 +368,8 @@ class Replay:
         if session.resolve().parent!=self.root.resolve() or not re.fullmatch(r'[a-f0-9]{32}',session.name):return
         if (session/'.game-clips-buffer').is_file():shutil.rmtree(session,ignore_errors=True)
 
-    def stop(self):
+    def stop(self,preserve=None):
+        if preserve is None:preserve=self.auto_owned
         with self.lock:
             if self.phase=='stopping':return self.state()
             if self.phase=='off' and self.proc is None:return self.state()
@@ -402,18 +404,19 @@ class Replay:
         except Exception:pass
         with self.lock:
             self.proc=None;self.phase='off';self.started=None
-            if not self.saving:self._cleanup_session(self.session);self.session=None
+            if not self.saving and not preserve:self._cleanup_session(self.session);self.session=None
         self.suite.log('replay_stop')
         return self.state()
 
-    def save(self,job):
+    def save(self,job,allow_stopped=False):
         with self.lock:
-            if self.phase!='recording':raise ValueError('Сначала включи повтор')
+            if self.phase!='recording' and not (allow_stopped and self.session):raise ValueError('Сначала включи повтор')
             if self.saving:raise ValueError('Предыдущий повтор ещё сохраняется')
             self.saving=True;session=self.session
             rows=closed_segments(session)
             cutoff=max(self.media_time,rows[-1]['end'] if rows else 0)
-        stage=self.suite.data/'exports'/('.replay-stage-'+uuid.uuid4().hex)
+        destination=self.suite.recordings_dir()
+        stage=destination/('.replay-stage-'+uuid.uuid4().hex)
         stage.mkdir()
         partial=None
         try:
@@ -434,7 +437,7 @@ class Replay:
                 for row in selected:
                     with row['path'].open('rb') as source:shutil.copyfileobj(source,output,1024*1024)
             name='Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.mp4'
-            target=self.suite.data/'exports'/name
+            target=destination/name
             partial=target.with_suffix('.partial.mp4')
             cmd=[self.suite.ff(),'-hide_banner','-loglevel','error','-ss',f'{max(0,skip):.6f}',
                  '-i',str(listing),'-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
@@ -461,7 +464,7 @@ class Replay:
             return self.last_saved
         finally:
             if partial:partial.unlink(missing_ok=True)
-            if stage.resolve().parent==(self.suite.data/'exports').resolve() and stage.name.startswith('.replay-stage-'):
+            if stage.resolve().parent==destination.resolve() and stage.name.startswith('.replay-stage-'):
                 shutil.rmtree(stage,ignore_errors=True)
             with self.lock:
                 self.saving=False
@@ -473,7 +476,7 @@ class Replay:
                 if self.suite.desktop:self.suite.desktop.notify(title,message,kind)
             except Exception as e:self.suite.log('notification_failed',error=str(e))
         def save_with_notice(job):
-            notice('Сохраняю повтор…','Game Clips · подготовка видео','saving')
+            notice('Сохраняю повтор…','AFTERPLAY · подготовка видео','saving')
             try:
                 result=self.save(job)
             except Exception as e:
@@ -486,21 +489,16 @@ class Replay:
         return self.suite.job('Сохранение повтора',save_with_notice)
 
     def attach_desktop(self):
+        from hotkeys import GlobalHotkeys,DEFAULTS,validate
         if os.name!='nt':return
-        def hotkeys():
-            self.hotkey_tid=ctypes.windll.kernel32.GetCurrentThreadId()
-            self.hotkey_ok=bool(ctypes.windll.user32.RegisterHotKey(None,1,0x4000|0x0002|0x0001,0x79))
-            if not self.hotkey_ok:return
-            msg=wintypes.MSG()
-            while ctypes.windll.user32.GetMessageW(ctypes.byref(msg),None,0,0)>0:
-                if msg.message==0x0312:self.save_job()
-            ctypes.windll.user32.UnregisterHotKey(None,1)
-        self.hotkey_thread=threading.Thread(target=hotkeys,daemon=True)
-        self.hotkey_thread.start()
+        self.hotkeys=GlobalHotkeys({'save':self.save_job,'auto':self.suite.auto.toggle},self.suite.log)
+        try:self.hotkeys.configure(validate(self.suite.cfg.get('hotkeys',DEFAULTS)))
+        except ValueError as error:self.suite.log('hotkey_registration_error',error=str(error))
+        self.hotkey_ok=self.hotkeys.ok;self.hotkey_tid=self.hotkeys.tid
 
     def shutdown(self):
         self.stop()
-        if self.hotkey_tid:ctypes.windll.user32.PostThreadMessageW(self.hotkey_tid,0x0012,0,0)
+        if self.hotkeys:self.hotkeys.shutdown()
         if self.tray:
             icon=self.tray;self.tray=None
             try:icon.stop()

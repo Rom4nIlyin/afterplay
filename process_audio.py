@@ -4,8 +4,20 @@ from ctypes import wintypes
 from pathlib import Path
 import sys
 
+def windows_version():
+    # A native host without a supportedOS manifest can report Windows 8 through
+    # GetVersionEx/sys.getwindowsversion even on Windows 11. Read the real build.
+    class Version(ctypes.Structure):
+        _fields_=[('size',wintypes.DWORD),('major',wintypes.DWORD),('minor',wintypes.DWORD),
+                  ('build',wintypes.DWORD),('platform',wintypes.DWORD),('service',wintypes.WCHAR*128)]
+    info=Version();info.size=ctypes.sizeof(info)
+    get_version=ctypes.WinDLL('ntdll').RtlGetVersion
+    get_version.argtypes=[ctypes.POINTER(Version)];get_version.restype=ctypes.c_long
+    if get_version(ctypes.byref(info))!=0:raise RuntimeError('Не удалось определить версию Windows')
+    return info.major,info.minor,info.build
+
 def supported():
-    return sys.getwindowsversion().build >= 20348
+    return windows_version()[2] >= 20348
 
 def is_alive(pid):
     kernel=ctypes.windll.kernel32

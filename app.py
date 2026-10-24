@@ -1,4 +1,4 @@
-"""Game Clips: local video library and instant replay."""
+"""AFTERPLAY: local video library and instant replay."""
 import argparse
 from contextlib import contextmanager
 import ctypes
@@ -17,6 +17,8 @@ import threading
 import time
 import traceback
 import uuid
+import io
+import storage
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -60,6 +62,7 @@ class Suite:
         for name in ['thumbs', 'exports', 'logs']:
             (self.data / name).mkdir(exist_ok=True)
         self.lock = threading.RLock()
+        self.filmstrip_lock = threading.Lock()
         self.jobs = {}
         self.children = set()
         self.window = None
@@ -79,6 +82,7 @@ class Suite:
         self.ffmpeg = None
         self.replay = None
         self.desktop = None
+        self.auto = None
         self.app_mode = 'clips'
         self.test_control = False
         from app_update import AppUpdater
@@ -246,7 +250,13 @@ class Suite:
         return cid
 
     def recycle_video(self,arg):
-        if arg.get('export_name'):
+        if arg.get('export_key'):
+            record=next((row for row in storage.exports(self) if row['key']==str(arg['export_key'])),None)
+            if not record:raise ValueError('Запись в папках экспорта не найдена')
+            path=Path(record['path'])
+            with self.db() as db:row=db.execute('SELECT * FROM clips WHERE path=?',(str(path),)).fetchone()
+            info=dict(row) if row else {'id':record['key'],'path':str(path),'name':path.name}
+        elif arg.get('export_name'):
             name=str(arg['export_name'])
             if Path(name).name!=name or not name.lower().endswith('.mp4') or name.endswith('.partial.mp4'):
                 raise ValueError('Некорректное имя экспорта')
@@ -301,7 +311,7 @@ class Suite:
         vertical = arg.get('format') == 'vertical'
         name = re.sub(r'[^\w .-]', '_', str(arg.get('name') or src.stem))[:90].strip(' .') or 'clip'
         suffix = '-vertical' if vertical else ''
-        dest = self.data/'exports'/f'{name}{suffix}-{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:4]}.mp4'
+        dest = self.recordings_dir()/f'{name}{suffix}-{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:4]}.mp4'
         partial = dest.with_suffix('.partial.mp4')
         vf = 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1' if vertical else 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1'
         cmd = [self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-i', src,
@@ -334,13 +344,39 @@ class Suite:
             if vertical and (result['width'],result['height']) != (720,1280):
                 raise ValueError('Размер вертикального видео не прошёл проверку')
             os.replace(partial, dest)
+            self.index_video(dest)
             self.log('export', source=str(src), output=str(dest), start=start, end=end, **result)
             return {'path': str(dest), **result, 'bytes':dest.stat().st_size}
         except Exception:
             partial.unlink(missing_ok=True)
             raise
 
+    def recordings_dir(self):
+        return storage.recording_dir(self)
+
+    def filmstrip(self,cid):
+        clip=self.clip(cid);source=Path(clip['path']);st=source.stat()
+        signature=hashlib.sha256(f"{st.st_size}:{st.st_mtime_ns}".encode()).hexdigest()[:12]
+        target=self.data/'thumbs'/f'{cid}-strip-{signature}.jpg'
+        with self.filmstrip_lock:
+            if target.is_file():return target
+            from PIL import Image
+            sheet=Image.new('RGB',(160*12,90),(20,26,30))
+            available=0
+            for index in range(12):
+                position=max(0,float(clip['duration'])*index/12)
+                frame=run([self.ff(),'-hide_banner','-loglevel','error','-ss',f'{position:.3f}',
+                           '-i',source,'-frames:v','1','-vf','scale=160:90:force_original_aspect_ratio=decrease,pad=160:90:(ow-iw)/2:(oh-ih)/2',
+                           '-threads','1','-f','image2pipe','-vcodec','mjpeg','pipe:1'],timeout=20)
+                if frame.returncode==0 and frame.stdout:
+                    with Image.open(io.BytesIO(frame.stdout)) as image:sheet.paste(image.convert('RGB'),(160*index,0))
+                    available+=1
+            if not available:raise ValueError('Не удалось получить кадры видео')
+            temporary=target.with_suffix('.tmp.jpg');sheet.save(temporary,quality=80);os.replace(temporary,target)
+        return target
+
     def shutdown(self):
+        if self.auto:self.auto.shutdown()
         if self.replay:self.replay.shutdown()
         if self.desktop:self.desktop.shutdown()
         with self.lock:
@@ -353,7 +389,7 @@ class Suite:
         if not self.window:
             raise ValueError('Введи путь вручную')
         import webview
-        selected = self.window.create_file_dialog(webview.FileDialog.FOLDER)
+        selected = self.window.create_file_dialog(webview.FileDialog.OPEN, file_types=('Приложения (*.exe)',)) if purpose=='auto-app' else self.window.create_file_dialog(webview.FileDialog.FOLDER)
         return {'path': selected[0] if selected else None}
 
 
@@ -363,12 +399,32 @@ class Suite:
             self._saved_cfg = json.loads(json.dumps(self.cfg))
         if action == 'state':
             return {'settings': self.cfg, 'jobs':list(self.jobs.values())[-15:], 'clips':self.clips(),
-                    'updates':self.updater.state(),
+                    'storage':storage.state(self),'updates':self.updater.state(), 'auto_record':self.auto.state() if self.auto else None,
                     'replay':self.replay.state() if self.replay else None}
+        if action=='storage_config':
+            active=self.replay and (self.replay.phase in {'starting','recording','stopping'} or self.replay.saving)
+            if active or any(job['status']=='running' for job in self.jobs.values()):
+                raise ValueError('Остановите запись и дождитесь завершения текущих операций')
+            return storage.configure(self,arg.get('recordings_dir'))
+        if action=='auto_config':
+            if not self.auto:raise ValueError('Автозапись недоступна')
+            return self.auto.configure(arg)
+        if action=='auto_toggle':return self.auto.toggle()
+        if action=='hotkeys_config':
+            from hotkeys import validate
+            values=validate(arg)
+            if not self.replay.hotkeys:raise ValueError('Настройка клавиш доступна в окне AFTERPLAY')
+            self.replay.hotkeys.configure(values)
+            self.cfg['hotkeys']=values;self.save_cfg()
+            return values
         if action=='appearance_config':
-            theme=arg.get('theme')
-            if theme not in {'standard','dark','light'}:raise ValueError('Неизвестная тема')
-            self.cfg.setdefault('appearance',{})['theme']=theme
+            appearance=self.cfg.setdefault('appearance',{})
+            if 'theme' in arg:
+                if arg['theme'] not in {'standard','dark','light'}:raise ValueError('Неизвестная тема')
+                appearance['theme']=arg['theme']
+            if 'library_view' in arg:
+                if arg['library_view'] not in {'gallery','list'}:raise ValueError('Неизвестный вид библиотеки')
+                appearance['library_view']=arg['library_view']
             self.save_cfg()
             return self.cfg['appearance']
         if action=='shortcut_desktop':
@@ -391,7 +447,7 @@ class Suite:
                 raise ValueError('Перед обновлением остановите запись и дождитесь сохранения клипа')
             if any(j['status']=='running' for j in self.jobs.values()):raise ValueError('Дождитесь завершения текущих операций')
             if not self.desktop:raise ValueError('Установка обновления доступна в окне портативной программы')
-            if action=='update_prepare':return self.job('Обновление Game Clips',self.updater.prepare)
+            if action=='update_prepare':return self.job('Обновление AFTERPLAY',self.updater.prepare)
             result=self.updater.launch()
             threading.Timer(.5,self.desktop.exit).start()
             return result
@@ -408,11 +464,28 @@ class Suite:
             return {'ok':True}
         if action=='desktop_test' and self.test_control:
             op=arg.get('op','info')
+            if op=='ui_tab':
+                choice=arg.get('tab','library')
+                if choice not in {'library','settings','replay','favorites','exports'}:raise ValueError('Неизвестный экран')
+                self.window.evaluate_js('tab='+json.dumps(choice)+';render()')
+                return {'ok':True}
+            if op=='ui_check':
+                return self.window.evaluate_js("({title:document.title,theme:document.documentElement.dataset.theme,auto:!!document.querySelector('#autoEnabled'),hotkeys:!!document.querySelector('#saveHotkey'),logo:document.querySelector('#brandMark img')?.naturalWidth,overflow:document.documentElement.scrollWidth>window.innerWidth,cards:document.querySelectorAll('.settings-card').length})")
+            if op=='ui_clip':
+                cid=self.clip(str(arg['id']))['id']
+                self.window.evaluate_js('openClip('+json.dumps(cid)+')')
+                return {'ok':True}
+            if op=='ui_trim':
+                start,end=float(arg['start']),float(arg['end'])
+                if not 0<=start<end:raise ValueError('Invalid test range')
+                self.window.evaluate_js(f'setTrim({start},{end},{{seek:true}})')
+                return self.window.evaluate_js("({start:parse($('#clipIn').value),end:parse($('#clipOut').value),selected:$('#trimSelection').style.width,frames:$('#trimFilmstrip').naturalWidth,valid:trimFromFields(),overflow:$('#dialog').scrollWidth>$('#dialog').clientWidth})")
             if op=='close':threading.Timer(.1,self.window.destroy).start();return {'ok':True}
             if op=='show':self.desktop.show();return {'ok':True}
             if op=='hotkey':
-                if not self.replay or not self.replay.hotkey_ok:raise ValueError('Горячая клавиша не зарегистрирована')
-                ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,1,0)
+                if not self.replay or not (self.replay.hotkeys and self.replay.hotkeys.ok):raise ValueError('Горячая клавиша не зарегистрирована')
+                identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a=='save')
+                ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
                 return {'ok':True}
             return {'console_window':bool(ctypes.windll.kernel32.GetConsoleWindow()),
                     'native_visible':bool(self.window.native.Visible),
@@ -422,14 +495,14 @@ class Suite:
                     'icon_name':getattr(self.desktop,'current_icon_name',None),
                     'icon_error':getattr(self.desktop,'icon_error','')}
         if action.startswith('replay_'):
-            if not self.replay:raise ValueError('Повтор доступен только в Game Clips')
+            if not self.replay:raise ValueError('Повтор доступен только в AFTERPLAY')
             if action=='replay_devices':return self.replay.devices()
             if action=='replay_applications':
                 import process_audio
                 return {'applications':process_audio.applications()}
-            if action=='replay_config':return self.replay.configure(arg)
-            if action=='replay_start':return self.job('Включение повтора',lambda j:self.replay.start())
-            if action=='replay_stop':return self.job('Остановка повтора',lambda j:self.replay.stop())
+            if action=='replay_config':return self.auto.manual('configure',arg)
+            if action=='replay_start':return self.job('Включение повтора',lambda j:self.auto.manual('start'))
+            if action=='replay_stop':return self.job('Остановка повтора',lambda j:self.auto.manual('stop'))
             if action=='replay_save':return self.replay.save_job()
         if action == 'browse': return self.browse(arg.get('purpose'))
         if action == 'settings':
@@ -446,14 +519,11 @@ class Suite:
         if action=='clip_save': return self.save_clip(arg)
         if action=='clip_delete':return self.recycle_video(arg)
         if action=='exports':
-            return [{'name':p.name, 'size':p.stat().st_size,
-                     'at':time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(p.stat().st_mtime))}
-                    for p in sorted((self.data/'exports').glob('*.mp4'),key=lambda p:p.stat().st_mtime,reverse=True)
-                    if not p.name.endswith('.partial.mp4')][:200]
+            return [{**row,'at':time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(row['mtime']))} for row in storage.exports(self)[:200]]
         if action=='export': return self.job('Экспорт видео',lambda j:self.export(arg,j))
         if action=='open':
             target = arg.get('target')
-            if target=='exports': p=self.data/'exports'
+            if target=='exports': p=self.recordings_dir()
             elif target=='data': p=self.data
             elif target=='clip': p=Path(self.clip(arg['id'])['path'])
             else: raise ValueError('Неизвестная цель')
@@ -495,8 +565,10 @@ def server_for(suite, token=None, port=0):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
-                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','clips.ico','clips-recording.ico'}:
+                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','library-ui.js','afterplay.css','afterplay.png','clips.ico','clips-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
+                elif route.startswith('filmstrip/'):
+                    p=suite.filmstrip(route.split('/')[-1])
                 elif route.startswith('thumb/'):
                     cid=route.split('/')[-1]
                     suite.clip(cid)
@@ -544,6 +616,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--mode',choices=['clips'],default='clips')
     parser.add_argument('--serve',action='store_true')
+    parser.add_argument('--autostart',action='store_true')
     parser.add_argument('--data')
     parser.add_argument('--smoke',action='store_true')
     parser.add_argument('--report-url',action='store_true')
@@ -554,16 +627,18 @@ def main():
     suite.test_control=args.report_url
     if os.name=='nt' and not args.serve:
         ctypes.windll.kernel32.FreeConsole()
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('GVDesktop.'+args.mode)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('AFTERPLAY.Desktop')
     # Keep one desktop instance.
     if os.name=='nt' and not args.serve:
-        mutex=ctypes.windll.kernel32.CreateMutexW(None,False,'Local\\GVDesktop-'+args.mode)
+        mutex=ctypes.windll.kernel32.CreateMutexW(None,False,'Local\\AFTERPLAY-'+hashlib.sha256(str(suite.data.resolve()).lower().encode()).hexdigest()[:16])
         if ctypes.windll.kernel32.GetLastError()==183:
-            ctypes.windll.user32.MessageBoxW(None,'Приложение уже открыто. Проверь панель задач.', 'Game Clips',0)
+            ctypes.windll.user32.MessageBoxW(None,'Приложение уже открыто. Проверь панель задач.', 'AFTERPLAY',0)
             return
     if args.mode=='clips':
         from replay import Replay
         suite.replay=Replay(suite)
+        from auto_record import AutoRecorder
+        suite.auto=AutoRecorder(suite)
     server,token=server_for(suite)
     url=f'http://127.0.0.1:{server.server_port}/{token}/index.html?mode={args.mode}'
     if args.report_url:print(url+'&tab=replay',flush=True)
@@ -573,8 +648,8 @@ def main():
     else:
         import webview
         threading.Thread(target=server.serve_forever,daemon=True).start()
-        suite.window=webview.create_window('Game Clips',url,
-                                          width=1380,height=900,min_size=(1050,700),background_color='#101314',hidden=args.smoke)
+        suite.window=webview.create_window('AFTERPLAY',url,
+                                          width=1380,height=900,min_size=(1050,700),background_color='#101314',hidden=args.smoke or args.autostart)
         if suite.replay and not args.smoke:suite.replay.attach_desktop()
         if not args.smoke:
             from desktop import Desktop
@@ -600,7 +675,10 @@ def main():
             finally:
                 suite.window.destroy()
         try:
-            webview.start(smoke if args.smoke else None,gui='edgechromium',private_mode=True,
+            def ready():
+                if args.smoke:smoke()
+                elif suite.auto:suite.auto.start()
+            webview.start(ready,gui='edgechromium',private_mode=True,
                           storage_path=str(suite.data/'webview'/args.mode),
                           icon=str(BASE/'ui'/'clips.ico'))
         finally:
@@ -611,5 +689,5 @@ if __name__=='__main__':
     try: main()
     except Exception:
         (BASE/'startup-error.log').write_text(traceback.format_exc(),encoding='utf-8')
-        if os.name=='nt': ctypes.windll.user32.MessageBoxW(None,'Не удалось открыть приложение. См. startup-error.log рядом с app.py.', 'Game Clips',16)
+        if os.name=='nt': ctypes.windll.user32.MessageBoxW(None,'Не удалось открыть приложение. См. startup-error.log рядом с app.py.', 'AFTERPLAY',16)
         raise

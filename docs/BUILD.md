@@ -21,7 +21,7 @@ python scripts/build_portable.py
 Скрипт не перезаписывает существующую папку сборки. Для другой версии:
 
 ```powershell
-python scripts/build_portable.py --version 1.3.1
+python scripts/build_portable.py --version 1.4.1
 ```
 
 При повторной сборке той же версии переименуйте предыдущую папку `build/portable-1.3.0`

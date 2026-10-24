@@ -9,7 +9,7 @@ class Desktop:
         from PIL import Image,ImageDraw
         import pystray
         self.suite=suite;self.mode=mode;self.exiting=False;self.alive=True
-        self.title='Game Clips'
+        self.title='AFTERPLAY'
         self.notifications=None
         self.last_notice=None
         self.image=Image.open(Path(__file__).parent/'ui'/'clips.ico').convert('RGBA').resize((64,64))
@@ -61,14 +61,16 @@ class Desktop:
     def _status(self):
         from PIL import ImageDraw
         last=None
+        last_hotkey=None
         while self.alive:
             replay=self.suite.replay
             active=bool(replay and replay.phase in {'starting','recording','stopping'})
-            if active!=last:
+            hotkey=self.suite.cfg.get('hotkeys',{}).get('save','Ctrl+Alt+F10')
+            if active!=last or hotkey!=last_hotkey:
                 im=self.recording_image if active else self.image
                 try:
                     self.icon.icon=im
-                    self.icon.title=self.title+(' — ИДЁТ ЗАПИСЬ · Ctrl+Alt+F10' if active else '')
+                    self.icon.title=self.title+(' — ИДЁТ ЗАПИСЬ · '+hotkey if active else '')
                     self.icon.update_menu()
                     self.suite.window.set_title(self.title)
                     from System import Action
@@ -83,7 +85,7 @@ class Desktop:
                         if previous:previous.Dispose()
                     self.suite.window.native.Invoke(Action(assign))
                 except Exception as e:self.icon_error=str(e)
-                last=active
+                last=active;last_hotkey=hotkey
             time.sleep(.3)
 
     def shutdown(self):

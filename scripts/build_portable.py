@@ -12,8 +12,8 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('app.py', 'app_update.py', 'version.py', 'Updater.cs', 'shortcuts.py', 'replay.py', 'capture_media.py', 'video_quality.py', 'desktop.py', 'process_audio.py', 'runtime_trust.py', 'ProcessAudio.cs',
-         'Launcher.cs', 'ReplayNotification.cs', 'Install-Shortcuts.ps1', 'README.md',
+FILES = ('app.py', 'app_update.py', 'version.py', 'Updater.cs', 'shortcuts.py', 'replay.py', 'capture_media.py', 'video_quality.py', 'desktop.py', 'storage.py', 'auto_record.py', 'hotkeys.py', 'process_audio.py', 'runtime_trust.py', 'ProcessAudio.cs',
+         'Launcher.cs', 'app.manifest', 'ReplayNotification.cs', 'Install-Shortcuts.ps1', 'README.md',
          'THIRD-PARTY.md', 'FFmpeg-COPYING.GPLv3.txt', 'CHANGELOG.md')
 PYTHON_URL = 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-embed-amd64.zip'
 WEBVIEW_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124701'
@@ -45,15 +45,16 @@ def compile_components(target):
             args += ['/r:System.Windows.Forms.dll', '/r:System.Drawing.dll']
         run(args + [ROOT / (name + '.cs')])
     run([compiler, '/nologo', '/target:winexe', '/platform:x64',
-         '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll',
-         '/win32icon:' + str(ROOT / 'ui/clips.ico'),
-         '/out:' + str(target / 'Game Clips.exe'), ROOT / 'Launcher.cs'])
+         '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.Web.Extensions.dll',
+         '/win32icon:' + str(ROOT / 'ui/clips.ico'), '/win32manifest:'+str(ROOT/'app.manifest'),
+         '/out:' + str(target / 'AFTERPLAY.exe'), ROOT / 'Launcher.cs'])
+    shutil.copy2(target/'AFTERPLAY.exe',target/'Game Clips.exe')
     run([compiler, '/nologo', '/target:winexe', '/platform:x64', '/r:System.Web.Extensions.dll',
          '/r:System.Windows.Forms.dll', '/out:' + str(target / 'Updater.exe'), ROOT / 'Updater.cs'])
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', default='1.3.1')
+    parser.add_argument('--version', default='1.4.1')
     args = parser.parse_args()
     if os.name != 'nt' or sys.version_info[:2] != (3, 13) or struct.calcsize('P') != 8:
         parser.error('Use Windows x64 and 64-bit Python 3.13.')
@@ -61,7 +62,7 @@ def main():
         parser.error('Version must contain only digits, dots and hyphens.')
     cache = ROOT / 'build/downloads'
     cache.mkdir(parents=True, exist_ok=True)
-    target = ROOT / 'build' / ('portable-' + args.version) / 'Game Clips Portable'
+    target = ROOT / 'build' / ('portable-' + args.version) / 'AFTERPLAY Portable'
     # Do not delete or overwrite an earlier build or user data.
     target.mkdir(parents=True, exist_ok=False)
     for name in FILES:
@@ -104,12 +105,12 @@ def main():
     files.append(manifest)
     dist = ROOT / 'dist'
     dist.mkdir(exist_ok=True)
-    archive = dist / ('Game-Clips-' + args.version + '-Portable-Win64.zip')
+    archive = dist / ('AFTERPLAY-' + args.version + '-Portable-Win64.zip')
     if archive.exists():
         raise FileExistsError(archive)
     with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         for p in files:
-            z.write(p, Path('Game Clips Portable') / p.relative_to(target))
+            z.write(p, Path('AFTERPLAY Portable') / p.relative_to(target))
     with zipfile.ZipFile(archive) as z:
         corrupt = z.testzip()
         if corrupt:

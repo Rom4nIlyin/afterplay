@@ -5,8 +5,10 @@ on:
       version:
         description: Version without v
         required: true
-        default: '1.3.1'
+        default: '1.4.1'
   push:
+    branches: ['main']
+    paths: ['version.py']
     tags: ['v*']
 permissions:
   contents: write
@@ -18,7 +20,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     env:
-      RELEASE_VERSION: ${{ inputs.version || github.ref_name }}
+      RELEASE_VERSION: ${{ inputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -32,13 +34,14 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:RELEASE_VERSION -replace '^v', ''
+          if (-not $version) { $version = python -c 'from version import VERSION; print(VERSION)' }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
           python -m pip install -r requirements-lock.txt
           python -m unittest discover -s tests
           if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
           python scripts/build_portable.py --version $version
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
-          $bundle = "build/portable-$version/Game Clips Portable"
+          $bundle = "build/portable-$version/AFTERPLAY Portable"
           & "$bundle/runtime/python.exe" -c 'import av, windows_capture, pyaudiowpatch, webview; print("Portable imports OK")'
           if ($LASTEXITCODE -ne 0) { throw 'Portable runtime failed' }
           "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
@@ -46,6 +49,6 @@ jobs:
         shell: pwsh
         run: |
           $assets = @(Get-ChildItem dist/*.zip, dist/*.sha256 | ForEach-Object FullName)
-          gh release create $env:RELEASE_TAG @assets --target $env:GITHUB_SHA --title "Game Clips $env:RELEASE_TAG" --notes-file docs/RELEASE.md --latest
+          gh release create $env:RELEASE_TAG @assets --target $env:GITHUB_SHA --title "AFTERPLAY $env:RELEASE_TAG" --notes-file docs/RELEASE.md --latest
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
 

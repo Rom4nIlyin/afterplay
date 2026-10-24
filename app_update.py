@@ -16,7 +16,7 @@ import uuid
 import zipfile
 from version import VERSION
 
-REPOSITORY = 'Rom4nIlyin/game-clips'
+REPOSITORY = 'Rom4nIlyin/afterplay'
 LATEST_URL = f'https://api.github.com/repos/{REPOSITORY}/releases/latest'
 MAX_DOWNLOAD = 1024**3
 MAX_EXTRACT = 3*1024**3
@@ -57,8 +57,8 @@ def safe_name(name):
 def release_info(release, current=VERSION):
     if release.get('draft') or release.get('prerelease'):raise ValueError('Ожидался стабильный релиз')
     tag=release.get('tag_name','');version=tag.lstrip('v');new=version_tuple(tag)
-    name=f'Game-Clips-{version}-Portable-Win64.zip'
     assets={a['name']:a for a in release.get('assets',[])}
+    name=next((n for n in (f'AFTERPLAY-{version}-Portable-Win64.zip',f'Game-Clips-{version}-Portable-Win64.zip') if n in assets),f'AFTERPLAY-{version}-Portable-Win64.zip')
     asset=assets.get(name)
     if not asset or asset.get('state')!='uploaded':raise ValueError('В релизе пока нет готового портативного архива')
     expected=f'https://github.com/{REPOSITORY}/releases/download/{tag}/{name}'
@@ -85,8 +85,8 @@ def unpack_verified(archive, destination, expected_version):
         names=set();members=[];total=0
         for info in z.infolist():
             if info.is_dir():continue
-            prefix='Game Clips Portable/'
-            if not info.filename.startswith(prefix):raise ValueError('Некорректная структура архива')
+            prefix=next((p for p in ('AFTERPLAY Portable/','Game Clips Portable/') if info.filename.startswith(p)),None)
+            if not prefix:raise ValueError('Некорректная структура архива')
             name=info.filename[len(prefix):];safe_name(name)
             if name.casefold() in names:raise ValueError('Повторяющийся путь в архиве')
             names.add(name.casefold())

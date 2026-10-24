@@ -103,7 +103,7 @@ class Updater {
                 Copy(Member(stage,name),Member(target,name));changed.Add(name);
             }
             Status(status,new { success=true,version=version,backup=backup,stage=stage,message="Обновление установлено. Записи и настройки сохранены." });
-            if(restart)Process.Start(new ProcessStartInfo(Path.Combine(target,"Game Clips.exe")) { WorkingDirectory=target,UseShellExecute=false });
+            if(restart)Process.Start(new ProcessStartInfo(Path.Combine(target,File.Exists(Path.Combine(target,"AFTERPLAY.exe"))?"AFTERPLAY.exe":"Game Clips.exe")) { WorkingDirectory=target,UseShellExecute=false });
             return 0;
         } catch(Exception error) {
             string rollbackError="";

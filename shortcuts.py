@@ -3,10 +3,14 @@ from pathlib import Path
 import os
 import subprocess
 
-APP_ID='GVDesktop.clips'
+APP_ID='AFTERPLAY.Desktop'
+
+def executable(root):
+    root=Path(root)
+    return root/'AFTERPLAY.exe' if (root/'AFTERPLAY.exe').is_file() else root/'Game Clips.exe'
 
 def create_shortcut(root,location='desktop',folder=None):
-    root=Path(root).resolve();exe=root/'Game Clips.exe'
+    root=Path(root).resolve();exe=executable(root)
     if not exe.is_file():raise ValueError('Ярлык доступен в готовой портативной сборке')
     import pythoncom
     import win32com.client
@@ -19,13 +23,14 @@ def create_shortcut(root,location='desktop',folder=None):
             folder=Path(shell.SHGetFolderPath(0,csidl,0,0))
         folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
         ws=win32com.client.Dispatch('WScript.Shell')
-        path=folder/'Game Clips.lnk';number=1
+        path=folder/'AFTERPLAY.lnk';number=1
         while path.exists():
             old=ws.CreateShortcut(str(path))
             if str(old.TargetPath).casefold()==str(exe).casefold():break
-            number+=1;path=folder/f'Game Clips ({number}).lnk'
+            number+=1;path=folder/f'AFTERPLAY ({number}).lnk'
         link=ws.CreateShortcut(str(path));link.TargetPath=str(exe);link.WorkingDirectory=str(root)
-        link.IconLocation=str(exe)+',0';link.Description='Game Clips — видеотека и мгновенный повтор';link.Save()
+        link.Arguments='--autostart' if location=='startup' else ''
+        link.IconLocation=str(exe)+',0';link.Description='AFTERPLAY — видеотека и мгновенный повтор';link.Save()
         store=propsys.SHGetPropertyStoreFromParsingName(str(path),None,shellcon.GPS_READWRITE,propsys.IID_IPropertyStore)
         store.SetValue(pscon.PKEY_AppUserModel_ID,propsys.PROPVARIANTType(APP_ID));store.Commit()
         return path
@@ -39,15 +44,17 @@ def taskbar_shortcut(root):
 
 def set_autostart(root,enabled,folder=None):
     if not isinstance(enabled,bool):raise ValueError('Ожидался переключатель автозапуска')
-    if enabled:return {'enabled':True,'path':str(create_shortcut(root,'startup',folder))}
     import pythoncom
     import win32com.client
     from win32com.shell import shell,shellcon
     pythoncom.CoInitialize()
     try:
         folder=Path(folder or shell.SHGetFolderPath(0,shellcon.CSIDL_STARTUP,0,0))
-        ws=win32com.client.Dispatch('WScript.Shell');target=str(Path(root).resolve()/'Game Clips.exe')
-        for link in folder.glob('Game Clips*.lnk'):
-            if str(ws.CreateShortcut(str(link)).TargetPath).casefold()==target.casefold():link.unlink()
-        return {'enabled':False}
+        ws=win32com.client.Dispatch('WScript.Shell')
+        targets={str(Path(root).resolve()/name).casefold() for name in ('Game Clips.exe','AFTERPLAY.exe')}
+        created=create_shortcut(root,'startup',folder) if enabled else None
+        for link in folder.glob('*.lnk'):
+            if created and link==created:continue
+            if str(ws.CreateShortcut(str(link)).TargetPath).casefold() in targets:link.unlink()
+        return {'enabled':enabled,**({'path':str(created)} if created else {})}
     finally:pythoncom.CoUninitialize()

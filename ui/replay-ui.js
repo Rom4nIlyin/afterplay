@@ -9,7 +9,7 @@ window.replayPage=function(){
  const screens=replayDevices?.monitors||[],audio=replayDevices?.audio||[],apps=replayDevices?.applications||[],active=['starting','recording','stopping'].includes(r.phase)||r.saving;
  return `<div class="page-head"><div><div class="eyebrow">KEEP YOUR BEST MOMENTS</div><h1>Мгновенный повтор</h1><p>Играешь — буфер обновляется. Нажимаешь клавиши — момент сохранён.</p></div><span class="pill gold">H.264 · GPU / CPU</span></div>
  <section class="replay-hero"><div class="replay-orb" id="replayOrb">${icon('clock')}</div><div class="replay-main"><div class="eyebrow" id="replayPhase">ПОВТОР ВЫКЛЮЧЕН</div><div class="replay-time"><span id="replayTime">00:00</span><small id="replayLimit">/ ${fmt(cfg.seconds||300).slice(3)}</small></div><p id="replayDescription">Включи буфер перед игрой, чтобы сохранить предшествующие события.</p><div class="replay-track"><span id="replayFill"></span></div></div></section>
- <div class="actions replay-actions">${active?button('replay-stop','Остановить повтор','close','danger'):button('replay-start','Включить повтор','play','primary')}${button('replay-save',`Сохранить последние ${minutes} мин`,'download','secondary',`id="replaySave" ${r.phase!=='recording'||r.saving?'disabled':''}`)}<span class="replay-hotkey"><span class="kbd">Ctrl</span> + <span class="kbd">Alt</span> + <span class="kbd">F10</span><span id="hotkeyStatus"></span></span></div>
+ <div class="actions replay-actions">${active?button('replay-stop','Остановить повтор','close','danger'):button('replay-start','Включить повтор','play','primary')}${button('replay-save',`Сохранить последние ${minutes} мин`,'download','secondary',`id="replaySave" ${r.phase!=='recording'||r.saving?'disabled':''}`)}<span class="replay-hotkey"><span class="kbd">${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</span><span id="hotkeyStatus"></span></span></div>
  <div class="two-col"><section class="panel panel-pad"><div class="panel-title">ЗАХВАТ И КАЧЕСТВО</div>
  <div class="field"><label>Длительность буфера</label><select id="replaySeconds" ${active?'disabled':''}>${[1,3,5,10,15,20,30].map(n=>`<option value="${n*60}" ${minutes===n?'selected':''}>${n} мин</option>`).join('')}</select><small>Сохраняется выбранное время перед нажатием горячей клавиши. Длинный буфер требует больше места на диске.</small></div>
  <div class="field"><label>Что записывать</label><select id="replayCaptureMode" ${active?'disabled':''}>${options([['monitor','Весь выбранный экран'],['window','Только окно приложения']],cfg.capture_mode||'monitor')}</select></div>
@@ -30,7 +30,7 @@ window.replayPage=function(){
  <div class="time-inputs"><div><label>Качество звука</label><select id="replayAudioBitrate" ${active?'disabled':''}>${options([128,192,256,320].map(n=>[n,n+' кбит/с']),cfg.audio_bitrate||192)}</select></div><div><label>Сдвиг звука, мс</label><input id="replayOffset" type="number" min="-2000" max="2000" step="10" value="${cfg.audio_offset_ms||0}" ${active?'disabled':''}></div></div><div class="field"><small>Обычно оставляй 0. Отрицательное значение сдвигает звук раньше, положительное — позже.</small></div>
  <div class="audio-level"><span id="audioIndicator"></span><div><b id="audioLabel">Ожидает запуска</b><small id="audioSource">${esc(r.audio_name||'')}</small></div><div class="audio-meter"><span id="audioMeter"></span></div></div>
  <small id="replayAppStatus" class="hint">Список окон обновляется автоматически каждые 3 секунды.</small><div class="actions" style="margin-top:20px">${button('replay-settings','Сохранить настройки','check','quiet',active?'disabled':'')}${button('replay-devices','Обновить список','refresh','quiet',active?'disabled':'')}</div></section>
- <section><div class="panel panel-pad"><div class="panel-title">КАК СОХРАНИТЬ МОМЕНТ</div><p style="font-size:12px">1. Нажми «Включить повтор» перед игрой.<br><br>2. После нужного момента нажми <b>Ctrl + Alt + F10</b>.<br><br>3. Готовая запись появится в библиотеке и разделе «Экспорт».</p><div class="notice">Если с запуска прошло меньше ${minutes} мин, сохранится накопленная часть. Во время записи логотипы в трее и на панели задач становятся красными. Остановить запись можно здесь или через меню трея.</div></div><div class="panel panel-pad" style="margin-top:18px"><div class="panel-title">СОСТОЯНИЕ</div><p id="replayInfo" style="font-size:12px"></p><div id="replayLast" class="hint"></div><div class="actions" style="margin-top:18px">${button('open-exports','Открыть записи','folder')}</div></div></section></div>
+ <section><div class="panel panel-pad"><div class="panel-title">КАК СОХРАНИТЬ МОМЕНТ</div><p style="font-size:12px">1. Нажми «Включить повтор» или настрой автозапись.<br><br>2. После нужного момента нажми <b>${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</b>.<br><br>3. Готовая запись появится в библиотеке и разделе «Экспорт».</p><div class="notice">Если с запуска прошло меньше ${minutes} мин, сохранится накопленная часть. Состояние записи видно в окне и в подсказке значка трея. Остановить запись можно здесь или через меню трея.</div></div><div class="panel panel-pad" style="margin-top:18px"><div class="panel-title">СОСТОЯНИЕ</div><p id="replayInfo" style="font-size:12px"></p><div id="replayLast" class="hint"></div><div class="actions" style="margin-top:18px">${button('open-exports','Открыть записи','folder')}</div></div></section></div>
  <div id="replayError" class="notice hidden"></div>`;
 };
 window.renderDesktopExtras=function(){
@@ -82,7 +82,7 @@ window.replayAction=async function(a,el){
  if(a==='desktop-exit'){await api('desktop_exit');return}
  if(a==='replay-devices'){await refreshReplayDevices(true);toast('Список окон и устройств обновлён');return}
  if(a==='replay-settings'){await replaySettings();await refresh(false);toast('Настройки повтора сохранены');return}
- if(a==='replay-start'){await replaySettings();await task('replay_start',{},()=>{refresh(false);toast('Повтор включён · сохранить: Ctrl+Alt+F10')});return}
+ if(a==='replay-start'){await replaySettings();await task('replay_start',{},()=>{refresh(false);toast('Повтор включён · сохранить: '+(state.settings.hotkeys?.save||'Ctrl+Alt+F10'))});return}
  if(a==='replay-stop'){await task('replay_stop',{},()=>{refresh(false);toast('Запись остановлена')});return}
  if(a==='replay-save'){await task('replay_save',{},r=>{refresh(false);modal('Повтор сохранён',`<p>${fmt(r.duration)} · ${r.width} × ${r.height} · аудиодорожек: ${r.audio}</p><div class="result-path" style="margin-top:15px">${esc(r.path)}</div>`,button('close','Готово','check','quiet')+button('open-exports','Открыть папку','folder','primary'))});return}
 };
@@ -146,14 +146,14 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshRep
 document.addEventListener('focusout',e=>{if(['replayWindow','replayApplication'].includes(e.target.id))setTimeout(refreshReplayApplications,0)});
 window.videoDeleteAction=async function(a,el){
  if(a==='delete-video'){
-  const item=el.dataset.export?{name:el.dataset.export,path:'Папка экспорта Game Clips'}:state.clips.find(c=>c.id===el.dataset.id);
+  const item=el.dataset.export?{name:el.dataset.exportName||el.dataset.export,path:'Папка экспорта AFTERPLAY'}:state.clips.find(c=>c.id===el.dataset.id);
   if(!item)throw Error('Видео не найдено');
   if(selected&&selected.id===item.id&&$('#clipTags'))await saveClip();
   const player=$('#player');if(player){player.pause();player.removeAttribute('src');player.load()}
-  modal('Переместить видео в корзину?',`<p><b>${esc(item.name)}</b></p><div class="result-path" style="margin-top:15px">${esc(item.path)}</div><p style="margin-top:16px;font-size:12px">Будет удалён сам видеофайл. Вернуть его можно из корзины Windows. Остальные записи останутся на месте.</p>`,button('close','Отмена','close','quiet')+button('delete-video-confirm','В корзину','trash','danger',el.dataset.export?`data-export="${esc(el.dataset.export)}"`:`data-id="${esc(item.id)}"`));return;
+  modal('Переместить видео в корзину?',`<p><b>${esc(item.name)}</b></p><div class="result-path" style="margin-top:15px">${esc(item.path)}</div><p style="margin-top:16px;font-size:12px">Будет удалён сам видеофайл. Вернуть его можно из корзины Windows. Остальные записи останутся на месте.</p>`,button('close','Отмена','close','quiet')+button('delete-video-confirm','В корзину','trash','danger',el.dataset.export?`data-export="${esc(el.dataset.export)}" data-export-name="${esc(item.name)}"`:`data-id="${esc(item.id)}"`));return;
  }
  if(a==='delete-video-confirm'){
-  const args=el.dataset.export?{export_name:el.dataset.export}:{id:el.dataset.id};
+  const args=el.dataset.export?{export_key:el.dataset.export}:{id:el.dataset.id};
   el.disabled=true;
   try{await api('clip_delete',args);close();await refresh();toast('Видео перемещено в корзину Windows')}
   catch(e){el.disabled=false;throw e}
