@@ -369,9 +369,13 @@ class Suite:
     def recordings_dir(self):
         return storage.recording_dir(self)
 
-    def filmstrip(self,cid):
+    def filmstrip(self,cid,start=0,end=None):
+        import math
         clip=self.clip(cid);source=Path(clip['path']);st=source.stat()
-        signature=hashlib.sha256(f"{st.st_size}:{st.st_mtime_ns}".encode()).hexdigest()[:12]
+        start=float(start);end=float(clip['duration'] if end is None else end)
+        if not math.isfinite(start) or not math.isfinite(end) or not 0<=start<end<=float(clip['duration'])+.1:
+            raise ValueError('Недопустимый диапазон кадров')
+        signature=hashlib.sha256(f"{st.st_size}:{st.st_mtime_ns}:{start:.3f}:{end:.3f}".encode()).hexdigest()[:12]
         target=self.data/'thumbs'/f'{cid}-strip-{signature}.jpg'
         with self.filmstrip_lock:
             if target.is_file():return target
@@ -379,7 +383,7 @@ class Suite:
             sheet=Image.new('RGB',(160*12,90),(20,26,30))
             available=0
             for index in range(12):
-                position=max(0,float(clip['duration'])*index/12)
+                position=max(0,start+(end-start)*index/12)
                 frame=run([self.ff(),'-hide_banner','-loglevel','error','-ss',f'{position:.3f}',
                            '-i',source,'-frames:v','1','-vf','scale=160:90:force_original_aspect_ratio=decrease,pad=160:90:(ow-iw)/2:(oh-ih)/2',
                            '-threads','1','-f','image2pipe','-vcodec','mjpeg','pipe:1'],timeout=20)
@@ -574,7 +578,12 @@ class Suite:
             target = arg.get('target')
             if target=='exports': p=self.recordings_dir()
             elif target=='data': p=self.data
-            elif target=='clip': p=Path(self.clip(arg['id'])['path'])
+            elif target in {'clip','clip-folder'}:
+                p=Path(self.clip(arg['id'])['path'])
+                if not p.is_file():raise ValueError('Файл записи не найден')
+                if target=='clip-folder':
+                    subprocess.Popen(['explorer.exe','/select,',str(p)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=NO_WINDOW)
+                    return {'ok':True}
             else: raise ValueError('Неизвестная цель')
             os.startfile(str(p))
             return {'ok':True}
@@ -614,10 +623,11 @@ def server_for(suite, token=None, port=0):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
-                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','library-ui.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
+                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','trim-viewport.js','navigation-ui.js','library-ui.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
                 elif route.startswith('filmstrip/'):
-                    p=suite.filmstrip(route.split('/')[-1])
+                    query=parse_qs(urlparse(self.path).query)
+                    p=suite.filmstrip(route.split('/')[-1],query.get('start',[0])[0],query.get('end',[None])[0])
                 elif route.startswith('thumb/'):
                     cid=route.split('/')[-1]
                     suite.clip(cid)
@@ -727,6 +737,7 @@ def main():
             def ready():
                 if args.smoke:smoke()
                 else:
+                    if suite.desktop:suite.desktop.attach_navigation()
                     if suite.auto:suite.auto.start()
                     threading.Thread(target=suite.automatic_updates,daemon=True).start()
             webview.start(ready,gui='edgechromium',private_mode=True,

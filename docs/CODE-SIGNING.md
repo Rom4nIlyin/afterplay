@@ -2,7 +2,7 @@
 
 ## Current status
 
-The maintainer is applying to the SignPath Foundation open-source signing program.
+The maintainer submitted an application to the SignPath Foundation open-source signing program on 24 October 2026. The application form confirmed receipt.
 Approval and a production signing certificate have not yet been granted. Releases
 remain unsigned until this page explicitly records approval and the release's
 Authenticode signatures verify successfully. A clean antivirus scan is not a

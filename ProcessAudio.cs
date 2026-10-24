@@ -3,6 +3,12 @@ using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Threading;
 
+[assembly:System.Reflection.AssemblyTitle("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyProduct("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyCompany("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyVersion("1.7.0.0")]
+[assembly:System.Reflection.AssemblyFileVersion("1.7.0.0")]
+
 namespace AfterplayAudio {
  [ComVisible(true), Guid("41D949AB-9862-444A-80F6-C261334DA5EB"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
  public interface ICompletion { [PreserveSig] int ActivateCompleted(IAsyncOperation operation); }

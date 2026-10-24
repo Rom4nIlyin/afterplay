@@ -3,7 +3,47 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
+[assembly:System.Reflection.AssemblyTitle("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyProduct("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyCompany("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyVersion("1.7.0.0")]
+[assembly:System.Reflection.AssemblyFileVersion("1.7.0.0")]
+
 namespace Afterplay {
+    // A local WinForms message filter, active only inside this application's form.
+    // It does not register a system mouse hook or observe other applications.
+    public sealed class DesktopNavigation : IMessageFilter {
+        private readonly Form host;
+        private readonly Action<int> navigate;
+        private DesktopNavigation(Form form, Action<int> action) { host=form; navigate=action; }
+        public static DesktopNavigation Attach(Form form, Action<int> action) {
+            var filter=new DesktopNavigation(form,action);
+            Application.AddMessageFilter(filter);
+            form.FormClosed += delegate { Application.RemoveMessageFilter(filter); };
+            return filter;
+        }
+        public bool PreFilterMessage(ref Message message) {
+            Control control=Control.FromChildHandle(message.HWnd);
+            if(control==null || control.FindForm()!=host)return false;
+            int direction=0;bool invoke=true;
+            if(message.Msg==0x0319) {
+                int command=(int)((message.LParam.ToInt64()>>16)&0xfff);
+                if(command==1)direction=-1;else if(command==2)direction=1;
+            } else if(message.Msg==0x020B || message.Msg==0x020C) {
+                int button=(int)((message.WParam.ToInt64()>>16)&0xffff);
+                if(button==1)direction=-1;else if(button==2)direction=1;
+                invoke=message.Msg==0x020C;
+            } else if(message.Msg==0x0100 || message.Msg==0x0101) {
+                int key=message.WParam.ToInt32();
+                if(key==0xA6)direction=-1;else if(key==0xA7)direction=1;
+                invoke=message.Msg==0x0101;
+            }
+            if(direction==0)return false;
+            if(invoke)navigate(direction);
+            return true;
+        }
+    }
+
     public static class ReplayNotifications {
         private static ReplayNotice current;
         public static bool Visible { get { return current != null && !current.IsDisposed && current.Visible; } }

@@ -267,7 +267,13 @@ Bundled third-party components retain their respective licenses; see [THIRD-PART
 
 ## Code signing policy
 
-The maintainer is applying for free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+The maintainer has submitted an application for free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 Approval is pending; current releases must not be described as signed until their signatures verify.
 Committer, reviewer and approver: [Roman Ilyin](https://github.com/Rom4nIlyin).
 See the [code signing and privacy policy](docs/CODE-SIGNING.md) for the precise status, signing scope and privacy information.
+
+## Дорожка и навигация в 1.7.0
+
+Наведите курсор на дорожку выбора отрезка и вращайте колесо мыши для масштаба. Shift + колесо и нижний ползунок перемещают видимый диапазон. «К выделению» увеличивает выбранный фрагмент, «Вся дорожка» возвращает обзор. Выделение при зуме сохраняется.
+«Открыть в папке» в просмотре выделяет файл в Проводнике. Боковые кнопки мыши возвращают к предыдущим и следующим разделам/просмотрам.
+Кнопка проверки обновлений ничего не скачивает. При наличии версии используйте появившуюся кнопку «Скачать и установить обновление».

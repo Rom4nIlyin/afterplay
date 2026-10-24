@@ -9,6 +9,12 @@ using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
+[assembly:System.Reflection.AssemblyTitle("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyProduct("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyCompany("AFTERPLAY")]
+[assembly:System.Reflection.AssemblyVersion("1.7.0.0")]
+[assembly:System.Reflection.AssemblyFileVersion("1.7.0.0")]
+
 // Runs from the update cache, outside the runtime that it replaces.
 class Updater {
     static JavaScriptSerializer json=new JavaScriptSerializer { MaxJsonLength=8*1024*1024 };

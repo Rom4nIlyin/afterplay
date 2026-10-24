@@ -30,6 +30,23 @@ class Desktop:
     def show(self,*_):
         self.suite.window.show();self.suite.window.restore()
 
+    def attach_navigation(self):
+        from System import Action,Int32
+        if not self.suite.window.events.loaded.wait(15):
+            self.suite.log('navigation_attach_failed',error='Native window did not become ready')
+            return
+        def navigate(direction):
+            threading.Thread(target=lambda:self.suite.window.evaluate_js('historyDirection('+str(int(direction))+')'),daemon=True).start()
+        def attach():
+            try:
+                import clr
+                clr.AddReference(str(Path(__file__).parent/'ReplayNotification.dll'))
+                from Afterplay import DesktopNavigation
+                self._navigate_callback=Action[Int32](navigate)
+                self._navigation_filter=DesktopNavigation.Attach(self.suite.window.native,self._navigate_callback)
+            except Exception as error:self.suite.log('navigation_attach_failed',error=str(error))
+        self.suite.window.native.BeginInvoke(Action(attach))
+
     def closing(self):
         settings=self.suite.cfg.get('desktop',{}).get(self.mode,{})
         if not self.exiting and settings.get('close_action','close')=='tray':

@@ -5,13 +5,14 @@ on:
       version:
         description: Version without v
         required: true
-        default: '1.6.0'
+        default: '1.7.0'
   push:
     branches: ['main']
     paths: ['version.py']
     tags: ['v*']
 permissions:
   contents: write
+  actions: read
 concurrency:
   group: portable-release
   cancel-in-progress: false
@@ -37,6 +38,8 @@ jobs:
           if (-not $version) { $version = python -c 'from version import VERSION; print(VERSION)' }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
           python -m pip install -r requirements-lock.txt
+          node tests/test_viewport.js
+          if ($LASTEXITCODE -ne 0) { throw 'Timeline tests failed' }
           python -m unittest discover -s tests
           if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
           python scripts/build_portable.py --version $version
@@ -45,6 +48,46 @@ jobs:
           & "$bundle/runtime/python.exe" -c 'import av, windows_capture, pyaudiowpatch, webview; print("Portable imports OK")'
           if ($LASTEXITCODE -ne 0) { throw 'Portable runtime failed' }
           "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Upload application binaries for verified signing
+        if: vars.SIGNPATH_ENABLED == 'true'
+        id: unsigned-binaries
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: afterplay-unsigned-binaries
+          if-no-files-found: error
+          path: |
+            build/portable-*/AFTERPLAY Portable/AFTERPLAY.exe
+            build/portable-*/AFTERPLAY Portable/Updater.exe
+            build/portable-*/AFTERPLAY Portable/ProcessAudio.dll
+            build/portable-*/AFTERPLAY Portable/ReplayNotification.dll
+      - name: Request SignPath signature and wait for maintainer approval
+        if: vars.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.unsigned-binaries.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: build/signed
+          parameters: |
+            version: "${{ env.RELEASE_VERSION }}.0"
+      - name: Verify signed files and regenerate portable checksums
+        if: vars.SIGNPATH_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          $bundle = "build/portable-$env:RELEASE_VERSION/AFTERPLAY Portable"
+          foreach ($name in @('AFTERPLAY.exe','Updater.exe','ProcessAudio.dll','ReplayNotification.dll')) {
+            $file = Join-Path 'build/signed' $name
+            $signature = Get-AuthenticodeSignature -LiteralPath $file
+            if ($signature.Status -ne 'Valid') { throw "Invalid signature: $name" }
+            Copy-Item -LiteralPath $file -Destination (Join-Path $bundle $name)
+          }
+          python scripts/repackage_portable.py --bundle $bundle --output dist --version $env:RELEASE_VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'Signed bundle verification failed' }
       - name: Publish ZIP and SHA-256
         shell: pwsh
         run: |

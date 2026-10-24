@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('node:assert/strict');
+require('../ui/trim-viewport.js');
+const v=globalThis.TrimViewport,s={duration:300,start:189.373,end:194.373,viewStart:0,viewEnd:300};
+const zoom=v.zoom(s,10,.64);
+assert.equal(zoom.viewEnd-zoom.viewStart,30);
+assert.ok(Math.abs(v.time({...s,...zoom},.64)-192)<1e-9,'wheel anchor should stay at the same time');
+assert.equal(s.start,189.373);assert.equal(s.end,194.373);
+const fit=v.fit(s);assert.ok(fit.viewStart<s.start&&fit.viewEnd>s.end);
+assert.equal(v.pan({...s,...zoom},-1000).viewStart,0);
+assert.equal(v.pan({...s,...zoom},1000).viewEnd,300);
+assert.ok(v.zoom({...s,...zoom},100000,.5).viewEnd-v.zoom({...s,...zoom},100000,.5).viewStart>=.25-1e-9);
+assert.equal(v.zoom(s,.001,.5).viewEnd,300);
+console.log('Timeline: cursor anchor, selection preservation, fit, pan and zoom bounds passed');
