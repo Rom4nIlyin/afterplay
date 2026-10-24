@@ -9,9 +9,9 @@ from hotkeys import GlobalHotkeys,parse,validate
 
 class ShortcutsTests(unittest.TestCase):
     def test_editing_releases_and_restores_keys_and_new_binding(self):
-        manager=GlobalHotkeys({'save':lambda:None,'auto':lambda:None},lambda *a,**k:None)
+        manager=GlobalHotkeys({'save':lambda:None,'auto':lambda:None,'window':lambda:None},lambda *a,**k:None)
         try:
-            first={'save':'Ctrl+Alt+Shift+F21','auto':'Ctrl+Alt+Shift+F22'}
+            first={'save':'Ctrl+Alt+Shift+F21','auto':'Ctrl+Alt+Shift+F22','window':'Ctrl+Alt+Shift+F24'}
             manager.configure(first);manager.editing(True)
             self.assertEqual(manager.registered,{})
             manager.editing(False);self.assertEqual(set(manager.registered),set(first.values()))
@@ -30,16 +30,16 @@ class ShortcutsTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate({'save':'F8','auto':'F8'})
 
     def test_win32_registration_rebind_conflict_rollback_and_action_swap(self):
-        hit=threading.Event();manager=GlobalHotkeys({'save':hit.set,'auto':lambda:None},lambda *a,**k:None)
+        hit=threading.Event();manager=GlobalHotkeys({'save':hit.set,'auto':lambda:None,'window':lambda:None},lambda *a,**k:None)
         reserved=False
         try:
-            first={'save':'Ctrl+Alt+Shift+F18','auto':'Ctrl+Alt+Shift+F19'}
+            first={'save':'Ctrl+Alt+Shift+F18','auto':'Ctrl+Alt+Shift+F19','window':'Ctrl+Alt+Shift+F24'}
             manager.configure(first);before=dict(manager.registered)
             reserved=bool(ctypes.windll.user32.RegisterHotKey(None,992,0x4007,0x83)) # F20
             self.assertTrue(reserved)
-            with self.assertRaises(ValueError):manager.configure({'save':'Ctrl+Alt+Shift+F20','auto':first['auto']})
+            with self.assertRaises(ValueError):manager.configure({'save':'Ctrl+Alt+Shift+F20','auto':first['auto'],'window':first['window']})
             self.assertEqual(manager.registered,before)
-            manager.configure({'save':first['auto'],'auto':first['save']})
+            manager.configure({'save':first['auto'],'auto':first['save'],'window':first['window']})
             identifier=next(i for i,a in manager.actions.items() if a=='save')
             ctypes.windll.user32.PostThreadMessageW(manager.tid,0x0312,identifier,0)
             self.assertTrue(hit.wait(3))

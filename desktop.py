@@ -28,7 +28,26 @@ class Desktop:
         threading.Thread(target=self._status,daemon=True).start()
 
     def show(self,*_):
-        self.suite.window.show();self.suite.window.restore()
+        self._window_action(False)
+
+    def toggle(self):
+        self._window_action(True)
+
+    def _window_action(self, toggle):
+        from System import Action
+        from System.Windows.Forms import FormWindowState
+        def apply():
+            native=self.suite.window.native
+            if self.exiting or native.IsDisposed:return
+            if toggle and native.Visible and native.WindowState != FormWindowState.Minimized:
+                native.Hide()
+            else:
+                native.Show()
+                if native.WindowState == FormWindowState.Minimized:
+                    native.WindowState=FormWindowState.Normal
+                native.BringToFront()
+                native.Activate()
+        self.suite.window.native.BeginInvoke(Action(apply))
 
     def attach_navigation(self):
         from System import Action,Int32
@@ -38,6 +57,15 @@ class Desktop:
         def navigate(direction):
             threading.Thread(target=lambda:self.suite.window.evaluate_js('historyDirection('+str(int(direction))+')'),daemon=True).start()
         def attach():
+            try:
+                native=self.suite.window.native
+                core=native.webview.CoreWebView2
+                def fullscreen_changed(sender,event):
+                    desired=bool(sender.ContainsFullScreenElement)
+                    if desired!=bool(native.is_fullscreen):native.toggle_fullscreen()
+                self._fullscreen_callback=fullscreen_changed
+                core.ContainsFullScreenElementChanged+=self._fullscreen_callback
+            except Exception as error:self.suite.log('fullscreen_attach_failed',error=str(error))
             try:
                 import clr
                 clr.AddReference(str(Path(__file__).parent/'ReplayNotification.dll'))

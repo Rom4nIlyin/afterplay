@@ -13,7 +13,7 @@ def validate_duration(value):
     return value
 
 
-def encode(suite, source, target, start, duration, job, width=720):
+def encode(suite, source, target, start, duration, job, width=720, timer=False):
     duration = validate_duration(duration)
     if width not in (480, 720, 960):
         raise ValueError('Ширина GIF: 480, 720 или 960 пикселей')
@@ -24,8 +24,12 @@ def encode(suite, source, target, start, duration, job, width=720):
     # Rolling TS packets can have a nonzero clock and no seek index. Decode the
     # bounded selected segments and trim on their normalized presentation clock.
     trim_start = start if transport else 0
+    overlay = ''
+    if timer:
+        from timer_overlay import video_filter
+        overlay = video_filter() + ','
     graph = (f"[0:v]setpts=PTS-STARTPTS,trim=start={trim_start:.6f}:duration={duration:.6f},setpts=PTS-STARTPTS,"
-             f"fps=15,scale=w='min({width},iw)':h=-2:flags=lanczos,setsar=1,split[a][b];"
+             f"fps=15,scale=w='min({width},iw)':h=-2:flags=lanczos,setsar=1,{overlay}split[a][b];"
              '[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a[v]')
     seek = [] if transport else ['-ss', f'{start:.6f}', '-t', f'{duration:.6f}']
     command = [suite.ff(), '-hide_banner', '-loglevel', 'error', *seek,

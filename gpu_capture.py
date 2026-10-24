@@ -89,15 +89,17 @@ def desktop_output(device_name):
 
 
 def input_options(graph,epoch,audio):
-    # Windows audio packets carry QPC capture timestamps; convert video arrival
-    # wallclock timestamps to that same recording epoch. Do not independently
-    # zero the two input streams: that would hide startup latency as A/V drift.
-    args=['-copyts','-thread_queue_size','8','-use_wallclock_as_timestamps','1',
-          '-f','lavfi','-i',graph]
+    # Preserve the capture clock instead of stamping frames when the demuxer
+    # happens to read them. Anchor only the FIRST frame to the recording epoch,
+    # inside the source graph before input queues and audio probing can delay it.
+    # Later frames retain WGC/DXGI monotonic intervals, including a stalled pipe.
+    origin_us=round(epoch*1000000)
+    clock=(f'setpts=PTS-STARTPTS+if(eq(N\\,0)\\,st(0\\,(RTCTIME-{origin_us})/1000000)\\,ld(0))/TB')
+    args=['-copyts','-thread_queue_size','8','-f','lavfi','-i',graph+','+clock]
     if audio:
         args+=['-thread_queue_size','64','-probesize','32768','-analyzeduration','0',
                '-f','nut','-i','pipe:0']
-    args+=['-map','0:v:0','-vf',f'setpts=PTS-{epoch:.6f}/TB']
+    args+=['-map','0:v:0']
     return args
 
 

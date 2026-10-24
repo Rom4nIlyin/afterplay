@@ -188,18 +188,34 @@ class Suite:
         return {'duration': int(d[1])*3600+int(d[2])*60+float(d[3]),
                 'width': int(wh[1]), 'height': int(wh[2]), 'audio': len(re.findall(r'Stream #.*Audio:', text))}
 
+    def internal_media(self, path):
+        path=Path(path)
+        if any(part.casefold() in {'.afterplay-buffer','.afterpaly-buffer'} or part.casefold().startswith('.replay-stage-') for part in path.parts):
+            return True
+        if '.partial.' in path.name.casefold():return True
+        return path.resolve().is_relative_to((self.data/'replay-buffer').resolve())
+
+    def library_visible(self, path):
+        if self.internal_media(path):return False
+        path=Path(path).resolve()
+        inactive=self.cfg.get('disconnected_roots',[])
+        if not any(path.is_relative_to(Path(root).resolve()) for root in inactive):return True
+        # Keep notes for disconnected sources, and reveal them on reconnection.
+        active=[*self.cfg.get('video_roots',[]),str(self.recordings_dir()),*self.cfg.get('storage',{}).get('previous_dirs',[])]
+        return any(path.is_relative_to(Path(root).resolve()) for root in active)
+
     def scan_videos(self, job):
         paths = []
         for root in self.cfg['video_roots']:
             root = Path(root)
-            if not root.is_dir():
+            if not root.is_dir() or self.internal_media(root):
                 continue
             for folder, dirs, files in os.walk(root, followlinks=False):
-                dirs[:] = [d for d in dirs if not (Path(folder)/d).is_symlink()
+                dirs[:] = [d for d in dirs if not self.internal_media(Path(folder)/d) and not (Path(folder)/d).is_symlink()
                            and not (hasattr(Path(folder)/d,'is_junction') and (Path(folder)/d).is_junction())]
                 for name in files:
                     p = Path(folder)/name
-                    if p.suffix.lower() in VIDEO_EXT and not p.is_symlink():
+                    if p.suffix.lower() in VIDEO_EXT and not p.is_symlink() and not self.internal_media(p):
                         paths.append(p)
                 if len(paths) > 5000:
                     raise ValueError('Более 5000 видео. Выбери папку поменьше.')
@@ -234,7 +250,7 @@ class Suite:
 
     def clips(self):
         with self.db() as db:
-            return [dict(r) for r in db.execute('SELECT * FROM clips ORDER BY mtime DESC')]
+            return [dict(r) for r in db.execute('SELECT * FROM clips ORDER BY mtime DESC') if self.library_visible(r['path'])]
 
     def index_video(self,path):
         path=Path(path)
@@ -314,12 +330,15 @@ class Suite:
             raise ValueError('Проверь начало и конец отрезка')
         if arg.get('format') not in (None, 'original', 'vertical', 'gif'):
             raise ValueError('Неизвестный формат экспорта')
+        timer = arg.get('timer', False)
+        if not isinstance(timer, bool):
+            raise ValueError('Ожидался переключатель таймера')
         if arg.get('format') == 'gif':
             import gif_media
             gif_media.validate_duration(end-start)
             name = re.sub(r'[^\w .-]', '_', str(arg.get('name') or src.stem))[:90].strip(' .') or 'clip'
             dest = self.recordings_dir()/f'{name}-{uuid.uuid4().hex[:8]}.gif'
-            result = gif_media.encode(self, src, dest, start, end-start, job, int(arg.get('gif_width',720)))
+            result = gif_media.encode(self, src, dest, start, end-start, job, int(arg.get('gif_width',720)), timer=timer)
             self.index_video(dest)
             self.log('gif_export', source=str(src), start=start, end=end, **result)
             return result
@@ -329,6 +348,9 @@ class Suite:
         dest = self.recordings_dir()/f'{name}{suffix}-{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:4]}.mp4'
         partial = dest.with_suffix('.partial.mp4')
         vf = 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1' if vertical else 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1'
+        if timer:
+            from timer_overlay import video_filter
+            vf += ',' + video_filter()
         cmd = [self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-i', src,
                '-t', str(end-start), '-map', '0:v:0', '-map', '0:a?', '-vf', vf,
                '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p',
@@ -522,11 +544,19 @@ class Suite:
                 return {'ok':True}
             if op=='ui_check':
                 return self.window.evaluate_js("({title:document.title,theme:document.documentElement.dataset.theme,auto:!!document.querySelector('#autoEnabled'),hotkeys:!!document.querySelector('#saveHotkey'),logo:document.querySelector('#brandMark img')?.naturalWidth,overflow:document.documentElement.scrollWidth>window.innerWidth,cards:document.querySelectorAll('.settings-card').length})")
+            if op=='ui_diagnostics':
+                return self.window.evaluate_js("({tab,auto:typeof autoSettings,hotkeys:typeof hotkeySettings,errors:window.afterplayErrors||[],text:document.querySelector('main').innerText.slice(0,2500),render:window.renderDesktopExtras?.toString().slice(0,450)})")
             if op=='ui_features':
                 return self.window.evaluate_js("(()=>{const d=document.querySelector('#dialog'),p=document.querySelector('.player'),r=p?.getBoundingClientRect();return {save:document.querySelector('#saveHotkey')?.value,auto:document.querySelector('#autoHotkey')?.value,autoUpdate:document.querySelector('#autoUpdateEnabled')?.checked,gif:!!document.querySelector('#replaySaveFormat'),gifSeconds:document.querySelector('#replayGifSeconds')?.value,format:document.querySelector('#clipFormat')?.value,exportDisabled:document.querySelector('[data-action=export]')?.disabled,dialogOpen:d.open,dialogWidth:d.clientWidth,player:r?{width:r.width,height:r.height,center:r.x+r.width/2,viewport:innerWidth}:null,image:document.querySelector('.editor-preview img')?.naturalWidth}})()")
             if op=='ui_clip':
                 cid=self.clip(str(arg['id']))['id']
                 self.window.evaluate_js('openClip('+json.dumps(cid)+')')
+                return {'ok':True}
+            if op=='ui_playback':
+                return self.window.evaluate_js("({rate:$('#player')?.playbackRate,time:$('#player')?.currentTime,timer:$('#previewTimer')?.checked,exportTimer:$('#exportTimer')?.checked,label:$('#videoTimer')?.textContent,speed:$('#playbackSpeed')?.value,windowHotkey:$('#windowHotkey')?.value,overflow:$('#dialog').scrollWidth>$('#dialog').clientWidth})")
+            if op=='window_hotkey':
+                identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a=='window')
+                ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
                 return {'ok':True}
             if op=='ui_trim':
                 start,end=float(arg['start']),float(arg['end'])
@@ -541,6 +571,7 @@ class Suite:
                 ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
                 return {'ok':True}
             return {'console_window':bool(ctypes.windll.kernel32.GetConsoleWindow()),
+                    'native_fullscreen':bool(self.window.native.is_fullscreen),
                     'native_visible':bool(self.window.native.Visible),
                     'taskbar_visible':bool(self.window.native.ShowInTaskbar),
                     'window_icon_handle':int(self.window.native.Icon.Handle.ToInt64()),
@@ -559,10 +590,20 @@ class Suite:
             if action=='replay_save':return self.replay.save_job()
         if action == 'browse': return self.browse(arg.get('purpose'))
         if action == 'settings':
+            if 'remove_video_root' in arg:
+                value=arg['remove_video_root']
+                if not isinstance(value,str) or not value:raise ValueError('Выберите подключённую папку')
+                key=str(Path(value).resolve()).casefold()
+                removed=[p for p in self.cfg['video_roots'] if str(Path(p).resolve()).casefold()==key]
+                if not removed:raise ValueError('Папка уже отключена')
+                self.cfg['video_roots']=[p for p in self.cfg['video_roots'] if p not in removed]
+                self.cfg['disconnected_roots']=list(dict.fromkeys([*self.cfg.get('disconnected_roots',[]),*removed]))
             if 'video_root' in arg:
                 p = Path(arg['video_root'])
                 if not p.is_dir(): raise ValueError('Папка видео не найдена')
+                if self.internal_media(p):raise ValueError('Служебный буфер не добавляется в библиотеку')
                 self.cfg['video_roots'] = list(dict.fromkeys([*self.cfg['video_roots'],str(p.resolve())]))
+                self.cfg['disconnected_roots']=[v for v in self.cfg.get('disconnected_roots',[]) if str(Path(v).resolve()).casefold()!=str(p.resolve()).casefold()]
             self.save_cfg()
             return self.cfg
         if action=='scan':
@@ -623,7 +664,7 @@ def server_for(suite, token=None, port=0):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
-                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','trim-viewport.js','navigation-ui.js','library-ui.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
+                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
                 elif route.startswith('filmstrip/'):
                     query=parse_qs(urlparse(self.path).query)
@@ -680,6 +721,13 @@ def main():
     parser.add_argument('--smoke',action='store_true')
     parser.add_argument('--report-url',action='store_true')
     args=parser.parse_args()
+    instance = None
+    if os.name=='nt' and not args.serve:
+        from single_instance import DesktopInstance
+        instance = DesktopInstance(Path(args.data or BASE/'data'))
+        if not instance.primary:
+            instance.close()
+            return
     suite=Suite(args.data)
     if prepared_components:suite.log('portable_components_prepared',components=prepared_components)
     suite.app_mode=args.mode
@@ -687,12 +735,6 @@ def main():
     if os.name=='nt' and not args.serve:
         ctypes.windll.kernel32.FreeConsole()
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('AFTERPLAY.Desktop')
-    # Keep one desktop instance.
-    if os.name=='nt' and not args.serve:
-        mutex=ctypes.windll.kernel32.CreateMutexW(None,False,'Local\\AFTERPLAY-'+hashlib.sha256(str(suite.data.resolve()).lower().encode()).hexdigest()[:16])
-        if ctypes.windll.kernel32.GetLastError()==183:
-            ctypes.windll.user32.MessageBoxW(None,'Приложение уже открыто. Проверь панель задач.', 'AFTERPLAY',0)
-            return
     if args.mode=='clips':
         from replay import Replay
         suite.replay=Replay(suite)
@@ -713,6 +755,7 @@ def main():
         if not args.smoke:
             from desktop import Desktop
             suite.desktop=Desktop(suite,args.mode)
+            if instance:instance.listen(suite.desktop)
         def smoke():
             if not args.smoke: return
             report={}
@@ -746,6 +789,7 @@ def main():
         finally:
             suite.shutdown()
             server.shutdown()
+            if instance:instance.close()
 
 if __name__=='__main__':
     try: main()

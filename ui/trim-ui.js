@@ -48,6 +48,7 @@ function setTrim(start,end,{seek=false,fields=true}={}){
  if(fields){$('#clipIn').value=trimFormat(s.start);$('#clipOut').value=trimFormat(s.end)}
  if(seek&&$('#player'))$('#player').currentTime=s.start;
  updateTrimVisuals();
+ document.dispatchEvent(new Event('afterplay-trim'));
 }
 function trimFromFields(){
  if(!trimState)return;

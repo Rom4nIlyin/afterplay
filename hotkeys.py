@@ -5,7 +5,7 @@ import queue
 import threading
 import time
 
-DEFAULTS = {'save': 'Ctrl+Alt+F10', 'auto': 'Ctrl+Alt+F9'}
+DEFAULTS = {'save': 'Ctrl+Alt+F10', 'auto': 'Ctrl+Alt+F9', 'window': 'Ctrl+Alt+F8'}
 SPECIAL = {'Space': 0x20, 'Insert': 0x2D, 'Delete': 0x2E, 'Home': 0x24,
            'End': 0x23, 'PageUp': 0x21, 'PageDown': 0x22, 'Up': 0x26,
            'Down': 0x28, 'Left': 0x25, 'Right': 0x27, 'Pause': 0x13}
@@ -44,7 +44,7 @@ def parse(value):
 def validate(settings):
     result = {k: parse(settings.get(k, v))[0] for k, v in DEFAULTS.items()}
     if len(set(result.values())) != len(result):
-        raise ValueError('Для двух действий нужны разные комбинации')
+        raise ValueError('Для каждого действия нужна отдельная комбинация')
     return result
 
 

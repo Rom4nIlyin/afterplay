@@ -58,7 +58,10 @@ class QualityTests(unittest.TestCase):
         self.assertIn('display_border=0',graph)
         cmd=input_options(graph,1700000000.25,True)
         self.assertIn('-copyts',cmd)
-        self.assertEqual(cmd[cmd.index('-vf')+1],'setpts=PTS-1700000000.250000/TB')
+        self.assertNotIn('-use_wallclock_as_timestamps',cmd)
+        self.assertIn('setpts=PTS-STARTPTS',cmd[cmd.index('-i')+1])
+        self.assertIn('RTCTIME-1700000000250000',cmd[cmd.index('-i')+1])
+        self.assertNotIn('-vf',cmd)
 
     def test_desktop_uses_dxgi_identity_and_repeats_unchanged_frames(self):
         from unittest.mock import patch
