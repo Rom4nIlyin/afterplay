@@ -10,8 +10,8 @@ using System.Windows.Forms;
 [assembly:AssemblyProduct("AFTERPLAY")]
 [assembly:AssemblyDescription("AFTERPLAY — игровые моменты и мгновенный повтор")]
 [assembly:AssemblyCompany("AFTERPLAY")]
-[assembly:AssemblyVersion("1.7.0.0")]
-[assembly:AssemblyFileVersion("1.7.0.0")]
+[assembly:AssemblyVersion("1.7.1.0")]
+[assembly:AssemblyFileVersion("1.7.1.0")]
 class Launcher {
  [DllImport("WebView2Loader.dll",CharSet=CharSet.Unicode)] static extern int GetAvailableCoreWebView2BrowserVersionString(string folder,out IntPtr version);
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern IntPtr LoadLibrary(string path);
@@ -71,7 +71,7 @@ class Launcher {
     string code="import sys, os, runpy\nfrom pathlib import Path\nroot="+json.Serialize(root)+"\nsys.path.insert(0,root)\nos.chdir(root)\nsys.argv=[os.path.join(root,'app.py')]+"+json.Serialize(args)+"\nPath(root,'data','logs').mkdir(parents=True,exist_ok=True)\nsys.stdout=sys.stderr=open(Path(root,'data','logs','host.log'),'a',encoding='utf-8',buffering=1)\nrunpy.run_path(os.path.join(root,'app.py'),run_name='__main__')\n";
     result=(int)engine.GetMethod("RunSimpleString",new Type[]{typeof(string)}).Invoke(null,new object[]{code});
    }
-   engine.GetMethod("Shutdown",Type.EmptyTypes).Invoke(null,null);
+   RuntimeExit.Shutdown(assembly,engine);
    if(result!=0)throw new Exception("Ошибка запуска. Подробности в data/logs/host.log.");
   }catch(Exception error) {
    try{File.WriteAllText(Path.Combine(root,"host-startup-error.log"),error.ToString());}catch{}
