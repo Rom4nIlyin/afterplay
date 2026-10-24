@@ -1,12 +1,12 @@
 # AFTERPLAY
 
-**AFTERPLAY 1.6.0 — локальная видеотека и мгновенные повторы для Windows.** Сохраняйте последние
+**AFTERPLAY 1.7.0 — локальная видеотека и мгновенные повторы для Windows.** Сохраняйте последние
 1–30 минут игры по горячей клавише, выбирайте записываемый звук, отмечайте моменты
 и экспортируйте клипы в MP4.
 
 Интерфейс на русском языке. Видео, настройки и библиотека хранятся на компьютере.
 
-## Новое в AFTERPLAY 1.6.0
+## Новое в AFTERPLAY 1.7.0
 
 - Прямой GPU-захват окна и экрана: D3D11 → NVENC без передачи кадров через CPU.
 - Профиль «Минимум нагрузки», обновлённый FFmpeg 9.0.2 и единое имя AFTERPLAY.
@@ -29,7 +29,7 @@
 ## Скачать и запустить
 
 Готовая программа находится в разделе **[Releases](https://github.com/Rom4nIlyin/afterplay/releases/latest)**.
-Скачивайте файл **`AFTERPLAY-1.6.0-Portable-Win64.zip`** из Assets.
+Скачивайте файл **`AFTERPLAY-1.7.0-Portable-Win64.zip`** из Assets.
 Архивы **Source code** содержат исходники, а не готовую программу.
 
 1. Распакуйте **весь архив** в папку с правом записи, например `D:\AFTERPLAY`.
@@ -252,10 +252,22 @@ docs/                    Инструкции и сведения о прове�
 Изменения версий: **[CHANGELOG.md](CHANGELOG.md)**.
 Сторонние компоненты и их лицензии: **[THIRD-PARTY.md](THIRD-PARTY.md)**.
 
-## GIF и просмотр в 1.6.0
+## GIF и просмотр в 1.7.0
 
 Просмотр повтора увеличен и расположен по центру; настройки отрезка и заметки находятся под плеером.
 В разделе «Повтор → Сохранять момент как» доступны MP4 и GIF. Для GIF задайте 2–15 секунд, сохраните настройки и включите повтор. При сохранении кнопкой или горячей клавишей будет создана GIF последних секунд, без готового MP4. Временный видеобуфер остаётся необходимым.
 Для конвертации части видео откройте запись, выберите формат GIF и выделите отрезок 2–15 секунд. GIF создаются без звука, 15 кадров/с, ширина до 720 px, с повторением по кругу. Файлы доступны в библиотеке и экспорте.
 «Настройки → Включить автообновление» по умолчанию выключено. При выключенной галочке программа не проверяет и не устанавливает обновления в фоне. Кнопка ручной проверки работает всегда. При включении установка откладывается до окончания записи и экспорта.
 Для изменения горячих клавиш нажмите поле, введите сочетание и нажмите «Сохранить». Во время ввода глобальные действия временно отключены; при выходе из поля они восстанавливаются.
+
+## License
+
+Original AFTERPLAY source code is licensed under the [MIT License](LICENSE).
+Bundled third-party components retain their respective licenses; see [THIRD-PARTY.md](THIRD-PARTY.md).
+
+## Code signing policy
+
+The maintainer is applying for free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+Approval is pending; current releases must not be described as signed until their signatures verify.
+Committer, reviewer and approver: [Roman Ilyin](https://github.com/Rom4nIlyin).
+See the [code signing and privacy policy](docs/CODE-SIGNING.md) for the precise status, signing scope and privacy information.
