@@ -107,7 +107,7 @@ class AutoRecorder:
                     self.notice('Момент сохранён', (owner or {}).get('name', 'AFTERPLAY'))
                 else:
                     # An in-flight save owns the session until its finally block.
-                    deadline = self.clock() + 130
+                    deadline = self.clock() + max(120,self.replay.settings['seconds']*2) + 30
                     while self.replay.saving and self.clock() < deadline:
                         time.sleep(.1)
             elif not self.replay.saving:

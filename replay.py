@@ -80,6 +80,40 @@ def select_segments(rows,cutoff,seconds):
     if actual_end-actual_start<.5:raise ValueError('Слишком мало кадров в буфере')
     return selected,actual_start-selected[0]['start'],actual_end-actual_start
 
+def export_options(cfg,encoder):
+    # Stream copy cannot cut inside a GOP: TS seeking can discard video up to
+    # the next IDR while retaining audio. Decode the boundary and encode a new
+    # first keyframe. Both streams retain the same input seek origin.
+    args=['-c:v',encoder,'-profile:v','high','-bf','0']
+    if encoder=='h264_nvenc':
+        args+=['-preset','p1','-tune','ll','-rc','vbr','-cq',str(cfg['cq']),
+               '-b:v','0','-maxrate',f'{cfg["max_mbps"]}M','-bufsize',f'{cfg["max_mbps"]*2}M',
+               '-rc-lookahead','0','-delay','0']
+    else:args+=['-preset','veryfast','-crf',str(cfg['cq'])]
+    return args+['-pix_fmt','yuv420p','-fps_mode','cfr','-r',str(cfg['fps']),
+                 '-af','aresample=first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
+
+def validate_export(path,duration,fps,audio):
+    import av
+    # Container duration alone accepted files with 1-2 seconds of audio before
+    # the first video frame. Inspect decoded stream boundaries as well.
+    tolerance=max(.08,2/fps)
+    with av.open(str(path)) as media:
+        video=media.streams.video[0]
+        first=next(media.decode(video),None)
+        if first is None or not first.key_frame or first.time is None or abs(first.time)>tolerance:
+            raise ValueError('Начало видеодорожки не прошло проверку')
+        if video.duration is None or abs(float(video.duration*video.time_base)-duration)>tolerance:
+            raise ValueError('Длительность видеодорожки не прошла проверку')
+    if audio:
+        with av.open(str(path)) as media:
+            if not media.streams.audio:raise ValueError('В сохранённом повторе нет аудиодорожки')
+            sound=media.streams.audio[0];first=next(media.decode(sound),None)
+            if first is None or first.time is None or abs(first.time)>tolerance:
+                raise ValueError('Начало аудиодорожки не прошло проверку')
+            if sound.duration is None or abs(float(sound.duration*sound.time_base)-duration)>tolerance:
+                raise ValueError('Длительность аудиодорожки не прошла проверку')
+
 class Replay:
     def __init__(self,suite):
         self.suite=suite
@@ -271,6 +305,7 @@ class Replay:
             self.window_hwnd=window['hwnd'] if window else None
             self.output_size=video_quality.output_size(self.settings,monitor['width'],monitor['height'])
             self.audio_epoch=time.perf_counter();self.video_epoch=time.time()
+            self.capture_epoch=self.audio_epoch if self.native_gpu else self.video_source.first[0]
             self._audio_rate=audio['rate'] if audio else 0
             if audio:self._open_audio(audio)
             log=self.suite.data/'logs'/f'replay-{self.session.name}.log'
@@ -459,19 +494,23 @@ class Replay:
             if self.saving:raise ValueError('Предыдущий повтор ещё сохраняется')
             self.saving=True;session=self.session
             rows=closed_segments(session)
-            cutoff=max(self.media_time,rows[-1]['end'] if rows else 0)
-        destination=self.suite.recordings_dir()
-        stage=destination/('.replay-stage-'+uuid.uuid4().hex)
-        stage.mkdir()
-        partial=None
+            # Every save is a fresh window ending at this invocation. Encoder
+            # progress can lag behind real capture time and is not a save clock.
+            cutoff=max(0,time.perf_counter()-self.capture_epoch) if self.phase=='recording' else (rows[-1]['end'] if rows else 0)
+        stage=None;partial=None
         try:
+            destination=self.suite.recordings_dir()
+            stage=destination/('.replay-stage-'+uuid.uuid4().hex)
+            stage.mkdir()
             # Close the segment containing the hotkey moment; trim away future frames.
-            deadline=time.monotonic()+6
+            deadline=time.monotonic()+10
             while time.monotonic()<deadline:
                 rows=closed_segments(session)
                 if rows and rows[-1]['end']>=cutoff-.02:break
                 if self.phase!='recording':break
                 time.sleep(.1)
+            if self.phase=='recording' and (not rows or rows[-1]['end']<cutoff-.1):
+                raise ValueError('Захват отстаёт от текущего времени. Повтор не сохранён: проверьте нагрузку и журнал записи.')
             is_gif=self.settings.get('save_format')=='gif'
             selected,skip,duration=select_segments(rows,cutoff,self.settings.get('gif_seconds',5) if is_gif else self.settings['seconds'])
             if is_gif:
@@ -494,13 +533,17 @@ class Replay:
             name='Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.mp4'
             target=destination/name
             partial=target.with_suffix('.partial.mp4')
-            cmd=[self.suite.ff(),'-hide_banner','-loglevel','error','-ss',f'{max(0,skip):.6f}',
-                 '-i',str(listing),'-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
-                 '-c','copy','-video_track_timescale','90000','-avoid_negative_ts','make_zero','-movflags','+faststart','-y',str(partial)]
+            # Decode from the first selected segment's IDR before discarding
+            # the leading frames. TS input seeking can jump past that IDR even
+            # when transcoding, silently replacing the missing prefix by a hold.
+            cmd=[self.suite.ff(),'-hide_banner','-loglevel','error','-threads','2',
+                 '-i',str(listing),'-ss',f'{max(0,skip):.6f}','-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
+                 *export_options(self.settings,self.encoder),'-video_track_timescale','90000',
+                 '-avoid_negative_ts','disabled','-movflags','+faststart','-y',str(partial)]
             proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=NO_WINDOW)
             with self.suite.lock:self.suite.children.add(proc)
             try:
-                try:stdout,stderr=proc.communicate(timeout=120)
+                try:stdout,stderr=proc.communicate(timeout=max(120,duration*2))
                 except subprocess.TimeoutExpired:
                     proc.kill();proc.communicate()
                     raise ValueError('Превышено время сохранения повтора')
@@ -509,17 +552,19 @@ class Replay:
             if proc.returncode:raise ValueError('Не удалось сохранить повтор: '+stderr.decode('utf-8','replace')[-500:])
             job.update(progress=80,message='Проверка видео и звука')
             info=self.suite.probe(partial)
-            if abs(info['duration']-duration)>2.2:raise ValueError('Длительность сохранённого повтора не прошла проверку')
+            validate_export(partial,duration,self.settings['fps'],self.settings['audio_mode']!='none')
             if self.settings['audio_mode']!='none' and info['audio']<1:raise ValueError('В сохранённом повторе нет аудиодорожки')
             if partial.stat().st_size<1000:raise ValueError('Пустой повтор')
             os.replace(partial,target)
-            self.last_saved={'path':str(target),'bytes':target.stat().st_size,**info}
+            self.last_saved={'path':str(target),'bytes':target.stat().st_size,**info,
+                             'capture_start':selected[0]['start']+skip,
+                             'capture_end':selected[0]['start']+skip+duration}
             self.suite.index_video(target)
             self.suite.log('replay_save',**self.last_saved)
             return self.last_saved
         finally:
             if partial:partial.unlink(missing_ok=True)
-            if stage.resolve().parent==destination.resolve() and stage.name.startswith('.replay-stage-'):
+            if stage and stage.resolve().parent==destination.resolve() and stage.name.startswith('.replay-stage-'):
                 shutil.rmtree(stage,ignore_errors=True)
             with self.lock:
                 self.saving=False

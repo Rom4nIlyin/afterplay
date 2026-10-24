@@ -1,0 +1,66 @@
+{
+  "python_tests": 59,
+  "timeline_tests": true,
+  "regression_source_seconds": 370,
+  "regression_exports_seconds": [
+    300,
+    300
+  ],
+  "regression_overlap_seconds": 285.12,
+  "native_resolution": [
+    2560,
+    1440
+  ],
+  "native_fps": 60,
+  "native_replays": [
+    {
+      "duration": 60.0,
+      "capture_start": 20.46875560000626,
+      "capture_end": 80.46875560000626,
+      "first_source_time": 21.179,
+      "last_source_time": 81.18,
+      "first_video_time": 0.0,
+      "first_audio_time": 0.0,
+      "source_elapsed_in_first_200ms": 0.188,
+      "maximum_abs_sync_ms": 39.33,
+      "median_sync_ms": -17.33,
+      "sync_samples": 30,
+      "full_decode": true
+    },
+    {
+      "duration": 60.0,
+      "capture_start": 40.593922300002305,
+      "capture_end": 100.5939223000023,
+      "first_source_time": 41.313,
+      "last_source_time": 101.28,
+      "first_video_time": 0.0,
+      "first_audio_time": 0.0,
+      "source_elapsed_in_first_200ms": 0.183,
+      "maximum_abs_sync_ms": 50.67,
+      "median_sync_ms": -28.67,
+      "sync_samples": 30,
+      "full_decode": true
+    },
+    {
+      "duration": 60.0,
+      "capture_start": 60.45968750000611,
+      "capture_end": 120.45968750000611,
+      "first_source_time": 61.173,
+      "last_source_time": 121.151,
+      "first_video_time": 0.0,
+      "first_audio_time": 0.0,
+      "source_elapsed_in_first_200ms": 0.182,
+      "maximum_abs_sync_ms": 45.33,
+      "median_sync_ms": -23.33,
+      "sync_samples": 30,
+      "full_decode": true
+    }
+  ],
+  "native_overlap_seconds": 40.107,
+  "freshness_delta_error_ms": 5.23,
+  "native_auto_start": true,
+  "hotkey_save": true,
+  "save_on_exit": true,
+  "foreground_preserved": true,
+  "game_launched": false
+}
