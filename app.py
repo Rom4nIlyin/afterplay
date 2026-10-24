@@ -24,7 +24,7 @@ from urllib.parse import urlparse, parse_qs
 
 BASE = Path(__file__).resolve().parent
 NO_WINDOW = 0x08000000 if os.name == 'nt' else 0
-VIDEO_EXT = {'.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.ts'}
+VIDEO_EXT = {'.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.ts', '.gif'}
 
 
 def atomic_json(path, obj):
@@ -71,7 +71,9 @@ class Suite:
         self.cfg = json.loads(self.cfg_path.read_text('utf-8')) if self.cfg_path.exists() else {
             'video_roots': [],
         }
+        self.cfg.setdefault('updates', {'auto_enabled': False})
         self.save_cfg()
+        self.update_stop = threading.Event()
         with self.db() as db:
             db.execute('''CREATE TABLE IF NOT EXISTS clips
                 (id TEXT PRIMARY KEY, path TEXT UNIQUE, name TEXT, size INTEGER, mtime REAL,
@@ -260,7 +262,7 @@ class Suite:
             info=dict(row) if row else {'id':record['key'],'path':str(path),'name':path.name}
         elif arg.get('export_name'):
             name=str(arg['export_name'])
-            if Path(name).name!=name or not name.lower().endswith('.mp4') or name.endswith('.partial.mp4'):
+            if Path(name).name!=name or Path(name).suffix.lower() not in {'.mp4','.gif'} or '.partial.' in name:
                 raise ValueError('Некорректное имя экспорта')
             path=safe_child(self.data/'exports',name)
             with self.db() as db:
@@ -310,6 +312,17 @@ class Suite:
         start, end = float(arg['start']), float(arg['end'])
         if not 0 <= start < end <= info['duration']+0.05:
             raise ValueError('Проверь начало и конец отрезка')
+        if arg.get('format') not in (None, 'original', 'vertical', 'gif'):
+            raise ValueError('Неизвестный формат экспорта')
+        if arg.get('format') == 'gif':
+            import gif_media
+            gif_media.validate_duration(end-start)
+            name = re.sub(r'[^\w .-]', '_', str(arg.get('name') or src.stem))[:90].strip(' .') or 'clip'
+            dest = self.recordings_dir()/f'{name}-{uuid.uuid4().hex[:8]}.gif'
+            result = gif_media.encode(self, src, dest, start, end-start, job, int(arg.get('gif_width',720)))
+            self.index_video(dest)
+            self.log('gif_export', source=str(src), start=start, end=end, **result)
+            return result
         vertical = arg.get('format') == 'vertical'
         name = re.sub(r'[^\w .-]', '_', str(arg.get('name') or src.stem))[:90].strip(' .') or 'clip'
         suffix = '-vertical' if vertical else ''
@@ -377,7 +390,30 @@ class Suite:
             temporary=target.with_suffix('.tmp.jpg');sheet.save(temporary,quality=80);os.replace(temporary,target)
         return target
 
+    def automatic_update_tick(self):
+        # Opt-in only. Recheck immediately before replacement, including after download.
+        def idle():
+            return (self.cfg.get('updates',{}).get('auto_enabled',False)
+                    and self.desktop and self.updater.state()['supported']
+                    and not (self.replay and (self.replay.phase in {'starting','recording','stopping'} or self.replay.saving))
+                    and not any(j['status']=='running' for j in self.jobs.values())
+                    and not self.update_stop.is_set())
+        if not idle():return
+        if not self.updater.check()['latest']['available'] or not idle():return
+        self.updater.prepare({})
+        if idle():
+            self.updater.launch()
+            self.desktop.exit()
+
+    def automatic_updates(self):
+        if self.update_stop.wait(30):return
+        while not self.update_stop.is_set():
+            try:self.automatic_update_tick()
+            except Exception as error:self.log('automatic_update_error',error=str(error))
+            if self.update_stop.wait(3600):return
+
     def shutdown(self):
+        self.update_stop.set()
         if self.auto:self.auto.shutdown()
         if self.replay:self.replay.shutdown()
         if self.desktop:self.desktop.shutdown()
@@ -412,6 +448,15 @@ class Suite:
             if not self.auto:raise ValueError('Автозапись недоступна')
             return self.auto.configure(arg)
         if action=='auto_toggle':return self.auto.toggle()
+        if action=='hotkeys_edit':
+            if not self.replay or not self.replay.hotkeys:raise ValueError('Горячие клавиши доступны в окне AFTERPLAY')
+            self.replay.hotkeys.editing(bool(arg.get('enabled')))
+            return {'ok':True}
+        if action=='updates_config':
+            value=arg.get('auto_enabled')
+            if not isinstance(value,bool):raise ValueError('Ожидался переключатель автообновления')
+            self.cfg['updates']={'auto_enabled':value};self.save_cfg()
+            return self.cfg['updates']
         if action=='hotkeys_config':
             from hotkeys import validate
             values=validate(arg)
@@ -473,6 +518,8 @@ class Suite:
                 return {'ok':True}
             if op=='ui_check':
                 return self.window.evaluate_js("({title:document.title,theme:document.documentElement.dataset.theme,auto:!!document.querySelector('#autoEnabled'),hotkeys:!!document.querySelector('#saveHotkey'),logo:document.querySelector('#brandMark img')?.naturalWidth,overflow:document.documentElement.scrollWidth>window.innerWidth,cards:document.querySelectorAll('.settings-card').length})")
+            if op=='ui_features':
+                return self.window.evaluate_js("(()=>{const d=document.querySelector('#dialog'),p=document.querySelector('.player'),r=p?.getBoundingClientRect();return {save:document.querySelector('#saveHotkey')?.value,auto:document.querySelector('#autoHotkey')?.value,autoUpdate:document.querySelector('#autoUpdateEnabled')?.checked,gif:!!document.querySelector('#replaySaveFormat'),gifSeconds:document.querySelector('#replayGifSeconds')?.value,format:document.querySelector('#clipFormat')?.value,exportDisabled:document.querySelector('[data-action=export]')?.disabled,dialogOpen:d.open,dialogWidth:d.clientWidth,player:r?{width:r.width,height:r.height,center:r.x+r.width/2,viewport:innerWidth}:null,image:document.querySelector('.editor-preview img')?.naturalWidth}})()")
             if op=='ui_clip':
                 cid=self.clip(str(arg['id']))['id']
                 self.window.evaluate_js('openClip('+json.dumps(cid)+')')
@@ -651,7 +698,7 @@ def main():
         import webview
         threading.Thread(target=server.serve_forever,daemon=True).start()
         suite.window=webview.create_window('AFTERPLAY',url,
-                                          width=1380,height=900,min_size=(1050,700),background_color='#101314',hidden=args.smoke or args.autostart)
+                                          width=1600,height=1000,min_size=(1050,700),background_color='#101314',hidden=args.smoke or args.autostart)
         if suite.replay and not args.smoke:suite.replay.attach_desktop()
         if not args.smoke:
             from desktop import Desktop
@@ -679,7 +726,9 @@ def main():
         try:
             def ready():
                 if args.smoke:smoke()
-                elif suite.auto:suite.auto.start()
+                else:
+                    if suite.auto:suite.auto.start()
+                    threading.Thread(target=suite.automatic_updates,daemon=True).start()
             webview.start(ready,gui='edgechromium',private_mode=True,
                           storage_path=str(suite.data/'webview'/args.mode),
                           icon=str(BASE/'ui'/'afterplay.ico'))

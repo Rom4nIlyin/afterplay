@@ -8,6 +8,20 @@ from auto_record import AutoRecorder,validate as validate_auto,path_key
 from hotkeys import GlobalHotkeys,parse,validate
 
 class ShortcutsTests(unittest.TestCase):
+    def test_editing_releases_and_restores_keys_and_new_binding(self):
+        manager=GlobalHotkeys({'save':lambda:None,'auto':lambda:None},lambda *a,**k:None)
+        try:
+            first={'save':'Ctrl+Alt+Shift+F21','auto':'Ctrl+Alt+Shift+F22'}
+            manager.configure(first);manager.editing(True)
+            self.assertEqual(manager.registered,{})
+            manager.editing(False);self.assertEqual(set(manager.registered),set(first.values()))
+            manager.editing(True)
+            second={**first,'save':'Ctrl+Alt+Shift+F23'}
+            manager.configure(second)
+            self.assertEqual(set(manager.registered),set(second.values()))
+            self.assertFalse(manager.edit_until)
+        finally:manager.shutdown()
+
     def test_normalizes_and_rejects_unsafe_or_reserved_keys(self):
         self.assertEqual(parse('alt+control+f10')[0],'Ctrl+Alt+F10')
         self.assertEqual(parse('F8')[2],0x77)

@@ -74,7 +74,7 @@ document.addEventListener('change',e=>{if(['replayAudioMode','replayCaptureMode'
 async function replaySettings(){
  const win=$('#replayCaptureMode').value==='window',follow=$('#replayFollow').checked;
  if((win&&$('#replayWindow').value.startsWith('missing-'))||(['game','exclude'].includes($('#replayAudioMode').value)&&!(win&&follow&&$('#replayAudioMode').value==='game')&&$('#replayApplication').value.startsWith('missing-')))throw Error('Выбранное приложение закрыто или открыто несколько копий. Выбери нужное окно в списке.');
- return api('replay_config',{seconds:Number($('#replaySeconds').value),capture_mode:$('#replayCaptureMode').value,window_hwnd:win?Number($('#replayWindow').value):0,audio_follow_window:follow,
+ return api('replay_config',{save_format:$('#replaySaveFormat').value,gif_seconds:Number($('#replayGifSeconds').value),seconds:Number($('#replaySeconds').value),capture_mode:$('#replayCaptureMode').value,window_hwnd:win?Number($('#replayWindow').value):0,audio_follow_window:follow,
  audio_mode:$('#replayAudioMode').value,game_pid:win&&follow&&$('#replayAudioMode').value==='game'?0:Number($('#replayApplication').value),monitor:$('#replayMonitor').value,audio:$('#replayAudio').value,
  fps:Number($('#replayFPS').value),height:Number($('#replayHeight').value),mbps:Number($('#replayBitrate').value),max_mbps:Number($('#replayMax').value),cq:Number($('#replayCQ').value),quality_mode:$('#replayQuality').value,
  capture_backend:$('#replayBackend').value,encoder:$('#replayEncoder').value,preset:$('#replayPreset').value,audio_bitrate:Number($('#replayAudioBitrate').value),audio_offset_ms:Number($('#replayOffset').value),cursor:$('#replayCursor').checked})
@@ -161,3 +161,10 @@ window.videoDeleteAction=async function(a,el){
   catch(e){el.disabled=false;throw e}
  }
 };
+
+const beforeGifReplayPage=window.replayPage;
+window.replayPage=function(){
+ let html=beforeGifReplayPage();const cfg=state.replay?.settings||{},busy=['starting','recording','stopping'].includes(state.replay?.phase)||state.replay?.saving;
+ return html.replace('<div class="field">',`<div class="field"><label for="replaySaveFormat">Сохранять момент как</label><select id="replaySaveFormat" ${busy?'disabled':''}><option value="mp4" ${cfg.save_format!=='gif'?'selected':''}>Видео MP4 · последние минуты</option><option value="gif" ${cfg.save_format==='gif'?'selected':''}>Анимация GIF · последние 2–15 секунд</option></select><small>GIF сохраняется той же горячей клавишей, без звука, 15 кадров/с, ширина до 720 px. Временный буфер записи используется для обоих форматов.</small></div><div class="field" id="replayGifField" ${cfg.save_format==='gif'?'':'hidden'}><label for="replayGifSeconds">Длительность GIF, секунды</label><input id="replayGifSeconds" type="number" min="2" max="15" step="1" value="${cfg.gif_seconds||5}" ${busy?'disabled':''}></div><div class="field">`);
+};
+document.addEventListener('change',e=>{if(e.target.id==='replaySaveFormat')$('#replayGifField').hidden=e.target.value!=='gif'});

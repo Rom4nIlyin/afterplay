@@ -101,3 +101,50 @@ action=async function(a,el){
  return result;
 };
 document.addEventListener('input',e=>{if(['clipIn','clipOut'].includes(e.target.id))trimFromFields()});
+
+const beforeCenteredOpen=openClip;
+openClip=function(id){
+ beforeCenteredOpen(id);if(!selected||!$('#player'))return;
+ const editor=$('.editor'),left=editor.firstElementChild,right=editor.lastElementChild;
+ const preview=document.createElement('div');preview.className='editor-preview';
+ preview.append($('#player'));
+ const actions=left.querySelector('.actions');if(actions)preview.append(actions);
+ const below=document.createElement('div');below.className='editor-below';
+ left.className='editor-card editor-export';right.className='editor-card editor-notes';
+ const summary=document.createElement('div');summary.className='recording-summary';
+ const gif=/\.gif$/i.test(selected.name);
+ summary.innerHTML=`<span class="pill">${gif?'GIF':'ВИДЕО'}</span><span>${selected.width} × ${selected.height}</span><span>${fmt(selected.duration)}</span><span>${size(selected.size)}</span><span>${gif?'Без звука':'Аудиодорожек: '+selected.audio}</span>`;
+ for(const element of [...right.children].slice(0,3))element.remove();
+ right.insertAdjacentHTML('afterbegin','<div class="editor-card-head"><h3>Заметки</h3><small>Теги и избранное помогут найти момент</small></div>');
+ const noteFields=document.createElement('div');noteFields.className='note-fields';
+ noteFields.append($('#clipTags').closest('.field'),$('#clipNote').closest('.field'));
+ right.querySelector('.editor-card-head').after(noteFields);
+ const noteActions=right.querySelector('.actions');noteActions.classList.add('editor-card-actions');noteActions.removeAttribute('style');
+ const notice=right.querySelector('.notice');if(notice){notice.className='hint editor-note-hint';notice.textContent='Заметки хранятся в библиотеке. Исходный файл сохраняется.'}
+ const belowTitle=document.createElement('div');belowTitle.className='editor-card-head';belowTitle.innerHTML='<h3>Отрезок и экспорт</h3><small>Выдели момент и выбери формат</small>';left.prepend(belowTitle);
+ const details=document.createElement('div');details.className='export-details';
+ details.append($('#clipFormat').closest('.field'),$('#clipName').closest('.field'));left.querySelector('.time-inputs').after(details);
+ const exportActions=document.createElement('div');exportActions.className='editor-card-actions export-actions';exportActions.append(left.querySelector('[data-action="export"]'));left.append(exportActions);
+ below.append(left,right);editor.append(preview,summary,below);
+ $('#dialog').classList.add('clip-dialog');$('#dialog').scrollTop=0;
+ if(gif){
+  const image=document.createElement('img');image.className='player';image.alt=selected.name;image.src=base+'media/'+selected.id;$('#player').replaceWith(image);
+  left.remove();below.classList.add('gif-details');preview.querySelector('.actions')?.remove();trimState=null;
+  right.querySelector('[data-action="delete-video"]').innerHTML=icon('trash')+'Удалить GIF';
+ }else{
+  $('#clipFormat').addEventListener('change',()=>{
+   if($('#clipFormat').value==='gif'&&trimState){const start=trimState.start,end=Math.min(trimState.duration,start+Math.min(5,trimState.end-start));setTrim(start,end)}
+   trimFromFields();
+  });
+ }
+};
+$('#dialog').addEventListener('close',()=>$('#dialog').classList.remove('clip-dialog'));
+const beforeGifTrimValidation=trimFromFields;
+trimFromFields=function(){
+ const valid=beforeGifTrimValidation();if(!valid)return valid;
+ const length=parse($('#clipOut').value)-parse($('#clipIn').value),gif=$('#clipFormat').value==='gif';
+ const allowed=!gif||(length>=2&&length<=15);
+ if(!allowed)$('#trimError').textContent='Для GIF выберите отрезок от 2 до 15 секунд.';
+ $('[data-action="export"]').disabled=!allowed;
+ return allowed;
+};

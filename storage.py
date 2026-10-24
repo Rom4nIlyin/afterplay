@@ -46,8 +46,9 @@ def exports(suite):
     result=[]
     for folder in folders.values():
         try:
-            for path in folder.glob('*.mp4'):
-                if path.name.endswith('.partial.mp4') or path.is_symlink() or not path.is_file():continue
+            for path in folder.iterdir():
+                if path.suffix.lower() not in {'.mp4','.gif'}:continue
+                if ('.partial.' in path.name) or path.is_symlink() or not path.is_file():continue
                 try:stat=path.stat()
                 except OSError:continue
                 key=hashlib.sha256(str(path.resolve()).casefold().encode()).hexdigest()[:24]

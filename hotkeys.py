@@ -3,6 +3,7 @@ import ctypes
 from ctypes import wintypes
 import queue
 import threading
+import time
 
 DEFAULTS = {'save': 'Ctrl+Alt+F10', 'auto': 'Ctrl+Alt+F9'}
 SPECIAL = {'Space': 0x20, 'Insert': 0x2D, 'Delete': 0x2E, 'Home': 0x24,
@@ -53,6 +54,7 @@ class GlobalHotkeys:
         self.commands = queue.Queue(); self.ready = threading.Event()
         self.registered = {}; self.actions = {}; self.next_id = 100
         self.tid = None; self.error = ''; self.ok = False
+        self.desired = {}; self.edit_until = 0
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
         if not self.ready.wait(5):
@@ -60,8 +62,14 @@ class GlobalHotkeys:
 
     def configure(self, values):
         values = validate(values)
+        return self._request('configure', values)
+
+    def editing(self, enabled):
+        return self._request('editing', bool(enabled))
+
+    def _request(self, command, values):
         done = threading.Event(); result = {}
-        self.commands.put((values, done, result))
+        self.commands.put((command, values, done, result))
         if not ctypes.windll.user32.PostThreadMessageW(self.tid, 0x8001, 0, 0):
             raise ValueError('Не удалось обновить горячие клавиши')
         if not done.wait(5):
@@ -100,18 +108,33 @@ class GlobalHotkeys:
         msg = wintypes.MSG()
         user.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)
         self.ready.set()
+        # A short lease restores shortcuts even if the WebView loses focus/crashes.
+        user.SetTimer(None, 1, 1000, None)
         try:
             while user.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
                 if msg.message == 0x8001:
                     while not self.commands.empty():
-                        values, done, result = self.commands.get()
+                        command, values, done, result = self.commands.get()
                         try:
-                            self._bind(values)
+                            if command == 'configure':
+                                self._bind(values)
+                                self.edit_until = 0
+                                self.desired = values
+                            elif values:
+                                if not self.edit_until:self._bind({})
+                                self.edit_until = time.monotonic()+15
+                            else:
+                                self.edit_until = 0
+                                self._bind(self.desired)
                         except Exception as error:
                             result['error'] = str(error); self.error = str(error)
                         finally:
                             done.set()
-                elif msg.message == 0x0312:
+                elif msg.message == 0x0113 and self.edit_until and time.monotonic() >= self.edit_until:
+                    self.edit_until = 0
+                    try:self._bind(self.desired)
+                    except ValueError as error:self.error = str(error);self.ok = False
+                elif msg.message == 0x0312 and not self.edit_until:
                     action = self.actions.get(int(msg.wParam))
                     if action:
                         def invoke(action=action):

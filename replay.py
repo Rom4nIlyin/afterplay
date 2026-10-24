@@ -24,7 +24,7 @@ from capture_media import VideoSource,MediaMux
 NO_WINDOW = 0x08000000
 MINUTES = (1,3,5,10,15,20,30)
 DEFAULTS = {'seconds':300, 'fps':60, 'mbps':20, 'monitor':'primary', 'audio':'default',
-            'audio_mode':'system', 'game_pid':0, 'game_path':'',**video_quality.DEFAULTS}
+            'save_format':'mp4', 'gif_seconds':5, 'audio_mode':'system', 'game_pid':0, 'game_path':'',**video_quality.DEFAULTS}
 
 def monitors():
     class Info(ctypes.Structure):
@@ -112,6 +112,12 @@ class Replay:
         if self.phase in {'starting','recording','stopping'} or self.saving:
             raise ValueError('Сначала останови повтор и дождись сохранения')
         cfg={**self.settings}
+        if 'save_format' in args:
+            if args['save_format'] not in {'mp4','gif'}:raise ValueError('Выберите MP4 или GIF')
+            cfg['save_format']=args['save_format']
+        if 'gif_seconds' in args:
+            import gif_media
+            cfg['gif_seconds']=gif_media.validate_duration(args['gif_seconds'])
         if 'fps' in args:
             cfg['fps']=int(args['fps'])
         if 'mbps' in args:
@@ -466,7 +472,11 @@ class Replay:
                 if rows and rows[-1]['end']>=cutoff-.02:break
                 if self.phase!='recording':break
                 time.sleep(.1)
-            selected,skip,duration=select_segments(rows,cutoff,self.settings['seconds'])
+            is_gif=self.settings.get('save_format')=='gif'
+            selected,skip,duration=select_segments(rows,cutoff,self.settings.get('gif_seconds',5) if is_gif else self.settings['seconds'])
+            if is_gif:
+                import gif_media
+                gif_media.validate_duration(duration)
             job.update(message='Сохранение последних '+str(round(duration))+' секунд',progress=10)
             # MPEG-TS timestamps remain continuous across the rolling segments.
             # Joining their bytes preserves the original A/V clock without the
@@ -475,6 +485,12 @@ class Replay:
             with listing.open('wb') as output:
                 for row in selected:
                     with row['path'].open('rb') as source:shutil.copyfileobj(source,output,1024*1024)
+            if is_gif:
+                target=destination/('Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.gif')
+                self.last_saved=gif_media.encode(self.suite,listing,target,skip,duration,job)
+                self.suite.index_video(target)
+                self.suite.log('replay_save',**self.last_saved)
+                return self.last_saved
             name='Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.mp4'
             target=destination/name
             partial=target.with_suffix('.partial.mp4')
@@ -523,7 +539,7 @@ class Replay:
                 raise
             seconds=max(0,round(result['duration']))
             duration=f'{seconds//60:02d}:{seconds%60:02d}'
-            notice('Повтор сохранён',duration+' · видео в разделе «Экспорт»','success')
+            notice('Повтор сохранён',duration+(' · GIF' if result.get('format')=='gif' else ' · видео')+' в разделе «Экспорт»','success')
             return result
         return self.suite.job('Сохранение повтора',save_with_notice)
 
