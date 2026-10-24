@@ -86,4 +86,14 @@ class QualityTests(unittest.TestCase):
             _,_,duration=select_segments(rows,1900,minutes*60)
             self.assertEqual(duration,minutes*60)
 
+    def test_new_interval_is_capped_at_limit_and_rejects_already_saved_frames(self):
+        rows=[{'start':i*2,'end':i*2+2} for i in range(950)]
+        selected,skip,duration=select_segments(rows,742.75,300,start_at=700.25)
+        self.assertAlmostEqual(selected[0]['start']+skip,700.25)
+        self.assertAlmostEqual(duration,42.5)
+        selected,skip,duration=select_segments(rows,1042.75,300,start_at=700.25)
+        self.assertAlmostEqual(selected[0]['start']+skip,742.75)
+        self.assertEqual(duration,300)
+        with self.assertRaises(ValueError):select_segments(rows,700.25,300,start_at=700.25)
+
 if __name__=='__main__':unittest.main()

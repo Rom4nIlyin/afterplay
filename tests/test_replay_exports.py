@@ -9,7 +9,7 @@ from replay import Replay,closed_segments,validate_export
 
 
 class ReplayExportTests(unittest.TestCase):
-    def test_repeated_saves_cut_inside_gop_without_reset_or_av_lead(self):
+    def test_successful_save_starts_next_interval_at_click_without_av_lead(self):
         with tempfile.TemporaryDirectory() as temp:
             suite=Suite(Path(temp)/'data');rec=Replay(suite)
             session=rec.root/('a'*32);session.mkdir()
@@ -28,11 +28,19 @@ class ReplayExportTests(unittest.TestCase):
             original=[(r['path'],r['path'].stat().st_size) for r in closed_segments(session)]
             saves=[]
             for cutoff in (340.73,355.61):
+                expected=min(300,cutoff-rec.interval_start)
+                if saves:
+                    previous_start=rec.interval_start
+                    with patch('replay.time.perf_counter',return_value=100+cutoff),patch.object(suite,'probe',side_effect=ValueError('probe failed')):
+                        with self.assertRaisesRegex(ValueError,'probe failed'):rec.save({})
+                    self.assertEqual(rec.interval_start,previous_start)
+                    self.assertFalse(rec.saving)
                 with patch('replay.time.perf_counter',return_value=100+cutoff):
                     saved=rec.save({})
                 self.assertAlmostEqual(saved['capture_end'],cutoff)
-                self.assertAlmostEqual(saved['duration'],300,delta=.07)
-                validate_export(saved['path'],300,30,True)
+                self.assertAlmostEqual(saved['duration'],expected,delta=.07)
+                self.assertAlmostEqual(rec.interval_start,cutoff)
+                validate_export(saved['path'],expected,30,True)
                 decoded=run([suite.ff(),'-v','error','-i',saved['path'],'-f','null','-'],timeout=30)
                 self.assertEqual(decoded.returncode,0,decoded.stderr.decode(errors='replace'))
                 with av.open(saved['path']) as media:
@@ -59,17 +67,19 @@ class ReplayExportTests(unittest.TestCase):
                         '-map','0:v','-map','0:a','-c','copy','-avoid_negative_ts','make_zero',broken],timeout=30)
             self.assertEqual(result.returncode,0,result.stderr.decode(errors='replace'))
             with self.assertRaises(ValueError):validate_export(broken,5,30,True)
-            # The second save includes most of the first; it is not a new chunk
-            # beginning at the previous save's end.
-            self.assertLess(saves[1]['capture_start'],saves[0]['capture_end']-280)
+            self.assertAlmostEqual(saves[1]['capture_start'],saves[0]['capture_end'])
+            self.assertAlmostEqual(saves[1]['duration'],14.88,delta=.07)
+            self.assertAlmostEqual(rec.state()['buffer_seconds'],14.4,delta=.1)
 
     def test_destination_failure_releases_save_lock(self):
         with tempfile.TemporaryDirectory() as temp:
             suite=Suite(Path(temp)/'data');rec=Replay(suite)
             rec.phase='recording';rec.capture_epoch=0;rec.session=rec.root
+            rec.interval_start=12
             with patch.object(suite,'recordings_dir',side_effect=OSError('disk unavailable')):
                 with self.assertRaises(OSError):rec.save({})
             self.assertFalse(rec.saving)
+            self.assertEqual(rec.interval_start,12)
 
     def test_stale_capture_is_not_silently_exported(self):
         with tempfile.TemporaryDirectory() as temp:

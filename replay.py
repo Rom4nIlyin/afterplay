@@ -71,8 +71,8 @@ def closed_segments(session):
     except OSError:pass
     return result
 
-def select_segments(rows,cutoff,seconds):
-    start=max(0,float(cutoff)-float(seconds))
+def select_segments(rows,cutoff,seconds,start_at=0):
+    start=max(0,float(start_at),float(cutoff)-float(seconds))
     selected=[r for r in rows if r['end']>start+.001 and r['start']<cutoff-.001]
     if not selected:raise ValueError('Буфер ещё пуст. Подожди несколько секунд.')
     actual_start=max(start,selected[0]['start'])
@@ -124,6 +124,7 @@ class Replay:
         self.proc=None;self.session=None;self.started=None
         self.phase='off';self.error='';self.audio_name='';self.engine=''
         self.media_time=0.;self.audio_peak=0.;self.last_signal=0.;self.saving=False
+        self.interval_start=0.
         self.last_saved=None;self.hotkey_ok=False;self.hotkey_thread=None;self.hotkey_tid=None
         self.tray=None;self.auto_owned=False;self.hotkeys=None
         self.settings={**DEFAULTS,**suite.cfg.get('replay',{})}
@@ -197,7 +198,7 @@ class Replay:
     def state(self):
         with self.lock:
             rows=closed_segments(self.session) if self.session else []
-            length=min(self.settings['seconds'],max(0,rows[-1]['end']-rows[0]['start'])) if rows else 0
+            length=min(self.settings['seconds'],max(0,rows[-1]['end']-max(rows[0]['start'],self.interval_start))) if rows else 0
             return {'phase':self.phase,'error':self.error,'buffer_seconds':round(length,1),
                     'elapsed':round(time.monotonic()-self.started,1) if self.started else 0,
                     'audio_name':self.audio_name,'audio_peak':round(self.audio_peak,4),
@@ -235,6 +236,7 @@ class Replay:
             if self.saving:raise ValueError('Дождись сохранения клипа')
             self.phase='starting';self.error='';self.stop_event=threading.Event()
             self.media_time=0.;self.audio_peak=0.;self.last_signal=0.
+            self.interval_start=0.
             self.duplicate_frames=0;self.dropped_frames=0
             self.native_gpu=False;self.backend_note='';self.muxer=None;self.mux_thread=None
         try:
@@ -494,8 +496,8 @@ class Replay:
             if self.saving:raise ValueError('Предыдущий повтор ещё сохраняется')
             self.saving=True;session=self.session
             rows=closed_segments(session)
-            # Every save is a fresh window ending at this invocation. Encoder
-            # progress can lag behind real capture time and is not a save clock.
+            # The next interval begins at this invocation after a successful
+            # save. Capture keeps running while the current clip is encoded.
             cutoff=max(0,time.perf_counter()-self.capture_epoch) if self.phase=='recording' else (rows[-1]['end'] if rows else 0)
         stage=None;partial=None
         try:
@@ -512,7 +514,7 @@ class Replay:
             if self.phase=='recording' and (not rows or rows[-1]['end']<cutoff-.1):
                 raise ValueError('Захват отстаёт от текущего времени. Повтор не сохранён: проверьте нагрузку и журнал записи.')
             is_gif=self.settings.get('save_format')=='gif'
-            selected,skip,duration=select_segments(rows,cutoff,self.settings.get('gif_seconds',5) if is_gif else self.settings['seconds'])
+            selected,skip,duration=select_segments(rows,cutoff,self.settings.get('gif_seconds',5) if is_gif else self.settings['seconds'],self.interval_start)
             if is_gif:
                 import gif_media
                 gif_media.validate_duration(duration)
@@ -529,6 +531,7 @@ class Replay:
                 self.last_saved=gif_media.encode(self.suite,listing,target,skip,duration,job)
                 self.suite.index_video(target)
                 self.suite.log('replay_save',**self.last_saved)
+                with self.lock:self.interval_start=cutoff
                 return self.last_saved
             name='Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.mp4'
             target=destination/name
@@ -561,6 +564,7 @@ class Replay:
                              'capture_end':selected[0]['start']+skip+duration}
             self.suite.index_video(target)
             self.suite.log('replay_save',**self.last_saved)
+            with self.lock:self.interval_start=cutoff
             return self.last_saved
         finally:
             if partial:partial.unlink(missing_ok=True)

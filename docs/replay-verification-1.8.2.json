@@ -1,0 +1,57 @@
+{
+  "python_tests": 60,
+  "timeline_tests": true,
+  "synthetic_source_seconds": 370,
+  "synthetic_exports_seconds": [
+    300,
+    14.88
+  ],
+  "failed_save_preserves_interval": true,
+  "configured_limit_still_applies": true,
+  "native_resolution": [
+    2560,
+    1440
+  ],
+  "native_fps": 60,
+  "native_saves": [
+    {
+      "seconds": 60.0,
+      "capture_start": 20.544209100000444,
+      "capture_end": 80.54420910000044,
+      "first_source_time": 20.943,
+      "last_source_time": 80.906,
+      "video_start": 0.0,
+      "audio_start": 0.0,
+      "first_200ms_source_elapsed": 0.182,
+      "max_sync_ms": 38.67,
+      "full_decode": true
+    },
+    {
+      "seconds": 20.05,
+      "capture_start": 80.54420910000044,
+      "capture_end": 100.58686589999706,
+      "first_source_time": 80.941,
+      "last_source_time": 100.948,
+      "video_start": 0.0,
+      "audio_start": 0.0,
+      "first_200ms_source_elapsed": 0.182,
+      "max_sync_ms": 44.0,
+      "full_decode": true
+    },
+    {
+      "seconds": 20.05,
+      "capture_start": 100.58686589999706,
+      "capture_end": 120.62156409999443,
+      "first_source_time": 100.967,
+      "last_source_time": 121.008,
+      "video_start": 0.0,
+      "audio_start": 0.0,
+      "first_200ms_source_elapsed": 0.2,
+      "max_sync_ms": 36.67,
+      "full_decode": true
+    }
+  ],
+  "native_auto_record_hotkey_save_on_exit": true,
+  "foreground_preserved": true,
+  "game_launched": false
+}
