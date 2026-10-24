@@ -12,7 +12,7 @@ Visual Studio не требуется: C#-компоненты компилир�
 python scripts/build_portable.py
 ```
 
-Результат: `dist/Game-Clips-1.3.0-Portable-Win64.zip` и файл `.sha256`.
+Результат: `dist/AFTERPLAY-1.5.0-Portable-Win64.zip` и файл `.sha256`.
 Сборка содержит Python, закреплённые зависимости, FFmpeg и автономный
 подписанный установщик WebView2. Личные файлы из `data` не копируются.
 Загруженные установщики кэшируются в `build/downloads`.
@@ -21,7 +21,7 @@ python scripts/build_portable.py
 Скрипт не перезаписывает существующую папку сборки. Для другой версии:
 
 ```powershell
-python scripts/build_portable.py --version 1.4.1
+python scripts/build_portable.py --version 1.5.0
 ```
 
 При повторной сборке той же версии переименуйте предыдущую папку `build/portable-1.3.0`
@@ -86,9 +86,11 @@ Actions → Portable release → Run workflow, укажите версию бе�
 Номер в исходном `version.py` и версия сборки должны соответствовать релизу.
 При упаковке `version.py` генерируется из аргумента `--version`. Для автопроверки
 используется только последний стабильный GitHub Release и архив вида
-`Game-Clips-VERSION-Portable-Win64.zip`; Source code не устанавливается.
+`AFTERPLAY-VERSION-Portable-Win64.zip`; Source code не устанавливается.
 
 Тесты `tests/test_updates.py` проверяют установщик на временных каталогах:
 реальная .NET-программа копирует файлы и восстанавливает их при блокировке одного
 из файлов. Проверки ярлыков и автозапуска используют временные папки и не меняют
 рабочий стол или реальную автозагрузку компьютера сборки.
+
+Сборщик также загружает FFmpeg 9.0.2 по закреплённому URL, проверяет SHA-256 и кладёт его в `runtime/ffmpeg.exe`. GPU-путь использует фильтр `gfxcapture`; тесты без NVIDIA проверяют построение команд, а реальная запись проверяется на машине с NVENC.

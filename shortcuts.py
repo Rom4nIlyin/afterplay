@@ -7,7 +7,7 @@ APP_ID='AFTERPLAY.Desktop'
 
 def executable(root):
     root=Path(root)
-    return root/'AFTERPLAY.exe' if (root/'AFTERPLAY.exe').is_file() else root/'Game Clips.exe'
+    return root/'AFTERPLAY.exe'
 
 def create_shortcut(root,location='desktop',folder=None):
     root=Path(root).resolve();exe=executable(root)
@@ -51,7 +51,7 @@ def set_autostart(root,enabled,folder=None):
     try:
         folder=Path(folder or shell.SHGetFolderPath(0,shellcon.CSIDL_STARTUP,0,0))
         ws=win32com.client.Dispatch('WScript.Shell')
-        targets={str(Path(root).resolve()/name).casefold() for name in ('Game Clips.exe','AFTERPLAY.exe')}
+        targets={str(Path(root).resolve()/name).casefold() for name in ('AFTERPLAY.exe',)}
         created=create_shortcut(root,'startup',folder) if enabled else None
         for link in folder.glob('*.lnk'):
             if created and link==created:continue

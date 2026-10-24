@@ -39,7 +39,7 @@ class GitHubRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req,fp,code,msg,headers,allowed_url(newurl))
 
 def open_url(url):
-    req=urllib.request.Request(allowed_url(url),headers={'User-Agent':f'Game-Clips/{VERSION}', 'Accept':'application/vnd.github+json'})
+    req=urllib.request.Request(allowed_url(url),headers={'User-Agent':f'AFTERPLAY/{VERSION}', 'Accept':'application/vnd.github+json'})
     return urllib.request.build_opener(GitHubRedirect()).open(req,timeout=30)
 
 def digest(path):
@@ -58,7 +58,7 @@ def release_info(release, current=VERSION):
     if release.get('draft') or release.get('prerelease'):raise ValueError('Ожидался стабильный релиз')
     tag=release.get('tag_name','');version=tag.lstrip('v');new=version_tuple(tag)
     assets={a['name']:a for a in release.get('assets',[])}
-    name=next((n for n in (f'AFTERPLAY-{version}-Portable-Win64.zip',f'Game-Clips-{version}-Portable-Win64.zip') if n in assets),f'AFTERPLAY-{version}-Portable-Win64.zip')
+    name=f'AFTERPLAY-{version}-Portable-Win64.zip'
     asset=assets.get(name)
     if not asset or asset.get('state')!='uploaded':raise ValueError('В релизе пока нет готового портативного архива')
     expected=f'https://github.com/{REPOSITORY}/releases/download/{tag}/{name}'
@@ -85,7 +85,7 @@ def unpack_verified(archive, destination, expected_version):
         names=set();members=[];total=0
         for info in z.infolist():
             if info.is_dir():continue
-            prefix=next((p for p in ('AFTERPLAY Portable/','Game Clips Portable/') if info.filename.startswith(p)),None)
+            prefix='AFTERPLAY Portable/' if info.filename.startswith('AFTERPLAY Portable/') else None
             if not prefix:raise ValueError('Некорректная структура архива')
             name=info.filename[len(prefix):];safe_name(name)
             if name.casefold() in names:raise ValueError('Повторяющийся путь в архиве')
@@ -100,7 +100,7 @@ def unpack_verified(archive, destination, expected_version):
             with z.open(info) as source,target.open('wb') as out:shutil.copyfileobj(source,out,1024*1024)
     manifest=json.loads((destination/'SHA256SUMS.json').read_text('utf-8'))
     if not isinstance(manifest,dict):raise ValueError('Некорректный каталог обновления')
-    required={'app.py','version.py','Updater.exe','Game Clips.exe','runtime/pythonw.exe'}
+    required={'app.py','version.py','Updater.exe','AFTERPLAY.exe','runtime/pythonw.exe'}
     if not required.issubset(manifest):raise ValueError('Неполный комплект обновления')
     if {name for _,name in members}!=set(manifest)|{'SHA256SUMS.json'}:raise ValueError('Архив не соответствует каталогу файлов')
     for name,checksum in manifest.items():
@@ -121,9 +121,9 @@ class AppUpdater:
         try:
             status=json.loads((self.data/'update-status.json').read_text('utf-8'))
             cache=Path(status['stage']).resolve().parent
-            expected=(Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'GameClips/updates').resolve()
+            expected=(Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'Afterplay/updates').resolve()
             if (status.get('success') and status.get('version')==VERSION and cache.parent==expected
-                and re.fullmatch('[0-9a-f]{32}',cache.name) and (cache/'.game-clips-update').is_file()):
+                and re.fullmatch('[0-9a-f]{32}',cache.name) and (cache/'.afterplay-update').is_file()):
                 shutil.rmtree(cache)
         except (OSError,ValueError,KeyError,TypeError):pass
 
@@ -156,10 +156,10 @@ class AppUpdater:
             if not self.state()['supported']:raise ValueError('Автообновление доступно в портативной сборке')
             if shutil.disk_usage(self.root).free<latest['bytes']*6+512*1024**2:raise ValueError('Недостаточно места для обновления и резервной копии')
             with tempfile.NamedTemporaryFile(dir=self.root,prefix='.update-write-',delete=True):pass
-            cache_root=Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'GameClips'/'updates'
+            cache_root=Path(os.environ.get('LOCALAPPDATA',tempfile.gettempdir()))/'Afterplay'/'updates'
             cache_root.mkdir(parents=True,exist_ok=True)
             cache=cache_root/uuid.uuid4().hex;cache.mkdir()
-            (cache/'.game-clips-update').write_text('Owned Game Clips update cache','utf-8')
+            (cache/'.afterplay-update').write_text('Owned AFTERPLAY update cache','utf-8')
             archive=cache/'release.zip';received=0;hasher=hashlib.sha256()
             with open_url(latest['url']) as response,archive.open('wb') as out:
                 while True:

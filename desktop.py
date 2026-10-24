@@ -12,8 +12,8 @@ class Desktop:
         self.title='AFTERPLAY'
         self.notifications=None
         self.last_notice=None
-        self.image=Image.open(Path(__file__).parent/'ui'/'clips.ico').convert('RGBA').resize((64,64))
-        self.recording_image=Image.open(Path(__file__).parent/'ui'/'clips-recording.ico').convert('RGBA').resize((64,64))
+        self.image=Image.open(Path(__file__).parent/'ui'/'afterplay.ico').convert('RGBA').resize((64,64))
+        self.recording_image=Image.open(Path(__file__).parent/'ui'/'afterplay-recording.ico').convert('RGBA').resize((64,64))
         items=[pystray.MenuItem('Открыть '+self.title,self.show,default=True)]
         if suite.replay:
             items.extend([pystray.MenuItem(lambda item:'Сохранить последние '+str(suite.replay.settings['seconds']//60)+' мин',lambda *_:suite.replay.save_job(),
@@ -21,7 +21,7 @@ class Desktop:
                           pystray.MenuItem('Остановить повтор',lambda *_:threading.Thread(target=suite.replay.stop,daemon=True).start(),
                                           enabled=lambda item:suite.replay.phase=='recording')])
         items.extend([pystray.Menu.SEPARATOR,pystray.MenuItem('Выйти полностью',self.exit)])
-        self.icon=pystray.Icon('GVDesktop-'+mode,self.image,self.title,menu=pystray.Menu(*items))
+        self.icon=pystray.Icon('AFTERPLAY-'+mode,self.image,self.title,menu=pystray.Menu(*items))
         self.icon.run_detached()
         if suite.replay:suite.replay.tray=self.icon
         suite.window.events.closing+=self.closing
@@ -49,7 +49,7 @@ class Desktop:
                 if self.notifications is None:
                     import clr
                     clr.AddReference(str(Path(__file__).parent/'ReplayNotification.dll'))
-                    from GameClips import ReplayNotifications
+                    from Afterplay import ReplayNotifications
                     self.notifications=ReplayNotifications
                 self.notifications.Show(title,message,kind)
                 self.last_notice={'title':title,'message':message,'kind':kind}
@@ -75,7 +75,7 @@ class Desktop:
                     self.suite.window.set_title(self.title)
                     from System import Action
                     from System.Drawing import Icon
-                    name='clips-recording.ico' if active else 'clips.ico'
+                    name='afterplay-recording.ico' if active else 'afterplay.ico'
                     native_icon=Icon(str(Path(__file__).parent/'ui'/name))
                     def assign():
                         previous=getattr(self,'_native_icon',None)

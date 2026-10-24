@@ -12,6 +12,15 @@ Build provider and build/dependency information: https://www.gyan.dev/ffmpeg/bui
 Imageio packaging source: https://github.com/imageio/imageio-ffmpeg/tree/v0.6.0
 The unmodified FFmpeg executable runs as a separate process.
 
+FFmpeg 9.0.2 essentials build by gyan.dev: runtime/ffmpeg.exe
+Build archive: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip
+Archive SHA-256: 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
+License: GPL version 3 or later; see FFmpeg-COPYING.GPLv3.txt.
+Corresponding source: https://github.com/FFmpeg/FFmpeg/tree/n9.0.2
+Build configuration and dependency sources: https://www.gyan.dev/ffmpeg/builds/
+The GPU capture path uses gfxcapture / ddagrab D3D11 frames directly with NVENC; only audio
+is packetized by Python. The imageio executable remains a development fallback.
+
 Microsoft WebView2 Evergreen Standalone Installer, x64:
 https://go.microsoft.com/fwlink/p/?LinkId=2124701
 Signed by Microsoft Corporation. Installer is used only when WebView2 is missing.

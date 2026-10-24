@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace GameClips {
+namespace Afterplay {
     public static class ReplayNotifications {
         private static ReplayNotice current;
         public static bool Visible { get { return current != null && !current.IsDisposed && current.Visible; } }
@@ -37,7 +37,7 @@ namespace GameClips {
             }
         }
         public ReplayNotice() {
-            Text = "Game Clips — уведомление";
+            Text = "AFTERPLAY — уведомление";
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = true;

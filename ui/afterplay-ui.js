@@ -69,7 +69,7 @@ window.renderDesktopExtras=function(){
  panel.insertAdjacentHTML('afterbegin',autoSettings()+hotkeySettings());
  api('replay_applications').then(result=>{
   const select=$('#autoRunning');if(!select)return;
-  select.innerHTML='<option value="">Выбери окно игры или приложения</option>'+result.applications.filter(app=>!['afterplay.exe','game clips.exe','pythonw.exe'].includes(app.name.toLowerCase())).map(app=>`<option value="${esc(app.path)}" data-name="${esc(app.title||app.name)}">${esc(app.name)} — ${esc(app.title)}</option>`).join('');
+  select.innerHTML='<option value="">Выбери окно игры или приложения</option>'+result.applications.filter(app=>!['afterplay.exe','pythonw.exe'].includes(app.name.toLowerCase())).map(app=>`<option value="${esc(app.path)}" data-name="${esc(app.title||app.name)}">${esc(app.name)} — ${esc(app.title)}</option>`).join('');
  }).catch(error=>{if($('#autoRunning'))$('#autoRunning').innerHTML='<option value="">'+esc(error.message)+'</option>'});
 };
 const previousPreferences=window.updatePreferences;

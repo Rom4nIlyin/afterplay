@@ -74,7 +74,7 @@ def open_capture(pid,exclude=False):
     if not supported():raise ValueError('Звук отдельного приложения требует Windows 11 или Windows build 20348+. Выбери весь звук устройства.')
     import clr
     clr.AddReference(str(Path(__file__).parent/'ProcessAudio.dll'))
-    from GameClipsAudio import ProcessCapture
+    from AfterplayAudio import ProcessCapture
     capture=ProcessCapture()
     capture.Start(pid,exclude)
     return capture

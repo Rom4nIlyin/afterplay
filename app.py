@@ -161,7 +161,9 @@ class Suite:
             from imageio_ffmpeg._definitions import FNAME_PER_PLATFORM, get_platform
             # Use our bundled executable directly. The package's auto-discovery
             # launches a probe with inherited stdin, which can fail in a GUI process.
-            binary = Path(imageio_ffmpeg.__file__).resolve().parent / 'binaries' / FNAME_PER_PLATFORM[get_platform()]
+            binary = BASE / 'runtime' / 'ffmpeg.exe'
+            if not binary.is_file():
+                binary = Path(imageio_ffmpeg.__file__).resolve().parent / 'binaries' / FNAME_PER_PLATFORM[get_platform()]
             if not binary.is_file():
                 raise ValueError('Встроенный FFmpeg отсутствует: ' + str(binary))
             try:
@@ -565,7 +567,7 @@ def server_for(suite, token=None, port=0):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
-                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','library-ui.js','afterplay.css','afterplay.png','clips.ico','clips-recording.ico'}:
+                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','library-ui.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
                 elif route.startswith('filmstrip/'):
                     p=suite.filmstrip(route.split('/')[-1])
@@ -680,7 +682,7 @@ def main():
                 elif suite.auto:suite.auto.start()
             webview.start(ready,gui='edgechromium',private_mode=True,
                           storage_path=str(suite.data/'webview'/args.mode),
-                          icon=str(BASE/'ui'/'clips.ico'))
+                          icon=str(BASE/'ui'/'afterplay.ico'))
         finally:
             suite.shutdown()
             server.shutdown()

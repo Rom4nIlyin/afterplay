@@ -14,17 +14,17 @@ from shortcuts import create_shortcut,set_autostart,APP_ID
 
 def sample_files(version='1.3.1'):
     return {'app.py':b'new application\n','version.py':f"VERSION = '{version}'\n".encode(),
-            'Updater.exe':b'updater fixture','Game Clips.exe':b'launcher fixture','runtime/pythonw.exe':b'python fixture'}
+            'Updater.exe':b'updater fixture','AFTERPLAY.exe':b'launcher fixture','runtime/pythonw.exe':b'python fixture'}
 
 def make_archive(path,files=None):
     files=files or sample_files()
     sums={name:hashlib.sha256(data).hexdigest() for name,data in files.items()}
     with zipfile.ZipFile(path,'w') as z:
-        for name,data in files.items():z.writestr('Game Clips Portable/'+name,data)
-        z.writestr('Game Clips Portable/SHA256SUMS.json',json.dumps(sums))
+        for name,data in files.items():z.writestr('AFTERPLAY Portable/'+name,data)
+        z.writestr('AFTERPLAY Portable/SHA256SUMS.json',json.dumps(sums))
 
 def release(archive,version='1.3.1'):
-    name=f'Game-Clips-{version}-Portable-Win64.zip'
+    name=f'AFTERPLAY-{version}-Portable-Win64.zip'
     return {'tag_name':'v'+version,'draft':False,'prerelease':False,'assets':[{
         'name':name,'state':'uploaded','size':Path(archive).stat().st_size,
         'browser_download_url':f'https://github.com/{update.REPOSITORY}/releases/download/v{version}/{name}',
@@ -57,7 +57,7 @@ class UpdateValidationTests(unittest.TestCase):
             with self.assertRaises(ValueError):update.allowed_url(url)
         with tempfile.TemporaryDirectory() as tmp:
             archive=Path(tmp)/'bad.zip'
-            with zipfile.ZipFile(archive,'w') as z:z.writestr('Game Clips Portable/../escape.txt','bad')
+            with zipfile.ZipFile(archive,'w') as z:z.writestr('AFTERPLAY Portable/../escape.txt','bad')
             with self.assertRaises(ValueError):update.unpack_verified(archive,Path(tmp)/'bundle','1.3.1')
             self.assertFalse((Path(tmp)/'escape.txt').exists())
 
@@ -94,7 +94,7 @@ class ShortcutTests(unittest.TestCase):
         pythoncom.CoInitialize()
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                tmp=Path(tmp);root=tmp/'app';root.mkdir();exe=root/'Game Clips.exe';exe.write_bytes(b'fixture')
+                tmp=Path(tmp);root=tmp/'app';root.mkdir();exe=root/'AFTERPLAY.exe';exe.write_bytes(b'fixture')
                 desktop=tmp/'desktop';link=create_shortcut(root,folder=desktop)
                 shell=win32com.client.Dispatch('WScript.Shell');saved=shell.CreateShortcut(str(link))
                 self.assertTrue(os.path.samefile(saved.TargetPath,exe))
@@ -102,7 +102,7 @@ class ShortcutTests(unittest.TestCase):
                 store=propsys.SHGetPropertyStoreFromParsingName(str(link))
                 self.assertEqual(store.GetValue(pscon.PKEY_AppUserModel_ID).GetValue(),APP_ID)
                 # A different install keeps its own shortcut and startup entry.
-                other=tmp/'other';other.mkdir();(other/'Game Clips.exe').write_bytes(b'other')
+                other=tmp/'other';other.mkdir();(other/'AFTERPLAY.exe').write_bytes(b'other')
                 other_link=create_shortcut(other,folder=desktop)
                 self.assertNotEqual(link,other_link);self.assertTrue(link.exists())
                 startup=tmp/'startup';first=set_autostart(root,True,startup)
@@ -163,5 +163,20 @@ class NativeUpdaterTests(unittest.TestCase):
         status=json.loads((target/'data/update-status.json').read_text('utf-8'));self.assertFalse(status['success'])
         self.assertIn('восстановлены',status['message'])
         self.assertEqual((target/'data/clip.mp4').read_bytes(),b'user video')
+
+    def test_retires_only_unchanged_catalogued_program_files_and_backs_them_up(self):
+        target,stage,plan=self.fixture('retired')
+        (target/'obsolete.exe').write_bytes(b'obsolete launcher')
+        (target/'modified.txt').write_bytes(b'local changes')
+        previous={'obsolete.exe':hashlib.sha256(b'obsolete launcher').hexdigest(),
+                  'modified.txt':hashlib.sha256(b'original').hexdigest()}
+        (target/'SHA256SUMS.json').write_text(json.dumps(previous),'utf-8')
+        result=subprocess.run([str(self.helper),str(plan)],timeout=30)
+        self.assertEqual(result.returncode,0)
+        self.assertFalse((target/'obsolete.exe').exists())
+        self.assertEqual((target/'modified.txt').read_bytes(),b'local changes')
+        status=json.loads((target/'data/update-status.json').read_text('utf-8'))
+        self.assertEqual((Path(status['backup'])/'obsolete.exe').read_bytes(),b'obsolete launcher')
+        self.assertEqual(status['retired'],['obsolete.exe'])
 
 if __name__=='__main__':unittest.main()

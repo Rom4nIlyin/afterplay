@@ -18,6 +18,7 @@ import uuid
 import process_audio
 import storage
 import video_quality
+import gpu_capture
 from capture_media import VideoSource,MediaMux
 
 NO_WINDOW = 0x08000000
@@ -97,6 +98,7 @@ class Replay:
             self.settings['audio']='default'
         self.encoder='h264_nvenc'
         self.video_source=None;self.muxer=None;self.mux_thread=None
+        self.native_gpu=False;self.backend_note=''
         self.duplicate_frames=0;self.dropped_frames=0
         self._audio_queue=queue.Queue(maxsize=64)
 
@@ -116,7 +118,7 @@ class Replay:
             cfg['mbps']=int(args['mbps'])
         for key in ('max_mbps','cq','height','audio_bitrate','audio_offset_ms'):
             if key in args:cfg[key]=int(args[key])
-        for key in ('capture_mode','quality_mode','preset','encoder'):
+        for key in ('capture_mode','quality_mode','preset','encoder','capture_backend'):
             if key in args:cfg[key]=str(args[key])
         for key in ('audio_follow_window','cursor','capture_border'):
             if key in args:
@@ -161,6 +163,7 @@ class Replay:
                     'audio_name':self.audio_name,'audio_peak':round(self.audio_peak,4),
                     'audio_recent':time.monotonic()-self.last_signal<3,'engine':self.engine,
                     'encoder':self.encoder,
+                    'gpu_capture':self.native_gpu,'backend_note':self.backend_note,
                     'duplicate_frames':self.duplicate_frames,'dropped_frames':self.dropped_frames,
                     'late_audio_ms':round(self.muxer.late_audio_frames/(self._audio_rate or 48000)*1000,1) if self.muxer else 0,
                     'output_size':getattr(self,'output_size',None),
@@ -169,12 +172,17 @@ class Replay:
 
     def _capture_command(self,monitor,audio,backend):
         cfg=self.settings
-        cmd=[self.suite.ff(),'-hide_banner','-loglevel','warning','-thread_queue_size','512',
-             '-probesize','32768','-analyzeduration','0','-f','nut','-colorspace','bt709','-color_range','tv','-i','pipe:0','-map','0:v:0']
+        cmd=[self.suite.ff(),'-hide_banner','-loglevel','warning']
+        if self.native_gpu:
+            cmd+=gpu_capture.input_options(self.capture_graph,self.video_epoch,audio)
+        else:
+            cmd+=['-thread_queue_size','8','-probesize','32768','-analyzeduration','0',
+                  '-f','nut','-colorspace','bt709','-color_range','tv','-i','pipe:0','-map','0:v:0']
         if audio:
-            cmd+=['-map','0:a:0','-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
+            cmd+=['-map','1:a:0' if self.native_gpu else '0:a:0','-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
+            if self.native_gpu:cmd+=['-shortest']
         else:cmd+=['-an']
-        cmd+=video_quality.encoder_options(cfg,self.encoder,monitor['width'],monitor['height'])
+        cmd+=video_quality.encoder_options(cfg,self.encoder,monitor['width'],monitor['height'],gpu_frames=self.native_gpu)
         cmd+=[
               '-f','segment','-segment_time','2','-reset_timestamps','0','-segment_format','mpegts',
               '-segment_list',str(self.session/'segments.csv'),'-segment_list_type','csv',
@@ -188,6 +196,7 @@ class Replay:
             self.phase='starting';self.error='';self.stop_event=threading.Event()
             self.media_time=0.;self.audio_peak=0.;self.last_signal=0.
             self.duplicate_frames=0;self.dropped_frames=0
+            self.native_gpu=False;self.backend_note='';self.muxer=None;self.mux_thread=None
         try:
             bitrate=self.settings['mbps'] if self.settings['quality_mode']=='cbr' else self.settings['max_mbps']
             needed=max(2*1024**3,int(bitrate*1000000/8*(self.settings['seconds']+10)*3.2)+512*1024**2)
@@ -223,19 +232,39 @@ class Replay:
             choice=self.settings['encoder']
             if choice=='h264_nvenc' and check.returncode:raise ValueError('NVENC недоступен. Выберите автоматический кодировщик или CPU.')
             self.encoder=('h264_nvenc' if check.returncode==0 else 'libx264') if choice=='auto' else choice
+            if self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto':
+                if gpu_capture.available(self.suite.ff()):
+                    size=gpu_capture.source_size(window,monitor)
+                    self.output_size=video_quality.output_size(self.settings,*size)
+                    self.capture_graph=gpu_capture.source_filter(self.settings,window,monitor,self.output_size)
+                    try:
+                        probe=subprocess.run([self.suite.ff(),'-hide_banner','-loglevel','error',
+                                              '-f','lavfi','-i',self.capture_graph,'-frames:v','3',
+                                              '-c:v','h264_nvenc','-preset','p1','-delay','0','-f','null','-'],
+                                             stdin=subprocess.DEVNULL,capture_output=True,creationflags=NO_WINDOW,timeout=3)
+                        self.native_gpu=probe.returncode==0
+                        if not self.native_gpu:
+                            self.backend_note='GPU-захват недоступен; включён совместимый режим. '+probe.stderr.decode('utf-8','replace')[-400:]
+                    except subprocess.TimeoutExpired:
+                        self.backend_note='Источник не обновляет изображение; включён совместимый режим для неподвижных окон.'
+                else:self.backend_note='Для GPU-захвата нужен FFmpeg с фильтром gfxcapture; включён совместимый режим.'
             self.session=self.root/uuid.uuid4().hex;self.session.mkdir()
-            (self.session/'.game-clips-buffer').write_text('Owned rolling buffer; no original media.',encoding='utf-8')
-            self.engine='Windows Graphics Capture · '+('окно' if window else 'экран')
+            (self.session/'.afterplay-buffer').write_text('Owned rolling buffer; no original media.',encoding='utf-8')
+            self.engine=('D3D11 → NVENC · ' if self.native_gpu else 'Windows Graphics Capture · совместимый · ')+('окно' if window else 'экран')
             self._audio_queue=queue.Queue(maxsize=256)
             self._audio_stream=None;self._audio_manager=None;self._process_capture=None
             self._process_reader=None;self.audio_error=''
-            self.video_source=VideoSource(hwnd=window['hwnd'] if window else None,
-                                          monitor_index=None if window else monitor['wgc_index'],
-                                          fps=self.settings['fps'],cursor=self.settings['cursor'],
-                                          capture_border=self.settings['capture_border'])
+            if self.native_gpu:
+                monitor={'width':size[0],'height':size[1]}
+            else:
+                self.video_source=VideoSource(hwnd=window['hwnd'] if window else None,
+                                              monitor_index=None if window else monitor['wgc_index'],
+                                              fps=self.settings['fps'],cursor=self.settings['cursor'],
+                                              capture_border=self.settings['capture_border'])
+                monitor={'width':self.video_source.width,'height':self.video_source.height}
             self.window_hwnd=window['hwnd'] if window else None
-            monitor={'width':self.video_source.width,'height':self.video_source.height}
             self.output_size=video_quality.output_size(self.settings,monitor['width'],monitor['height'])
+            self.audio_epoch=time.perf_counter();self.video_epoch=time.time()
             self._audio_rate=audio['rate'] if audio else 0
             if audio:self._open_audio(audio)
             log=self.suite.data/'logs'/f'replay-{self.session.name}.log'
@@ -243,14 +272,18 @@ class Replay:
             cmd=self._capture_command(monitor,audio,self.engine)
             self.proc=subprocess.Popen([str(x) for x in cmd],stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE,stderr=self.logfile,creationflags=NO_WINDOW)
-            self.muxer=MediaMux(self.video_source,self._audio_queue,audio,self.settings['fps'],self.stop_event,self.settings['audio_offset_ms'],self.output_size)
-            self.mux_thread=threading.Thread(target=self.muxer.write,args=(self.proc.stdin,),daemon=True)
-            self.mux_thread.start()
+            if self.native_gpu:
+                self.muxer=gpu_capture.AudioMux(self._audio_queue,audio,self.audio_epoch,self.stop_event,self.settings['audio_offset_ms']) if audio else None
+            else:
+                self.muxer=MediaMux(self.video_source,self._audio_queue,audio,self.settings['fps'],self.stop_event,self.settings['audio_offset_ms'],self.output_size)
+            if self.muxer:
+                self.mux_thread=threading.Thread(target=self.muxer.write,args=(self.proc.stdin,),daemon=True)
+                self.mux_thread.start()
             threading.Thread(target=self._progress_reader,args=(self.proc,),daemon=True).start()
             self.started=time.monotonic()
             self.phase='recording'
             self.suite.log('replay_start',monitor=monitor,system_audio=self.audio_name,microphone=False,
-                           encoder=self.encoder,output_size=self.output_size,settings=self.settings)
+                           encoder=self.encoder,output_size=self.output_size,gpu_capture=self.native_gpu,backend_note=self.backend_note,settings=self.settings)
             threading.Thread(target=self._maintain,args=(audio,),daemon=True).start()
             return self.state()
         except Exception as e:
@@ -326,6 +359,9 @@ class Replay:
             if getattr(self,'window_hwnd',None) and ctypes.windll.user32.IsIconic(wintypes.HWND(self.window_hwnd)):
                 self.error='Окно свёрнуто. Разверните его и включите повтор заново.'
                 self.stop();self.phase='error';break
+            if getattr(self,'window_hwnd',None) and not ctypes.windll.user32.IsWindow(wintypes.HWND(self.window_hwnd)):
+                # Allow AutoRecorder to save the closed game's final buffer.
+                self.stop(preserve=True);break
             media_error=self.muxer.error if self.muxer else ''
             if media_error:
                 self.error='Ошибка захвата: '+media_error
@@ -366,7 +402,7 @@ class Replay:
         if not session:return
         session=Path(session)
         if session.resolve().parent!=self.root.resolve() or not re.fullmatch(r'[a-f0-9]{32}',session.name):return
-        if (session/'.game-clips-buffer').is_file():shutil.rmtree(session,ignore_errors=True)
+        if (session/'.afterplay-buffer').is_file():shutil.rmtree(session,ignore_errors=True)
 
     def stop(self,preserve=None):
         if preserve is None:preserve=self.auto_owned
@@ -379,6 +415,9 @@ class Replay:
             source.stop();self.video_source=None
         writer=getattr(self,'mux_thread',None)
         if writer and writer is not threading.current_thread():writer.join(timeout=3)
+        if self.native_gpu and self.muxer is None and proc and proc.poll() is None:
+            try:proc.stdin.write(b'q\n');proc.stdin.flush();proc.stdin.close()
+            except (OSError,ValueError):pass
         if proc and proc.poll() is None:
             try:proc.wait(timeout=3)
             except subprocess.TimeoutExpired:

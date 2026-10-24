@@ -26,7 +26,7 @@ def prepare_runtime(base):
     manifest = base / 'SHA256SUMS.json'
     if not manifest.is_file():
         if (base / 'runtime/python313._pth').is_file():
-            raise RuntimeError('Не найден SHA256SUMS.json. Распакуйте архив Game Clips целиком.')
+            raise RuntimeError('Не найден SHA256SUMS.json. Распакуйте архив AFTERPLAY целиком.')
         return []  # Development/source installations use their own pip environment.
     expected = json.loads(manifest.read_text(encoding='utf-8-sig'))
     pending = []
@@ -35,7 +35,7 @@ def prepare_runtime(base):
             continue
         component = (base / relative).resolve()
         if not component.is_relative_to(base):
-            raise RuntimeError('Путь компонента выходит за пределы папки Game Clips.')
+            raise RuntimeError('Путь компонента выходит за пределы папки AFTERPLAY.')
         zone = str(component) + ':Zone.Identifier'
         try:
             with open(zone, 'rb'):
@@ -43,12 +43,12 @@ def prepare_runtime(base):
         except FileNotFoundError:
             continue
         if hashlib.sha256(component.read_bytes()).hexdigest() != digest.lower():
-            raise RuntimeError('Компонент Game Clips изменён: ' + relative + '. Распакуйте официальный архив заново.')
+            raise RuntimeError('Компонент AFTERPLAY изменён: ' + relative + '. Распакуйте официальный архив заново.')
         pending.append((relative, zone))
     # Validate every candidate first; do not partially prepare a damaged bundle.
     for relative, zone in pending:
         try:
             os.remove(zone)
         except OSError as error:
-            raise RuntimeError('Нет доступа к компоненту ' + relative + '. Переместите Game Clips в папку с правом записи.') from error
+            raise RuntimeError('Нет доступа к компоненту ' + relative + '. Переместите AFTERPLAY в папку с правом записи.') from error
     return [relative for relative, _ in pending]

@@ -61,6 +61,7 @@ class Updater {
         string target=null,stage=null,backup=null,status=null,version="";
         bool quiet=false,restart=false,started=false;
         var changed=new List<string>();var existed=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var retired=new List<string>();
         try {
             if(args.Length!=1)throw new Exception("Не указан план обновления");
             var plan=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(args[0],Encoding.UTF8));
@@ -68,12 +69,18 @@ class Updater {
             quiet=Convert.ToBoolean(plan["quiet"]);restart=Convert.ToBoolean(plan["restart"]);version=(string)plan["version"];
             NoLinks(target);NoLinks(stage);
             if(target.Equals(stage,StringComparison.OrdinalIgnoreCase)||Within(target,stage)||Within(stage,target))throw new Exception("Каталоги обновления должны быть независимыми");
-            if(!File.Exists(Path.Combine(target,"Game Clips.exe"))||!File.Exists(Path.Combine(target,"SHA256SUMS.json")))throw new Exception("Это не портативная установка Game Clips");
+            if(!File.Exists(Path.Combine(target,"AFTERPLAY.exe"))||!File.Exists(Path.Combine(target,"SHA256SUMS.json")))throw new Exception("Это не портативная установка AFTERPLAY");
             status=Full((string)plan["status"]);
             // Standard installations and explicitly selected external data folders
             // both use the application's update-status.json file.
             if(Path.GetFileName(status)!="update-status.json")throw new Exception("Некорректный журнал обновления");
             NoLinks(status);
+            // Only retire obsolete program files catalogued by the old bundle,
+            // and only if their bytes still match that catalog. User-created or
+            // locally modified files are preserved. Every retirement is backed up.
+            Dictionary<string,string> previous=null;
+            try { previous=json.Deserialize<Dictionary<string,string>>(File.ReadAllText(Path.Combine(target,"SHA256SUMS.json"))); }
+            catch(ArgumentException) { }
             var files=new List<Dictionary<string,object>>();var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach(object item in (IEnumerable)plan["files"]) {
                 var file=(Dictionary<string,object>)item;string name=(string)file["path"];
@@ -82,13 +89,18 @@ class Updater {
                 if(!Hash(source).Equals((string)file["sha256"],StringComparison.Ordinal))throw new Exception("Повреждён файл обновления: "+name);
                 files.Add(file);
             }
-            foreach(string name in new [] {"app.py","version.py","Game Clips.exe","Updater.exe","SHA256SUMS.json","runtime/pythonw.exe"})
+            foreach(string name in new [] {"app.py","version.py","AFTERPLAY.exe","Updater.exe","SHA256SUMS.json","runtime/pythonw.exe"})
                 if(!names.Contains(name))throw new Exception("Неполный комплект: "+name);
+            if(previous!=null)foreach(var item in previous) {
+                if(names.Contains(item.Key))continue;
+                string old=Member(target,item.Key);
+                if(File.Exists(old)&&Hash(old).Equals(item.Value,StringComparison.OrdinalIgnoreCase))retired.Add(item.Key);
+            }
             int parent=Convert.ToInt32(plan["parent_pid"]);
             if(parent>0) {
                 Process process=null;
                 try { process=Process.GetProcessById(parent); } catch(ArgumentException) { }
-                if(process!=null)using(process) { if(!process.WaitForExit(120000))throw new Exception("Game Clips не закрылся. Повторите обновление."); }
+                if(process!=null)using(process) { if(!process.WaitForExit(120000))throw new Exception("AFTERPLAY не закрылся. Повторите обновление."); }
             }
             backup=Path.Combine(target,"backups","update-"+DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N").Substring(0,8));
             NoLinks(backup);Directory.CreateDirectory(backup);
@@ -97,13 +109,15 @@ class Updater {
                 string name=(string)file["path"],old=Member(target,name);
                 if(File.Exists(old)) { Copy(old,Member(backup,name));existed.Add(name); }
             }
+            foreach(string name in retired) { Copy(Member(target,name),Member(backup,name));existed.Add(name); }
             started=true;
             foreach(var file in files) {
                 string name=(string)file["path"];
                 Copy(Member(stage,name),Member(target,name));changed.Add(name);
             }
-            Status(status,new { success=true,version=version,backup=backup,stage=stage,message="Обновление установлено. Записи и настройки сохранены." });
-            if(restart)Process.Start(new ProcessStartInfo(Path.Combine(target,File.Exists(Path.Combine(target,"AFTERPLAY.exe"))?"AFTERPLAY.exe":"Game Clips.exe")) { WorkingDirectory=target,UseShellExecute=false });
+            foreach(string name in retired) { File.Delete(Member(target,name));changed.Add(name); }
+            Status(status,new { success=true,version=version,backup=backup,stage=stage,retired=retired,message="Обновление установлено. Записи и настройки сохранены." });
+            if(restart)Process.Start(new ProcessStartInfo(Path.Combine(target,"AFTERPLAY.exe")) { WorkingDirectory=target,UseShellExecute=false });
             return 0;
         } catch(Exception error) {
             string rollbackError="";
@@ -118,7 +132,7 @@ class Updater {
             if(started)message+=rollbackError.Length==0?"\nПредыдущие файлы восстановлены.":"\nОшибка восстановления: "+rollbackError;
             if(backup!=null)message+="\nРезервная копия: "+backup;
             try { if(status!=null)Status(status,new { success=false,version=version,backup=backup,message=message }); } catch { }
-            if(!quiet)MessageBox.Show(message,"Game Clips — обновление",MessageBoxButtons.OK,MessageBoxIcon.Error);
+            if(!quiet)MessageBox.Show(message,"AFTERPLAY — обновление",MessageBoxButtons.OK,MessageBoxIcon.Error);
             return 1;
         }
     }
