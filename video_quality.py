@@ -34,15 +34,15 @@ def encoder_options(cfg,encoder,width,height,*,gpu_frames=False):
         performance=cfg['preset']=='performance';quality=cfg['preset']=='quality'
         args+=['-preset',preset,'-tune','ll' if performance else 'hq','-rc','cbr' if mode=='cbr' else 'vbr',
                '-multipass','disabled','-spatial-aq','0' if performance else '1',
-               '-temporal-aq','1' if quality else '0','-aq-strength','8','-bf','0' if performance else '2',
+               '-temporal-aq','1' if quality else '0','-aq-strength','8','-bf','0',
                '-rc-lookahead','8' if quality else '0','-forced-idr','1']
         if performance:args+=['-delay','0','-zerolatency','1']
         if mode=='quality':args+=['-cq',str(cfg['cq']),'-b:v','0']
         else:args+=['-b:v',f'{cfg["mbps"]}M']
     else:
-        args+=['-preset',{'performance':'ultrafast','balanced':'veryfast','quality':'fast'}[cfg['preset']],'-bf','2']
+        args+=['-preset',{'performance':'ultrafast','balanced':'veryfast','quality':'fast'}[cfg['preset']],'-bf','0']
         if mode=='quality':args+=['-crf',str(cfg['cq'])]
         else:args+=['-b:v',f'{cfg["mbps"]}M']
         if mode=='cbr':args+=['-minrate',f'{cap}M','-x264-params','nal-hrd=cbr:force-cfr=1']
-    return args+['-maxrate',f'{cap}M','-bufsize',f'{cap*2}M','-g',str(cfg['fps']*2),
-                 '-force_key_frames','expr:gte(t,n_forced*2)','-fps_mode','cfr','-r',str(cfg['fps'])]
+    return args+['-maxrate',f'{cap}M','-bufsize',f'{cap*2}M','-g',str(cfg['fps']),
+                 '-force_key_frames','expr:gte(t,n_forced)','-fps_mode','cfr','-r',str(cfg['fps'])]

@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 import av
 from app import Suite,run
-from replay import Replay,closed_segments,validate_export
+from replay import DEFAULTS,Replay,closed_segments,validate_export
 
 
 class ReplayExportTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class ReplayExportTests(unittest.TestCase):
             result=run([suite.ff(),'-v','error','-f','lavfi','-i',
                         'testsrc2=size=160x90:rate=30:duration=370',
                         '-f','lavfi','-i','sine=frequency=880:sample_rate=48000:duration=370',
-                        '-c:v','libx264','-preset','ultrafast','-g','60','-bf','0',
+                        '-c:v','libx264','-preset','ultrafast','-g','30','-bf','0',
                         '-c:a','aac','-f','segment','-segment_time','2','-reset_timestamps','0',
                         '-segment_format','mpegts','-segment_list',session/'segments.csv',
                         '-segment_list_type','csv','-y',session/'seg-%07d.ts'],timeout=60)
@@ -44,8 +44,13 @@ class ReplayExportTests(unittest.TestCase):
                 decoded=run([suite.ff(),'-v','error','-i',saved['path'],'-f','null','-'],timeout=30)
                 self.assertEqual(decoded.returncode,0,decoded.stderr.decode(errors='replace'))
                 with av.open(saved['path']) as media:
+                    keys=[float(p.pts*p.time_base) for p in media.demux(video=0) if p.pts is not None and p.is_keyframe]
+                gaps=[b-a for a,b in zip(keys,keys[1:])]+[expected-keys[-1]]
+                self.assertGreaterEqual(len(keys),int(expected))
+                self.assertLessEqual(max(gaps),1.04)
+                with av.open(saved['path']) as media:
                     frames=media.decode(video=0)
-                    first=next(frames);self.assertTrue(first.key_frame)
+                    first=next(frames)
                     self.assertLess(abs(first.time),1/30)
                     for frame in frames:
                         if frame.time>=.2:break
@@ -80,6 +85,16 @@ class ReplayExportTests(unittest.TestCase):
                 with self.assertRaises(OSError):rec.save({})
             self.assertFalse(rec.saving)
             self.assertEqual(rec.interval_start,12)
+
+    def test_all_capture_profiles_use_short_non_reordered_gops_for_fast_copy(self):
+        from video_quality import encoder_options
+        for preset in ('performance','balanced','quality'):
+            for encoder in ('h264_nvenc','libx264'):
+                cfg={**DEFAULTS,'preset':preset,'fps':60}
+                options=encoder_options(cfg,encoder,2560,1440)
+                self.assertEqual(options[options.index('-bf')+1],'0')
+                self.assertEqual(options[options.index('-g')+1],'60')
+                self.assertEqual(options[options.index('-force_key_frames')+1],'expr:gte(t,n_forced)')
 
     def test_stale_capture_is_not_silently_exported(self):
         with tempfile.TemporaryDirectory() as temp:

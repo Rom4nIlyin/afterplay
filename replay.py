@@ -80,19 +80,6 @@ def select_segments(rows,cutoff,seconds,start_at=0):
     if actual_end-actual_start<.5:raise ValueError('Слишком мало кадров в буфере')
     return selected,actual_start-selected[0]['start'],actual_end-actual_start
 
-def export_options(cfg,encoder):
-    # Stream copy cannot cut inside a GOP: TS seeking can discard video up to
-    # the next IDR while retaining audio. Decode the boundary and encode a new
-    # first keyframe. Both streams retain the same input seek origin.
-    args=['-c:v',encoder,'-profile:v','high','-bf','0']
-    if encoder=='h264_nvenc':
-        args+=['-preset','p1','-tune','ll','-rc','vbr','-cq',str(cfg['cq']),
-               '-b:v','0','-maxrate',f'{cfg["max_mbps"]}M','-bufsize',f'{cfg["max_mbps"]*2}M',
-               '-rc-lookahead','0','-delay','0']
-    else:args+=['-preset','veryfast','-crf',str(cfg['cq'])]
-    return args+['-pix_fmt','yuv420p','-fps_mode','cfr','-r',str(cfg['fps']),
-                 '-af','aresample=first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
-
 def validate_export(path,duration,fps,audio):
     import av
     # Container duration alone accepted files with 1-2 seconds of audio before
@@ -101,7 +88,7 @@ def validate_export(path,duration,fps,audio):
     with av.open(str(path)) as media:
         video=media.streams.video[0]
         first=next(media.decode(video),None)
-        if first is None or not first.key_frame or first.time is None or abs(first.time)>tolerance:
+        if first is None or first.time is None or abs(first.time)>tolerance:
             raise ValueError('Начало видеодорожки не прошло проверку')
         if video.duration is None or abs(float(video.duration*video.time_base)-duration)>tolerance:
             raise ValueError('Длительность видеодорожки не прошла проверку')
@@ -225,7 +212,7 @@ class Replay:
         else:cmd+=['-an']
         cmd+=video_quality.encoder_options(cfg,self.encoder,monitor['width'],monitor['height'],gpu_frames=self.native_gpu)
         cmd+=[
-              '-f','segment','-segment_time','2','-reset_timestamps','0','-segment_format','mpegts',
+              '-f','segment','-segment_time','1','-reset_timestamps','0','-segment_format','mpegts',
               '-segment_list',str(self.session/'segments.csv'),'-segment_list_type','csv',
               '-progress','pipe:1','-nostats','-y',str(self.session/'seg-%07d.ts')]
         return cmd
@@ -522,11 +509,11 @@ class Replay:
             # MPEG-TS timestamps remain continuous across the rolling segments.
             # Joining their bytes preserves the original A/V clock without the
             # concat demuxer's per-file duration rounding.
-            listing=stage/'capture.ts'
-            with listing.open('wb') as output:
-                for row in selected:
-                    with row['path'].open('rb') as source:shutil.copyfileobj(source,output,1024*1024)
             if is_gif:
+                listing=stage/'capture.ts'
+                with listing.open('wb') as output:
+                    for row in selected:
+                        with row['path'].open('rb') as source:shutil.copyfileobj(source,output,1024*1024)
                 target=destination/('Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.gif')
                 self.last_saved=gif_media.encode(self.suite,listing,target,skip,duration,job)
                 self.suite.index_video(target)
@@ -536,23 +523,34 @@ class Replay:
             name='Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.mp4'
             target=destination/name
             partial=target.with_suffix('.partial.mp4')
-            # Decode from the first selected segment's IDR before discarding
-            # the leading frames. TS input seeking can jump past that IDR even
-            # when transcoding, silently replacing the missing prefix by a hold.
-            cmd=[self.suite.ff(),'-hide_banner','-loglevel','error','-threads','2',
-                 '-i',str(listing),'-ss',f'{max(0,skip):.6f}','-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
-                 *export_options(self.settings,self.encoder),'-video_track_timescale','90000',
-                 '-avoid_negative_ts','disabled','-movflags','+faststart','-y',str(partial)]
-            proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=NO_WINDOW)
+            # Keep the leading IDR and its dependent frames as hidden preroll.
+            # A common negative timestamp offset and MP4 edit lists trim both
+            # tracks exactly without seeking into TS or encoding either again.
+            cmd=[self.suite.ff(),'-hide_banner','-loglevel','error','-itsoffset',f'{-max(0,skip):.6f}',
+                 '-f','mpegts','-i','pipe:0','-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
+                 '-c','copy','-video_track_timescale','90000','-avoid_negative_ts','disabled',
+                 '-use_editlist','1','-movflags','+faststart','-y',str(partial)]
+            proc=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=NO_WINDOW)
             with self.suite.lock:self.suite.children.add(proc)
+            pipe=proc.stdin;proc.stdin=None;copy_errors=[]
+            def feed_segments():
+                try:
+                    with pipe:
+                        for row in selected:
+                            with row['path'].open('rb') as source:shutil.copyfileobj(source,pipe,1024*1024)
+                except BrokenPipeError:pass # Output reached the requested end.
+                except OSError as error:copy_errors.append(error)
+            writer=threading.Thread(target=feed_segments,daemon=True);writer.start()
             try:
                 try:stdout,stderr=proc.communicate(timeout=max(120,duration*2))
                 except subprocess.TimeoutExpired:
                     proc.kill();proc.communicate()
                     raise ValueError('Превышено время сохранения повтора')
             finally:
+                writer.join(timeout=3)
                 with self.suite.lock:self.suite.children.discard(proc)
             if proc.returncode:raise ValueError('Не удалось сохранить повтор: '+stderr.decode('utf-8','replace')[-500:])
+            if copy_errors:raise ValueError('Не удалось прочитать буфер: '+str(copy_errors[0]))
             job.update(progress=80,message='Проверка видео и звука')
             info=self.suite.probe(partial)
             validate_export(partial,duration,self.settings['fps'],self.settings['audio_mode']!='none')

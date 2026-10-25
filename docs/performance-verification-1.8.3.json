@@ -1,0 +1,178 @@
+{
+  "python_tests": 61,
+  "timeline_tests": true,
+  "native_player": {
+    "cases": [
+      {
+        "case": "original",
+        "seeks": [
+          {
+            "seconds": 7.709099999999976,
+            "target": 99.80000000000001,
+            "time": 99.8,
+            "ready": 4
+          }
+        ]
+      },
+      {
+        "case": "repaired",
+        "seeks": [
+          {
+            "seconds": 0.10669999999995343,
+            "target": 99.80000000000001,
+            "time": 99.8,
+            "ready": 4
+          },
+          {
+            "seconds": 0.1295999999999767,
+            "target": 24.950000000000003,
+            "time": 24.95,
+            "ready": 4
+          },
+          {
+            "seconds": 0.12520000000006984,
+            "target": 74.85,
+            "time": 74.85,
+            "ready": 4
+          },
+          {
+            "seconds": 0.071,
+            "target": 118.51249999999999,
+            "time": 118.512499,
+            "ready": 4
+          }
+        ]
+      },
+      {
+        "case": "fast_save",
+        "seeks": [
+          {
+            "seconds": 0.052600000000093135,
+            "target": 15.9677336,
+            "time": 15.967733,
+            "ready": 4
+          },
+          {
+            "seconds": 0.08480000000004656,
+            "target": 3.9919334,
+            "time": 3.991933,
+            "ready": 4
+          },
+          {
+            "seconds": 0.078,
+            "target": 11.9758002,
+            "time": 11.9758,
+            "ready": 4
+          },
+          {
+            "seconds": 0.0795,
+            "target": 18.961683649999998,
+            "time": 18.961683,
+            "ready": 4
+          }
+        ]
+      }
+    ],
+    "ok": true
+  },
+  "native_save_seconds": [
+    1.151,
+    1.107,
+    0.987
+  ],
+  "native_save_durations": [
+    60.01,
+    19.96,
+    20.16
+  ],
+  "native_max_sync_ms": 116.33,
+  "large_save": {
+    "save_wall_seconds": 4.248,
+    "bytes": 1549662761,
+    "duration": 300.01,
+    "resolution": [
+      2560,
+      1440
+    ],
+    "keyframes": 302,
+    "video_reencoded": false,
+    "audio_reencoded": false
+  },
+  "repaired_recordings": [
+    {
+      "duration": 7.933333333333334,
+      "keys_before": 1,
+      "keys_after": 8,
+      "seek_before_seconds": [
+        1.4647,
+        0.162,
+        0.9774,
+        1.7786
+      ],
+      "seek_after_seconds": [
+        0.2528,
+        0.088,
+        0.3819,
+        0.2992
+      ],
+      "full_decode": true
+    },
+    {
+      "duration": 14.633333333333333,
+      "keys_before": 1,
+      "keys_after": 15,
+      "seek_before_seconds": [
+        3.7467,
+        0.8445,
+        2.1444,
+        4.5673
+      ],
+      "seek_after_seconds": [
+        0.7062,
+        0.4609,
+        0.3292,
+        0.3867
+      ],
+      "full_decode": true
+    },
+    {
+      "duration": 42.266666666666666,
+      "keys_before": 1,
+      "keys_after": 43,
+      "seek_before_seconds": [
+        11.2133,
+        0.7655,
+        5.9535,
+        15.0433
+      ],
+      "seek_after_seconds": [
+        1.0885,
+        0.1512,
+        0.4614,
+        0.2175
+      ],
+      "full_decode": true
+    },
+    {
+      "duration": 124.75,
+      "keys_before": 1,
+      "keys_after": 125,
+      "seek_before_seconds": [
+        36.4554,
+        16.9056,
+        30.0195,
+        46.9611
+      ],
+      "seek_after_seconds": [
+        0.3415,
+        0.3593,
+        0.3194,
+        0.5373
+      ],
+      "full_decode": true
+    }
+  ],
+  "hotkey_auto_save_on_exit": true,
+  "foreground_preserved": true,
+  "game_launched": false
+}

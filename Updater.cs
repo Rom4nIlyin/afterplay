@@ -12,8 +12,8 @@ using System.Windows.Forms;
 [assembly:System.Reflection.AssemblyTitle("AFTERPLAY")]
 [assembly:System.Reflection.AssemblyProduct("AFTERPLAY")]
 [assembly:System.Reflection.AssemblyCompany("AFTERPLAY")]
-[assembly:System.Reflection.AssemblyVersion("1.8.2.0")]
-[assembly:System.Reflection.AssemblyFileVersion("1.8.2.0")]
+[assembly:System.Reflection.AssemblyVersion("1.8.3.0")]
+[assembly:System.Reflection.AssemblyFileVersion("1.8.3.0")]
 
 // Runs from the update cache, outside the runtime that it replaces.
 class Updater {
