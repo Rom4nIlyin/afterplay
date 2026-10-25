@@ -70,6 +70,53 @@ def resolve_target(settings):
         raise ValueError('Запусти игру и выбери её окно в настройках звука. Если открыто несколько копий — выбери нужную заново.')
     return match
 
+
+def audio_applications():
+    """Include tray applications and choose the root of each executable's tree."""
+    import ntpath
+    class Entry(ctypes.Structure):
+        _fields_=[('size',wintypes.DWORD),('usage',wintypes.DWORD),('pid',wintypes.DWORD),
+                  ('heap',ctypes.c_size_t),('module',wintypes.DWORD),('threads',wintypes.DWORD),
+                  ('parent',wintypes.DWORD),('priority',ctypes.c_long),('flags',wintypes.DWORD),
+                  ('exe',wintypes.WCHAR*260)]
+    kernel=ctypes.windll.kernel32
+    kernel.CreateToolhelp32Snapshot.argtypes=[wintypes.DWORD,wintypes.DWORD]
+    kernel.CreateToolhelp32Snapshot.restype=wintypes.HANDLE
+    kernel.Process32FirstW.argtypes=[wintypes.HANDLE,ctypes.POINTER(Entry)]
+    kernel.Process32NextW.argtypes=[wintypes.HANDLE,ctypes.POINTER(Entry)]
+    kernel.OpenProcess.restype=wintypes.HANDLE
+    kernel.QueryFullProcessImageNameW.argtypes=[wintypes.HANDLE,wintypes.DWORD,wintypes.LPWSTR,ctypes.POINTER(wintypes.DWORD)]
+    kernel.CloseHandle.argtypes=[wintypes.HANDLE]
+    snapshot=kernel.CreateToolhelp32Snapshot(2,0)
+    if snapshot==wintypes.HANDLE(-1).value:return applications()
+    rows={}
+    try:
+        entry=Entry();entry.size=ctypes.sizeof(entry)
+        success=kernel.Process32FirstW(snapshot,ctypes.byref(entry))
+        while success:
+            if entry.pid:
+                handle=kernel.OpenProcess(0x1000,False,entry.pid)
+                if handle:
+                    try:
+                        path=ctypes.create_unicode_buffer(32768);size=wintypes.DWORD(len(path))
+                        if kernel.QueryFullProcessImageNameW(handle,0,path,ctypes.byref(size)):
+                            rows[entry.pid]={'pid':int(entry.pid),'parent':int(entry.parent),'path':path.value,'name':ntpath.basename(path.value)}
+                    finally:kernel.CloseHandle(handle)
+            success=kernel.Process32NextW(snapshot,ctypes.byref(entry))
+    finally:kernel.CloseHandle(snapshot)
+    roots=[row for row in rows.values() if rows.get(row['parent'],{}).get('path','').casefold()!=row['path'].casefold()]
+    return sorted(roots,key=lambda row:(row['name'].casefold(),row['pid']))
+
+
+def resolve_chat(settings):
+    rows=audio_applications();path=settings.get('chat_path','')
+    matches=[a for a in rows if a['path'].casefold()==path.casefold()] if path else [a for a in rows if a['name'].casefold() in {'discord.exe','discordptb.exe','discordcanary.exe'}]
+    exact=next((a for a in matches if a['pid']==settings.get('chat_pid')),None)
+    if exact:return exact
+    if len(matches)==1:return matches[0]
+    if not matches:raise ValueError('Запустите Discord / приложение чата и выберите его для отдельных дорожек')
+    raise ValueError('Открыто несколько приложений чата. Выберите нужный процесс в списке')
+
 def open_capture(pid,exclude=False):
     if not supported():raise ValueError('Звук отдельного приложения требует Windows 11 или Windows build 20348+. Выбери весь звук устройства.')
     import clr

@@ -1,0 +1,10 @@
+@font-face{font-family:'AFTERPLAY Inter';src:url('fonts/Inter-Regular.ttf') format('truetype');font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:'AFTERPLAY Inter';src:url('fonts/Inter-Medium.ttf') format('truetype');font-style:normal;font-weight:500;font-display:swap}
+@font-face{font-family:'AFTERPLAY Inter';src:url('fonts/Inter-SemiBold.ttf') format('truetype');font-style:normal;font-weight:600;font-display:swap}
+body.clips{font-family:'AFTERPLAY Inter','Inter','Segoe UI',sans-serif;font-weight:600}
+body.clips button,body.clips input,body.clips select,body.clips textarea{font-family:inherit;font-weight:600}
+body.clips button.ap-dropdown-trigger{font-weight:600}
+.clips h1,.clips h2,.clips h3,.clips .brand b,.clips .clip-name,.clips .row-main b,.clips .review-file-name{font-weight:700}
+.clips .review-dialog h2,.clips .review-tool-panel h3{font-weight:700}
+.clips .hint,.clips small,.clips .eyebrow,.clips .nav-label,.clips .caption,.clips .ap-dropdown-group{font-weight:500}
+.clips .review-clock,.clips .replay-time,.clips .trim-view-labels{font-variant-numeric:tabular-nums}

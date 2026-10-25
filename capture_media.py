@@ -95,6 +95,7 @@ class MediaMux:
         import av
         import cv2
         import queue
+        from audio_tracks import AudioPackets
         mux=None
         try:
             mux=av.open(handle,'w',format='nut',options={'flush_packets':'1','max_interleave_delta':'100000'})
@@ -107,30 +108,21 @@ class MediaMux:
             sound=None;timeline=None
             if self.audio:
                 rate=self.audio['rate'];channels=self.audio['channels']
-                sound=mux.add_stream('pcm_f32le',rate=rate)
-                sound.codec_context.layout='stereo' if channels==2 else 'mono'
-                sound.codec_context.format='flt';sound.time_base=Fraction(1,rate)
-                sound.codec_context.time_base=Fraction(1,rate)
-                timeline=AudioTimeline(rate,channels,self.epoch,self.offset_ms)
+                timeline=AudioPackets(mux,self.audio,self.queue,self.epoch,self.offset_ms)
             mux.start_encoding()
             last_serial=0;last_pts=-1;next_video=self.epoch;first=True
             while not self.stop_event.is_set():
                 now=time.perf_counter()
                 if self.source.error:raise RuntimeError(self.source.error)
                 if timeline:
-                    while True:
-                        try:timestamp,data=self.queue.get_nowait();timeline.add(timestamp,data)
-                        except queue.Empty:break
+                    timeline.drain()
                     # Advancing audio needs extra lookahead: a packet cannot be
                     # placed earlier until it has actually arrived from WASAPI.
                     hold=.1+max(0,-self.offset_ms)/1000
                     due=max(0,int((now-self.epoch-hold)*rate))
                     for _ in range(32):
                         if timeline.cursor+1024>due:break
-                        pos,data=timeline.read(1024)
-                        packet=av.Packet(data);packet.stream=sound
-                        packet.pts=packet.dts=pos;packet.duration=1024;packet.time_base=sound.time_base
-                        mux.mux(packet)
+                        timeline.mux(mux)
                     self.late_audio_frames=timeline.late_frames
                 if now>=next_video:
                     value=self.source.first if first else self.source.get()

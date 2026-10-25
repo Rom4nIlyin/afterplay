@@ -31,7 +31,7 @@ openClip=function(id){
  const controller=new AbortController(),on=(el,event,fn)=>el.addEventListener(event,fn,{signal:controller.signal});
  let frame=null,disposed=false,wasFullscreen=false,lastFullscreenExit=-1000;
  function remember(key,value){try{localStorage.setItem(key,String(value))}catch{}}
- function updateTimer(time=player.currentTime){timer.textContent=elapsedLabel(Math.max(0,time-(trimState?.start||0)));timerCue.text=timer.textContent}
+ function updateTimer(time=window.studioFrameTime?.()??player.currentTime){timer.textContent=elapsedLabel(Math.max(0,time-(trimState?.start||0)));timerCue.text=timer.textContent}
  function positionTimer(){
   const rect=player.getBoundingClientRect(),ratio=(player.videoWidth/player.videoHeight)||16/9;
   const width=Math.min(rect.width,rect.height*ratio),height=width/ratio;
@@ -70,6 +70,7 @@ openClip=function(id){
  on(player,'ratechange',()=>{speed=player.playbackRate;$('#playbackSpeedRange').value=speed;if(document.activeElement!==$('#playbackSpeed'))$('#playbackSpeed').value=String(speed).replace('.',',')});
  on(document,'input',e=>{if(['clipIn','clipOut'].includes(e.target.id))updateTimer()});
  on(document,'afterplay-trim',()=>updateTimer());
+ on(document,'afterplay-frame',e=>updateTimer(e.detail.time));
  // Escape can be delivered to the editor while native media fullscreen is
  // active. Exit fullscreen explicitly before the dialog's cancel default.
  document.addEventListener('keydown',e=>{

@@ -112,29 +112,21 @@ class AudioMux:
 
     def write(self,handle):
         import av
+        from audio_tracks import AudioPackets
         mux=None
         try:
             rate=self.audio['rate'];channels=self.audio['channels']
-            timeline=AudioTimeline(rate,channels,self.epoch,self.offset_ms)
             mux=av.open(handle,'w',format='nut',options={'flush_packets':'1'})
-            sound=mux.add_stream('pcm_f32le',rate=rate)
-            sound.codec_context.layout='stereo' if channels==2 else 'mono'
-            sound.codec_context.format='flt';sound.time_base=Fraction(1,rate)
-            sound.codec_context.time_base=Fraction(1,rate)
+            audio=AudioPackets(mux,self.audio,self.queue,self.epoch,self.offset_ms)
             mux.start_encoding()
             while not self.stop_event.is_set():
-                while True:
-                    try:timestamp,data=self.queue.get_nowait();timeline.add(timestamp,data)
-                    except queue.Empty:break
+                audio.drain()
                 hold=.1+max(0,-self.offset_ms)/1000
                 due=max(0,int((time.perf_counter()-self.epoch-hold)*rate))
                 for _ in range(32):
-                    if timeline.cursor+1024>due:break
-                    pos,data=timeline.read(1024)
-                    packet=av.Packet(data);packet.stream=sound
-                    packet.pts=packet.dts=pos;packet.duration=1024
-                    packet.time_base=sound.time_base;mux.mux(packet)
-                self.late_audio_frames=timeline.late_frames
+                    if audio.cursor+1024>due:break
+                    audio.mux(mux)
+                self.late_audio_frames=audio.late_frames
                 self.stop_event.wait(.005)
         except Exception as error:
             if not self.stop_event.is_set():self.error=str(error)

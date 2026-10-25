@@ -36,3 +36,6 @@ class NavigationAndUpdateTests(unittest.TestCase):
                 for start,end in ((-1,3),(4,3),(0,301),(float('nan'),3),(0,float('inf'))):
                     with self.assertRaises(ValueError):suite.filmstrip('id',start,end)
                 ff.assert_not_called()
+                for frames in (0,65,'invalid'):
+                    with self.assertRaises(ValueError):suite.filmstrip('id',0,10,frames)
+                ff.assert_not_called()

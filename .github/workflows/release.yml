@@ -5,7 +5,7 @@ on:
       version:
         description: Version without v
         required: true
-        default: '1.8.4'
+        default: '1.9.0'
   push:
     branches: ['main']
     paths: ['version.py']
@@ -38,6 +38,7 @@ jobs:
           if (-not $version) { $version = python -c 'from version import VERSION; print(VERSION)' }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
           python -m pip install -r requirements-lock.txt
+          Get-ChildItem ui -Filter *.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE -ne 0) { throw "UI syntax failed: $($_.Name)" } }
           node tests/test_viewport.js
           if ($LASTEXITCODE -ne 0) { throw 'Timeline tests failed' }
           python -m unittest discover -s tests

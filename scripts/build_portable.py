@@ -112,7 +112,7 @@ foreach ($name in @('AFTERPLAY.exe','Updater.exe','ProcessAudio.dll','ReplayNoti
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', default='1.8.4')
+    parser.add_argument('--version', default='1.9.0')
     args = parser.parse_args()
     if os.name != 'nt' or sys.version_info[:2] != (3, 13) or struct.calcsize('P') != 8:
         parser.error('Use Windows x64 and 64-bit Python 3.13.')
@@ -123,7 +123,7 @@ def main():
     target = ROOT / 'build' / ('portable-' + args.version) / 'AFTERPLAY Portable'
     # Do not delete or overwrite an earlier build or user data.
     target.mkdir(parents=True, exist_ok=False)
-    for name in (*FILES, 'portable_paths.py'):
+    for name in (*FILES, 'portable_paths.py','capture_profiles.py','live_markers.py','audio_tracks.py','editor_media.py'):
         if name.endswith(('.cs', '.manifest')):
             continue  # Development sources belong in Git, not the installed bundle.
         shutil.copy2(ROOT / name, target / name)

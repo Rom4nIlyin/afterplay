@@ -1,0 +1,27 @@
+.ap-select-control{display:inline-flex;position:relative;vertical-align:middle;width:100%;min-width:0}
+.ap-select-control[hidden]{display:none!important}
+.ap-select-control>select.ap-select-native{position:absolute!important;top:0;left:0;width:1px!important;max-width:1px!important;min-width:0!important;height:1px!important;min-height:0!important;padding:0!important;border:0!important;opacity:0!important;clip-path:inset(50%);pointer-events:none}
+.clips button.ap-dropdown-trigger{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-width:0;min-height:41px;margin:0;padding:10px 12px;text-align:left;border:1px solid var(--input-line);border-radius:8px;background:var(--input);color:var(--text);font-size:13px;font-weight:400;line-height:1.4;--cursor-base:var(--input);--cursor-text:var(--text);--cursor-line:var(--accent)}
+.ap-dropdown-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+.ap-dropdown-chevron{width:16px;height:16px;flex:none;transition:transform .16s ease}
+.ap-dropdown-trigger[aria-expanded=true] .ap-dropdown-chevron{transform:rotate(180deg)}
+.clips button.ap-dropdown-trigger[aria-expanded=true]{border-color:var(--accent)}
+.clips button.ap-dropdown-trigger:disabled{opacity:.55;cursor:not-allowed}
+/* A field keeps its geometry while the menu opens and the pointer moves. */
+.clips button.ap-dropdown-trigger,.clips button.ap-dropdown-trigger:hover,.clips button.ap-dropdown-trigger:active{transform:none!important;transition:none!important}
+.studio-profile-row>.ap-select-control{flex:1;min-width:180px}
+.auto-add>.ap-select-control{flex:1;min-width:0}
+.review-tool-panel .ap-select-control{width:100%;min-width:0}
+.review-tool-panel button.ap-dropdown-trigger{height:44px;min-height:44px;font-size:14px;padding:10px 11px}
+.ap-dropdown-popup{position:fixed;inset:auto;margin:0;z-index:10000;padding:6px;border:1px solid var(--input-line);border-radius:10px;background:var(--panel2);color:var(--text);box-shadow:0 12px 32px var(--shadow);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;min-width:0;max-width:calc(100vw - 24px);font-family:inherit;font-size:14px;line-height:1.4}
+.ap-dropdown-popup[hidden]{display:none!important}
+.ap-dropdown-popup:not(:popover-open):not(.ap-dropdown-fallback){display:none}
+.ap-dropdown-option{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:40px;padding:10px 12px;border-radius:6px;cursor:pointer;overflow-wrap:anywhere}
+.ap-dropdown-option[aria-selected=true]{color:var(--accent);background:rgba(var(--accent-rgb),.09)}
+.ap-dropdown-option[data-highlight=true]{background:var(--hover);color:var(--text);outline:1px solid rgba(var(--accent-rgb),.22);outline-offset:-1px}
+.ap-dropdown-option[aria-disabled=true]{opacity:.4;cursor:not-allowed}
+.ap-dropdown-tick{flex:none;color:var(--accent);visibility:hidden}
+.ap-dropdown-option[aria-selected=true] .ap-dropdown-tick{visibility:visible}
+.ap-dropdown-group{font-size:11px;letter-spacing:.04em;padding:11px 12px 5px;color:var(--muted)}
+.ap-dropdown-empty{padding:12px;color:var(--muted);font-size:13px}
+@media(prefers-reduced-motion:reduce){.ap-dropdown-chevron{transition:none}}

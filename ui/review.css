@@ -1,0 +1,200 @@
+/* Keep playback on one screen; tool panels scroll independently. */
+dialog.review-dialog{
+ width:min(1560px,96vw);height:94vh;max-height:94vh;padding:0;overflow:hidden;
+ display:grid;grid-template-rows:minmax(0,1fr);border-radius:15px;
+}
+dialog.review-dialog #dialogBody{height:100%;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr)}
+dialog.review-dialog:not([open]){display:none}
+.review-dialog .dialog-head{position:relative;display:flex;align-items:center;gap:16px;min-height:64px;padding:14px 20px;z-index:5}
+.review-dialog .dialog-head h2{min-width:0;flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.review-head-actions{display:flex;gap:8px;align-items:center;flex:none}
+.review-head-actions .button{min-height:34px;padding:8px 13px;font-size:12px}
+.review-dialog .dialog-head>.icon-button{flex:none}
+.review-dialog #sourceFps{font-size:10px;color:var(--muted);white-space:nowrap;order:-1;display:none}
+.review-dialog .dialog-content{padding:0;min-height:0;overflow:hidden}
+.review-dialog .editor{height:100%;max-width:none!important;min-height:0;margin:0!important}
+.review-workspace{display:grid;grid-template-columns:minmax(0,1fr);height:100%;min-height:0;gap:0}
+.review-dialog[data-editing=true] .review-workspace{grid-template-columns:minmax(0,1fr) 340px}
+.review-viewer{display:grid;grid-template-rows:minmax(100px,1fr) 20px 48px;min-width:0;min-height:0;padding:16px 20px 10px;align-content:stretch;gap:0;row-gap:6px}
+.review-dialog[data-editing=true] .review-viewer{grid-template-rows:minmax(100px,1fr) 20px 48px auto}
+.review-dialog .review-viewer>.playback-stage{min-height:0;width:100%;height:100%;border-radius:10px;background:#030506;display:flex;align-items:center;justify-content:center}
+.review-dialog .review-viewer .player{position:absolute;inset:0;width:100%!important;height:100%!important;max-height:100%!important;min-height:0;object-fit:contain;aspect-ratio:auto;display:block;margin:0}
+.review-dialog .player:fullscreen{height:100vh!important;width:100vw!important;max-height:100vh!important;background:#000}
+.review-seek{-webkit-appearance:none;appearance:none;width:100%;height:20px;min-height:0;align-self:center;box-sizing:border-box;margin:0;cursor:pointer;border:0;padding:0;background:none}
+.review-seek::-webkit-slider-runnable-track{height:3px;border-radius:3px;background:linear-gradient(to right,var(--accent) 0 var(--seek-fill,0%),var(--line) var(--seek-fill,0%) 100%)}
+.review-seek::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;margin-top:-3.5px;border:0;border-radius:50%;background:var(--accent)}
+.review-dialog .review-transport{display:flex;align-items:center;gap:8px;padding:0;margin:0;min-height:48px;min-width:0}
+.review-play,.review-icon-button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;min-height:0;padding:7px;border:0;border-radius:7px;color:var(--text);background:transparent;cursor:pointer}
+.review-play{width:35px;height:35px;background:var(--accent);color:var(--on-accent)}
+.review-icon-button:hover{background:var(--hover)}
+.review-icon-button svg,.review-play svg{width:18px;height:18px;flex:none}
+.review-clock{display:flex;align-items:center;gap:7px;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;margin-left:5px;color:var(--text)}
+#reviewTotal{color:var(--muted)}
+.review-transport-spacer{flex:1}
+.review-volume{display:flex;align-items:center;gap:3px}
+.review-volume input{width:64px;height:24px;min-height:0;padding:0;border:0;background:none;accent-color:var(--accent)}
+.review-speed-menu{position:relative;flex:none}
+.review-speed-menu>summary{list-style:none;cursor:pointer;padding:7px 9px;font-size:12px;border-radius:6px;font-variant-numeric:tabular-nums}
+.review-speed-menu>summary::-webkit-details-marker{display:none}
+.review-speed-menu>summary:hover{background:var(--hover)}
+.review-speed-popover{position:absolute;bottom:42px;right:0;z-index:10;width:285px;padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);box-shadow:0 8px 28px var(--shadow)}
+.review-speed-popover .speed-row{display:grid;grid-template-columns:1fr 62px;gap:10px;align-items:center}
+.review-speed-popover .speed-row>label{grid-column:1/-1;font-size:11px;margin:0;color:var(--muted)}
+.review-speed-popover .speed-number{width:62px}
+.review-speed-popover .speed-number input{width:44px;min-height:30px;height:30px;padding:5px}
+.review-speed-popover .speed-presets{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}
+.review-speed-popover .speed-presets button{min-height:28px;padding:5px 8px;font-size:11px}
+.review-sidebar{display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0;min-width:0;border-left:1px solid var(--line);background:var(--panel)}
+.review-sidebar[hidden],.review-timeline[hidden],.review-tool-panel[hidden]{display:none!important}
+.review-tabs{display:flex;align-items:center;padding:12px 10px 0;gap:3px;border-bottom:1px solid var(--line)}
+.review-tabs button{flex:1;min-width:0;min-height:38px;padding:8px 3px 11px;font-size:11px;font-weight:500;color:var(--muted);border:0;border-bottom:2px solid transparent;border-radius:0;background:none;cursor:pointer}
+.review-tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--accent)}
+.review-tabs button:hover{color:var(--text);background:var(--hover)}
+.review-tool-panel{grid-row:2;min-height:0;overflow:auto;padding:20px;overscroll-behavior:contain}
+.review-tool-panel h3{font-size:15px;margin:0 0 8px;font-weight:600}
+.review-panel-lead{font-size:11px!important;line-height:1.6;color:var(--muted);margin:0 0 20px}
+.review-tool-panel .field{margin:0 0 18px}
+.review-tool-panel label{font-size:11px;margin-bottom:7px}
+.review-tool-panel input:not([type=checkbox]):not([type=range]),.review-tool-panel select{height:38px;min-height:0;padding:8px 9px;font-size:12px}
+.review-tool-panel textarea{font-size:12px;min-height:130px;line-height:1.6}
+.review-tool-panel .time-inputs{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:0 0 12px}
+.review-tool-panel .time-inputs input{width:100%;font-size:11px!important;font-family:Consolas,monospace}
+.review-here{display:flex;gap:8px;margin:0 0 16px}
+.review-here button{flex:1;min-height:30px;font-size:10px;padding:6px}
+.review-here button svg{display:none}
+.review-exact-time{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:9px 0;margin-bottom:12px;border-bottom:1px solid var(--line);font-size:10px;color:var(--muted)}
+.review-exact-time #framePosition{font-size:11px;font-variant-numeric:tabular-nums;color:var(--text)}
+.review-tool-panel>.actions{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px}
+.review-tool-panel>.actions button{font-size:11px;min-height:32px;padding:7px 10px}
+.review-more,.review-file-info{margin:16px 0;color:var(--muted);font-size:11px}
+.review-more summary,.review-file-info summary{cursor:pointer;color:var(--text);padding:6px 0}
+.review-more .timer-actions{margin:10px 0}
+.review-more label{font-size:11px;line-height:1.6}
+.review-bookmarks{margin-top:22px;padding-top:17px;border-top:1px solid var(--line)}
+.review-bookmarks-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.review-bookmarks-head h3{margin:0;font-size:12px}
+.review-bookmarks-head button{min-height:28px;font-size:10px;padding:5px 7px}
+.review-bookmarks-head button svg{width:13px;height:13px}
+.review-bookmarks .marks{display:flex;flex-wrap:wrap;gap:4px;max-height:145px;overflow:auto}
+.review-bookmarks .marks:empty:before{content:'Пока нет меток';font-size:11px;color:var(--muted);padding:5px 0}
+.review-bookmarks .mark{padding:4px 6px;min-height:0;font-size:10px}
+.review-dialog .review-timeline{min-width:0;min-height:0;padding:10px 0 0;margin:4px 0 0;border:0;border-top:1px solid var(--line);background:transparent;border-radius:0;isolation:isolate}
+.review-timeline .trim-heading{display:flex;flex-wrap:nowrap;justify-content:space-between;align-items:center;gap:10px;margin:0 0 8px}
+.review-timeline .trim-heading>b{font-size:11px;font-weight:500;color:var(--muted)}
+.review-timeline .trim-zoom-tools{margin:0;padding:0;display:flex;gap:6px;align-items:center}
+.review-timeline .trim-zoom-tools>small{display:none}
+.review-timeline .trim-zoom-tools .actions{gap:4px;flex-wrap:nowrap}
+.review-timeline .trim-zoom-tools button{min-height:24px;padding:4px 6px;font-size:9px}
+.review-timeline .trim-zoom-tools button svg{display:none}
+.review-timeline #trimZoomLabel{font-size:9px;margin:0 3px;min-width:25px}
+.review-timeline .trim-track{height:40px;margin:0 8px}
+.review-timeline .trim-handle{width:12px;border-radius:3px}
+.review-timeline .trim-marks span{top:-7px;width:5px;height:5px}
+.review-timeline .studio-wave{margin:3px 8px 0;padding:0;border:0;border-radius:0;background:var(--input)}
+.review-timeline .studio-wave canvas{height:30px}
+.review-timeline .trim-view-labels{font-size:9px;line-height:12px;margin:3px 8px 0;color:var(--muted)}
+.review-timeline .trim-pan{height:12px;margin:2px 0 0;min-height:0;padding:0}
+.review-tool-panel .studio-listen{display:block;margin:0 0 20px}
+.review-tool-panel .studio-listen label{display:block;margin:0 0 7px}
+.review-tool-panel .studio-listen select{min-width:0;width:100%}
+.review-tool-panel .studio-listen small{display:block;margin-top:6px;font-size:10px}
+.review-tool-panel .studio-wave-head{display:block;margin:0 0 8px}
+.review-tool-panel .studio-wave-head label{display:block;margin-bottom:7px}
+.review-tool-panel .studio-wave-head select{width:100%;max-width:none;min-width:0}
+.review-tool-panel #waveStatus{display:block;font-size:10px;line-height:1.5;color:var(--muted);margin-bottom:20px}
+.review-tool-panel .studio-gain-grid{grid-template-columns:1fr;gap:14px}
+.review-tool-panel .studio-gain-grid input[type=range]{height:20px;margin-top:5px}
+.review-tool-panel .studio-gain-grid small{font-size:10px}
+.review-export-footer{display:block;padding:14px 20px 18px!important;margin:0;border-top:1px solid var(--line);background:var(--panel)}
+.review-export-footer .trim-labels{display:none}
+.review-export-footer #reviewSelection{display:block;margin-bottom:10px;font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+.review-export-footer>button{width:100%;min-height:38px;font-size:12px;justify-content:center}
+.review-dialog .review-tool-panel .editor-notes{padding:0;border:0;background:none;border-radius:0}
+.review-tool-panel .editor-notes .editor-card-actions{gap:7px;padding-top:14px;margin-top:14px}
+.review-tool-panel .editor-notes .editor-card-actions button{min-height:32px;font-size:10px;padding:7px 8px}
+.review-tool-panel .editor-notes .editor-card-actions .primary{flex:1 1 100%}
+.review-file-info .recording-summary{display:flex;gap:5px 10px;flex-wrap:wrap;font-size:10px;margin:7px 0 14px;padding:0}
+.review-file-info .recording-summary>span{font-size:10px}
+.review-file-info #sourceFps{display:inline;font-size:10px;color:var(--muted);order:initial}
+.review-external{display:flex;gap:7px;flex-wrap:wrap;margin-top:18px}
+.review-external button{font-size:10px;min-height:30px;padding:6px 8px}
+.review-dialog[data-kind=gif] .review-viewer{grid-template-rows:minmax(100px,1fr);padding-bottom:16px}
+@media(max-width:1100px){
+ .review-dialog[data-editing=true] .review-workspace{grid-template-columns:minmax(0,1fr) 300px}
+ .review-viewer{padding:12px 14px 8px}.review-tool-panel{padding:16px}.review-export-footer{padding:12px 16px!important}
+ .review-clock{font-size:10px;gap:5px;margin-left:0}.review-volume input{width:48px}.review-transport{gap:4px!important}
+}
+@media(max-height:720px){
+ .review-dialog .dialog-head{min-height:54px;padding-top:10px;padding-bottom:10px}
+ .review-timeline .trim-track{height:30px}.review-timeline .studio-wave canvas{height:22px}.review-viewer{padding-top:10px}
+}
+@media(max-width:750px){
+ .review-dialog[data-editing=true] .review-workspace{grid-template-columns:1fr;position:relative}
+ .review-sidebar{position:absolute;z-index:4;right:0;top:0;bottom:0;width:min(340px,85vw);box-shadow:-10px 0 30px var(--shadow)}
+ .review-head-actions .button{padding:7px 9px;font-size:11px}.review-volume input{display:none}
+}
+
+/* Exact decoded frames stay below the elapsed-time overlay. */
+.review-dialog .video-timer{z-index:3}
+.review-timer-toggle{margin:18px 0;padding-top:16px;border-top:1px solid var(--line)}
+.review-timer-toggle .check{font-size:12px}
+dialog.review-dialog[data-editing=true]{width:calc(100vw - 24px);max-width:calc(100vw - 24px)}
+
+/* Comfortable editor controls; the tools scroll without shrinking typography. */
+.review-dialog .dialog-head h2{font-size:16px}
+.review-head-actions>button{min-height:40px;padding:9px 14px;font-size:13px}
+.review-dialog[data-editing=true] .review-workspace{grid-template-columns:minmax(0,1fr) 400px}
+.review-viewer{grid-template-rows:minmax(100px,1fr) 20px 52px}
+.review-dialog[data-editing=true] .review-viewer{grid-template-rows:minmax(100px,1fr) 20px 52px auto}
+.review-dialog .review-transport{min-height:52px;gap:9px}
+.review-play{width:40px;height:40px}.review-icon-button{width:38px;height:38px;padding:9px}
+.review-clock{font-size:13px}.review-speed-menu>summary{font-size:13px;padding:9px 10px}
+.review-volume input{width:76px}
+.review-tabs{padding:12px 12px 0;gap:4px}
+.review-tabs button{min-height:46px;font-size:13px;font-weight:600;padding:11px 5px}
+.review-tool-panel{padding:22px;font-size:14px;line-height:1.55}
+.review-tool-panel h3{font-size:16px}.review-panel-lead{font-size:13px!important}
+.review-tool-panel label{font-size:13px;line-height:1.5}
+.review-tool-panel input:not([type=checkbox]):not([type=range]),.review-tool-panel select{height:44px;font-size:14px;padding:10px 11px}
+.review-tool-panel textarea{font-size:14px;min-height:140px}
+.review-tool-panel .time-inputs input{font-size:13px!important}
+.review-tool-panel button,.review-tool-panel>.actions button{min-height:40px;font-size:13px;padding:9px 12px}
+.review-here button{min-height:40px;font-size:12px;padding:9px 10px}
+.review-exact-time{font-size:12px}.review-exact-time #framePosition{font-size:13px}
+.review-bookmarks-head h3{font-size:14px}.review-bookmarks-head button{min-height:36px;font-size:12px;padding:8px 10px}
+.review-bookmarks-head button svg{width:16px;height:16px}
+.review-bookmarks .mark{font-size:12px;min-height:34px;padding:7px 9px}
+.review-bookmarks .marks:empty:before{font-size:12px}
+.review-timeline .trim-heading{gap:12px;flex-wrap:wrap}
+.review-timeline .trim-heading b{font-size:14px}
+.review-timeline .trim-zoom-tools .actions{gap:8px;flex-wrap:wrap}
+.review-timeline .trim-zoom-tools button{min-width:32px;min-height:34px;padding:7px 10px;font-size:12px}
+.review-timeline #trimZoomLabel{font-size:12px;min-width:34px}
+.review-timeline .studio-wave canvas{height:40px}
+.review-timeline .trim-view-labels{font-size:11px;line-height:15px}
+.review-tool-panel .studio-listen small,.review-tool-panel #waveStatus,.review-tool-panel .studio-gain-grid small{font-size:12px}
+.review-tool-panel .studio-audio-track .check{font-size:13px}
+.review-tool-panel .studio-audio-track output{font-size:12px}
+.review-export-footer{padding:16px 22px 20px!important}
+.review-export-footer #reviewSelection{font-size:12px}
+.review-export-footer>button{min-height:44px;font-size:14px}
+.review-tool-panel .editor-notes .editor-card-actions button{min-height:40px;font-size:13px;padding:9px 12px}
+.review-file-info{margin:0 0 22px;padding-bottom:16px;border-bottom:1px solid var(--line);font-size:13px}
+.review-file-name{font-size:14px;font-weight:600;line-height:1.5;overflow-wrap:anywhere;color:var(--text);margin-bottom:10px}
+.review-file-info .recording-summary{gap:8px 12px;font-size:12px;margin:0;padding:0}
+.review-file-info .recording-summary>span,.review-file-info #sourceFps{font-size:12px}
+.review-external button{min-height:40px;font-size:13px;padding:9px 12px}
+@media(max-width:1100px){
+ .review-dialog[data-editing=true] .review-workspace{grid-template-columns:minmax(0,1fr) 360px}
+ .review-clock{font-size:12px}.review-volume input{width:52px}
+ .review-tool-panel{padding:18px}
+}
+@media(max-width:750px){
+ .review-dialog[data-editing=true] .review-workspace{grid-template-columns:1fr}
+ .review-sidebar{width:min(380px,92vw)}
+ .review-head-actions>button{padding:8px 10px;font-size:12px}
+}
+
+.trim-filmstrip-source{visibility:hidden!important}
+.trim-filmstrip-canvas{position:absolute;inset:0;display:block;width:100%;height:100%;pointer-events:none}
+.trim-filmstrip-viewport[aria-busy=true] .trim-filmstrip-canvas{opacity:.7}

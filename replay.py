@@ -24,7 +24,8 @@ from capture_media import VideoSource,MediaMux
 NO_WINDOW = 0x08000000
 MINUTES = (1,3,5,10,15,20,30)
 DEFAULTS = {'seconds':300, 'fps':60, 'mbps':20, 'monitor':'primary', 'audio':'default',
-            'save_format':'mp4', 'gif_seconds':5, 'audio_mode':'system', 'game_pid':0, 'game_path':'',**video_quality.DEFAULTS}
+            'save_format':'mp4', 'gif_seconds':5, 'audio_mode':'system', 'game_pid':0, 'game_path':'',
+            'chat_path':'','chat_pid':0,**video_quality.DEFAULTS}
 
 def monitors():
     class Info(ctypes.Structure):
@@ -93,13 +94,15 @@ def validate_export(path,duration,fps,audio):
         if video.duration is None or abs(float(video.duration*video.time_base)-duration)>tolerance:
             raise ValueError('Длительность видеодорожки не прошла проверку')
     if audio:
-        with av.open(str(path)) as media:
-            if not media.streams.audio:raise ValueError('В сохранённом повторе нет аудиодорожки')
-            sound=media.streams.audio[0];first=next(media.decode(sound),None)
-            if first is None or first.time is None or abs(first.time)>tolerance:
-                raise ValueError('Начало аудиодорожки не прошло проверку')
-            if sound.duration is None or abs(float(sound.duration*sound.time_base)-duration)>tolerance:
-                raise ValueError('Длительность аудиодорожки не прошла проверку')
+        with av.open(str(path)) as media:count=len(media.streams.audio)
+        if not count:raise ValueError('В сохранённом повторе нет аудиодорожки')
+        for index in range(count):
+            with av.open(str(path)) as media:
+                sound=media.streams.audio[index];first=next(media.decode(sound),None)
+                if first is None or first.time is None or abs(first.time)>tolerance:
+                    raise ValueError('Начало аудиодорожки не прошло проверку')
+                if sound.duration is None or abs(float(sound.duration*sound.time_base)-duration)>tolerance:
+                    raise ValueError('Длительность аудиодорожки не прошла проверку')
 
 class Replay:
     def __init__(self,suite):
@@ -113,6 +116,8 @@ class Replay:
         self.media_time=0.;self.audio_peak=0.;self.last_signal=0.;self.saving=False
         self.interval_start=0.
         self.last_saved=None;self.hotkey_ok=False;self.hotkey_thread=None;self.hotkey_tid=None
+        self.session_marks=[];self.active_profile=''
+        self._extra_audio_captures=[];self._extra_audio_readers=[]
         self.tray=None;self.auto_owned=False;self.hotkeys=None
         self.settings={**DEFAULTS,**suite.cfg.get('replay',{})}
         if 'audio_mode' not in suite.cfg.get('replay',{}) and self.settings['audio']=='none':
@@ -128,12 +133,19 @@ class Replay:
         try: devices=audio_devices()
         except Exception: devices=[]
         return {'monitors':monitors(),'audio':devices,'applications':process_audio.applications(),
+                'audio_applications':process_audio.audio_applications(),
                 'process_audio_supported':process_audio.supported(),'settings':self.settings}
 
-    def configure(self,args):
+    def configure(self,args,*,persist=True):
         if self.phase in {'starting','recording','stopping'} or self.saving:
             raise ValueError('Сначала останови повтор и дождись сохранения')
         cfg={**self.settings}
+        if 'window_path' in args:
+            import ntpath
+            path=str(args['window_path']).strip()
+            if path and (not ntpath.isabs(path) or ntpath.splitext(path)[1].lower()!='.exe'):raise ValueError('Нужен полный путь к приложению .exe')
+            if path!=cfg.get('window_path'):cfg.update(window_hwnd=0,window_pid=0,window_title='',game_pid=0,game_path='')
+            cfg['window_path']=path
         if 'save_format' in args:
             if args['save_format'] not in {'mp4','gif'}:raise ValueError('Выберите MP4 или GIF')
             cfg['save_format']=args['save_format']
@@ -160,7 +172,7 @@ class Replay:
         if 'monitor' in args:cfg['monitor']=str(args['monitor'])
         if 'audio' in args:cfg['audio']=str(args['audio'])
         if 'audio_mode' in args:
-            if args['audio_mode'] not in {'system','game','exclude','none'}:raise ValueError('Неизвестный режим звука')
+            if args['audio_mode'] not in {'system','game','exclude','none','multitrack'}:raise ValueError('Неизвестный режим звука')
             cfg['audio_mode']=args['audio_mode']
         if 'seconds' in args:
             cfg['seconds']=int(args['seconds'])
@@ -172,14 +184,27 @@ class Replay:
                 if not target:raise ValueError('Выбранное окно закрыто. Обнови список приложений.')
                 cfg['game_pid']=pid;cfg['game_path']=target['path']
         if cfg['capture_mode']=='window' and not cfg['window_path']:raise ValueError('Выберите окно для записи')
-        if cfg['capture_mode']=='window' and cfg['audio_follow_window'] and cfg['audio_mode']=='game':
+        if 'chat_pid' in args:
+            pid=int(args['chat_pid'])
+            if pid:
+                chat=next((a for a in process_audio.audio_applications() if a['pid']==pid),None)
+                if not chat:raise ValueError('Приложение чата закрыто. Обновите список')
+                cfg.update(chat_pid=pid,chat_path=chat['path'])
+        if 'chat_path' in args:
+            import ntpath
+            path=str(args['chat_path'])
+            if path and (not ntpath.isabs(path) or ntpath.splitext(path)[1].lower()!='.exe'):raise ValueError('Нужен полный путь к приложению чата .exe')
+            cfg['chat_path']=path
+        if cfg['capture_mode']=='window' and cfg['audio_follow_window'] and cfg['audio_mode'] in {'game','multitrack'}:
             cfg['game_pid']=cfg['window_pid'];cfg['game_path']=cfg['window_path']
-        if cfg['audio_mode'] in {'game','exclude'}:
+        if cfg['audio_mode'] in {'game','exclude','multitrack'}:
             if not process_audio.supported():raise ValueError('Звук отдельного приложения требует Windows 11 или build 20348+')
             if not cfg['game_path']:raise ValueError('Выбери игру или приложение для записи звука')
         self.settings=cfg
-        self.suite.cfg['replay']=cfg
-        self.suite.save_cfg()
+        if persist:
+            with self.suite.lock:
+                self.suite.cfg['replay']=cfg
+                self.suite.save_cfg()
         return self.state()
 
     def state(self):
@@ -196,7 +221,19 @@ class Replay:
                     'late_audio_ms':round(self.muxer.late_audio_frames/(self._audio_rate or 48000)*1000,1) if self.muxer else 0,
                     'output_size':getattr(self,'output_size',None),
                     'settings':self.settings,'hotkey_ok':bool(self.hotkeys and self.hotkeys.ok),'hotkey_error':self.hotkeys.error if self.hotkeys else '', 'saving':self.saving,
+                    'marker_count':len(self.session_marks),'active_profile':self.active_profile,
                     'last_saved':self.last_saved,'disk_bytes':sum(r['path'].stat().st_size for r in rows if r['path'].exists())}
+
+    def add_marker(self):
+        import live_markers
+        with self.lock:
+            if self.phase!='recording':raise ValueError('Метки доступны во время записи')
+            moment=max(0,time.perf_counter()-self.capture_epoch)
+            self.session_marks=[value for value in self.session_marks if value>=moment-self.settings['seconds']]
+            if len(self.session_marks)>=1000:raise ValueError('Достигнут предел в 1000 меток')
+            self.session_marks.append(moment);live_markers.persist(self.session,self.session_marks)
+        if self.suite.desktop:self.suite.desktop.notify('Момент отмечен',f'{int(moment)//60:02d}:{moment%60:06.3f} · метка появится в сохранённом клипе')
+        return {'time':moment,'count':len(self.session_marks)}
 
     def _capture_command(self,monitor,audio,backend):
         cfg=self.settings
@@ -207,7 +244,9 @@ class Replay:
             cmd+=['-thread_queue_size','8','-probesize','32768','-analyzeduration','0',
                   '-f','nut','-colorspace','bt709','-color_range','tv','-i','pipe:0','-map','0:v:0']
         if audio:
-            cmd+=['-map','1:a:0' if self.native_gpu else '0:a:0','-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
+            count=3 if audio.get('sources') else 1
+            for index in range(count):cmd+=['-map',f'{1 if self.native_gpu else 0}:a:{index}']
+            cmd+=['-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
             if self.native_gpu:cmd+=['-shortest']
         else:cmd+=['-an']
         cmd+=video_quality.encoder_options(cfg,self.encoder,monitor['width'],monitor['height'],gpu_frames=self.native_gpu)
@@ -224,6 +263,7 @@ class Replay:
             self.phase='starting';self.error='';self.stop_event=threading.Event()
             self.media_time=0.;self.audio_peak=0.;self.last_signal=0.
             self.interval_start=0.
+            self.session_marks=[]
             self.duplicate_frames=0;self.dropped_frames=0
             self.native_gpu=False;self.backend_note='';self.muxer=None;self.mux_thread=None
         try:
@@ -249,10 +289,16 @@ class Replay:
                 audio=next((d for d in devices if str(d['id'])==self.settings['audio']),None)
                 if self.settings['audio']=='default':audio=next((d for d in devices if d['default']),None)
                 if not audio:raise ValueError('Устройство системного звука недоступно. Выбери его заново.')
-            elif mode in {'game','exclude'}:
-                target=window if window and self.settings['audio_follow_window'] and mode=='game' else process_audio.resolve_target(self.settings)
+            elif mode in {'game','exclude','multitrack'}:
+                target=window if window and self.settings['audio_follow_window'] and mode in {'game','multitrack'} else process_audio.resolve_target(self.settings)
                 audio={'name':('Только ' if mode=='game' else 'Всё кроме ')+target['name'],
                        'pid':target['pid'],'rate':48000,'channels':2,'process':True,'exclude':mode=='exclude'}
+                if mode=='multitrack':
+                    chat=process_audio.resolve_chat(self.settings)
+                    if chat['pid']==target['pid'] or chat['path'].casefold()==target['path'].casefold():raise ValueError('Для игры и чата выберите разные приложения')
+                    audio['name']='Игра + '+chat['name']+' · 3 дорожки'
+                    audio['sources']=[{**audio,'name':'Игра','queue':queue.Queue(maxsize=256)},
+                                      {'pid':chat['pid'],'process':True,'exclude':False,'name':'Discord / чат','queue':queue.Queue(maxsize=256)}]
             self.audio_name=audio['name'] if audio else 'Без звука'
             check=subprocess.run([self.suite.ff(),'-v','error','-f','lavfi','-i','color=s=640x360:r=30',
                                   '-frames:v','1','-c:v','h264_nvenc','-f','null','-'],
@@ -322,6 +368,13 @@ class Replay:
             raise
 
     def _open_audio(self,device):
+        if device.get('sources'):
+            for source in device['sources']:
+                capture=process_audio.open_capture(source['pid'],False)
+                self._extra_audio_captures.append(capture)
+                reader=threading.Thread(target=self._process_audio_reader,args=(capture,source['queue']),daemon=True)
+                self._extra_audio_readers.append(reader);reader.start()
+            return
         if device.get('process'):
             capture=process_audio.open_capture(device['pid'],device['exclude'])
             self._process_capture=capture
@@ -350,7 +403,8 @@ class Replay:
         self._audio_stream=self._audio_manager.open(format=pa.paFloat32,channels=device['channels'],rate=device['rate'],
                          input=True,input_device_index=device['id'],frames_per_buffer=1024,stream_callback=callback)
 
-    def _process_audio_reader(self,capture):
+    def _process_audio_reader(self,capture,destination=None):
+        destination=self._audio_queue if destination is None else destination
         try:
             while not self.stop_event.is_set():
                 if capture.Error:raise RuntimeError(str(capture.Error))
@@ -365,11 +419,11 @@ class Replay:
                 self.audio_peak=peak
                 if peak>.00003:self.last_signal=time.monotonic()
                 packet=(timestamp,data)
-                try:self._audio_queue.put_nowait(packet)
+                try:destination.put_nowait(packet)
                 except queue.Full:
-                    try:self._audio_queue.get_nowait()
+                    try:destination.get_nowait()
                     except queue.Empty:pass
-                    try:self._audio_queue.put_nowait(packet)
+                    try:destination.put_nowait(packet)
                     except queue.Full:pass
         except Exception as e:self.audio_error=str(e)
 
@@ -420,6 +474,14 @@ class Replay:
                 if audio.get('process') and not process_audio.is_alive(audio['pid']):
                     self.error='Выбранная игра или приложение закрыто. Запусти его и включи повтор заново.'
                     self.stop();self.phase='error';break
+                if audio.get('sources') and not process_audio.is_alive(audio['sources'][1]['pid']):
+                    self.stop(preserve=True)
+                    try:
+                        saved=self.save({'progress':0},allow_stopped=True)
+                        self.error='Приложение чата закрыто. Доступный повтор сохранён.'
+                        if self.suite.desktop:self.suite.desktop.notify('Чат закрылся · повтор сохранён',Path(saved['path']).name)
+                    except Exception as error:self.error='Приложение чата закрыто: '+str(error)
+                    self.phase='error';break
                 try:
                     if self.settings['audio_mode']=='system' and self.settings['audio']=='default':
                         current=next((d for d in audio_devices() if d['default']),None)
@@ -459,6 +521,10 @@ class Replay:
         capture=getattr(self,'_process_capture',None)
         if capture:
             capture.Dispose();self._process_capture=None
+        for reader in self._extra_audio_readers:
+            if reader is not threading.current_thread():reader.join(timeout=2)
+        for capture in self._extra_audio_captures:capture.Dispose()
+        self._extra_audio_captures=[];self._extra_audio_readers=[]
         stream=getattr(self,'_audio_stream',None)
         if stream:
             try:stream.stop_stream();stream.close()
@@ -517,6 +583,8 @@ class Replay:
                 target=destination/('Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.gif')
                 self.last_saved=gif_media.encode(self.suite,listing,target,skip,duration,job)
                 self.suite.index_video(target)
+                import live_markers
+                self.last_saved['marks']=live_markers.attach(self.suite,target,self.session_marks,selected[0]['start']+skip,duration)
                 self.suite.log('replay_save',**self.last_saved)
                 with self.lock:self.interval_start=cutoff
                 return self.last_saved
@@ -530,6 +598,9 @@ class Replay:
                  '-f','mpegts','-i','pipe:0','-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
                  '-c','copy','-video_track_timescale','90000','-avoid_negative_ts','disabled',
                  '-use_editlist','1','-movflags','+faststart','-y',str(partial)]
+            if self.settings['audio_mode']=='multitrack':
+                from audio_tracks import TITLES
+                for index,title in enumerate(TITLES):cmd[-2:-2]=[f'-metadata:s:a:{index}','title='+title,f'-metadata:s:a:{index}','handler_name='+title,f'-disposition:a:{index}','default' if index==0 else '0']
             proc=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=NO_WINDOW)
             with self.suite.lock:self.suite.children.add(proc)
             pipe=proc.stdin;proc.stdin=None;copy_errors=[]
@@ -555,12 +626,15 @@ class Replay:
             info=self.suite.probe(partial)
             validate_export(partial,duration,self.settings['fps'],self.settings['audio_mode']!='none')
             if self.settings['audio_mode']!='none' and info['audio']<1:raise ValueError('В сохранённом повторе нет аудиодорожки')
+            if self.settings['audio_mode']=='multitrack' and info['audio']!=3:raise ValueError('Сохранение потеряло отдельные аудиодорожки')
             if partial.stat().st_size<1000:raise ValueError('Пустой повтор')
             os.replace(partial,target)
             self.last_saved={'path':str(target),'bytes':target.stat().st_size,**info,
                              'capture_start':selected[0]['start']+skip,
                              'capture_end':selected[0]['start']+skip+duration}
             self.suite.index_video(target)
+            import live_markers
+            self.last_saved['marks']=live_markers.attach(self.suite,target,self.session_marks,selected[0]['start']+skip,duration)
             self.suite.log('replay_save',**self.last_saved)
             with self.lock:self.interval_start=cutoff
             return self.last_saved
@@ -593,7 +667,7 @@ class Replay:
     def attach_desktop(self):
         from hotkeys import GlobalHotkeys,DEFAULTS,validate
         if os.name!='nt':return
-        self.hotkeys=GlobalHotkeys({'save':self.save_job,'auto':self.suite.auto.toggle,'window':lambda:self.suite.desktop and self.suite.desktop.toggle()},self.suite.log)
+        self.hotkeys=GlobalHotkeys({'save':self.save_job,'auto':self.suite.auto.toggle,'window':lambda:self.suite.desktop and self.suite.desktop.toggle(),'mark':self.add_marker},self.suite.log)
         try:self.hotkeys.configure(validate(self.suite.cfg.get('hotkeys',DEFAULTS)))
         except ValueError as error:self.suite.log('hotkey_registration_error',error=str(error))
         self.hotkey_ok=self.hotkeys.ok;self.hotkey_tid=self.hotkeys.tid

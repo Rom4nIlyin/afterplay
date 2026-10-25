@@ -1,0 +1,48 @@
+/* Approved variant 04: a quiet cursor shadow, illuminated edges, spring press. */
+.clips button.ap-cursor{
+ isolation:isolate;overflow:hidden;
+ --cursor-x:50%;--cursor-y:50%;
+ --cursor-glow:radial-gradient(ellipse farthest-corner at var(--cursor-x) var(--cursor-y),rgba(0,0,0,.04) 0%,rgba(0,0,0,.025) 12%,transparent 28%,rgba(96,226,187,.08) 58%,rgba(96,226,187,.16) 100%);
+ /* Newly rendered idle buttons must settle without flashing their palette. */
+ transition:transform .16s cubic-bezier(.2,.8,.3,1.1);
+}
+.clips button.ap-cursor-relative{position:relative}
+/* A trim handle's translation defines its position and must never animate. */
+.clips button.trim-handle,.clips button.trim-handle:hover,.clips button.trim-handle:active{transform:translateX(-50%)!important;transition:none!important}
+.clips button.trim-handle::after{display:none!important}
+.clips button.ap-cursor::after{
+ content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;
+ background:var(--cursor-glow);opacity:0;transition:opacity .18s;
+}
+.clips button.ap-cursor:where(.secondary,.quiet,.icon-button,.review-icon-button):not(.primary,.danger,.clip-delete,.delete-export,.active,.selected,[aria-pressed=true],[aria-selected=true]){
+ --cursor-base:#243a37;--cursor-text:#e7faf3;--cursor-line:#76b8a6;
+ background-color:var(--cursor-base);color:var(--cursor-text);border-color:#45665d;
+}
+:root[data-theme=light] .clips button.ap-cursor:where(.secondary,.quiet,.icon-button,.review-icon-button):not(.primary,.danger,.clip-delete,.delete-export,.active,.selected,[aria-pressed=true],[aria-selected=true]){
+ --cursor-base:#e3f2ed;--cursor-text:#173b30;--cursor-line:#76b8a6;border-color:#adcfc1;
+}
+.clips button.ap-cursor:where(.primary,.review-play){
+ --cursor-base:var(--accent);--cursor-text:var(--on-accent);--cursor-line:var(--accent);
+ --cursor-glow:radial-gradient(ellipse farthest-corner at var(--cursor-x) var(--cursor-y),rgba(0,0,0,.055) 0%,rgba(0,0,0,.035) 10%,transparent 26%,rgba(217,255,147,.25) 58%,rgba(255,255,255,.32) 100%);
+}
+.clips button.ap-cursor:where(.danger,.clip-delete,.delete-export){
+ --cursor-base:var(--danger);--cursor-text:var(--danger-text);--cursor-line:var(--danger-line);
+ --cursor-glow:radial-gradient(ellipse farthest-corner at var(--cursor-x) var(--cursor-y),rgba(0,0,0,.055),transparent 26%,rgba(244,168,157,.12) 58%,rgba(244,168,157,.22));
+}
+@media(hover:hover){
+ .clips button.ap-cursor:enabled:not([aria-disabled=true]):hover{
+  transform:scale(1.015);background-color:var(--cursor-base,var(--hover));
+  color:var(--cursor-text,var(--text));border-color:var(--cursor-line,var(--accent));filter:none;
+ }
+ .clips button.ap-cursor:enabled:not([aria-disabled=true]):hover::after{opacity:1}
+}
+.clips button.ap-cursor:enabled:not([aria-disabled=true]):active{
+ transform:scale(.985);background-color:var(--cursor-base,var(--pressed));
+ color:var(--cursor-text,var(--text));border-color:var(--cursor-line,var(--accent));filter:none;
+}
+.clips button.ap-cursor:enabled:not([aria-disabled=true]):active::after{opacity:.6}
+.clips button.ap-cursor:disabled::after,.clips button.ap-cursor[aria-disabled=true]::after{opacity:0}
+@media(prefers-reduced-motion:reduce){
+ .clips button.ap-cursor,.clips button.ap-cursor::after{transition:none!important}
+ .clips button.ap-cursor:enabled:hover,.clips button.ap-cursor:enabled:active{transform:none}
+}

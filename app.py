@@ -353,10 +353,13 @@ class Suite:
         if timer:
             from timer_overlay import video_filter
             vf += ',' + video_filter()
+        from audio_tracks import export_audio
+        audio_filters,audio_maps,expected_audio,titles=export_audio(info,arg)
         cmd = [self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-i', src,
-               '-t', str(end-start), '-map', '0:v:0', '-map', '0:a?', '-vf', vf,
+               '-t', str(end-start), *audio_filters, '-map', '0:v:0', *audio_maps, '-vf', vf,
                '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p',
                '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', '-y', partial]
+        for index,title in enumerate(titles):cmd[-2:-2]=[f'-metadata:s:a:{index}','title='+title,f'-metadata:s:a:{index}','handler_name='+title,f'-disposition:a:{index}','default' if index==0 else '0']
         log_path = self.data/'logs'/f'export-{uuid.uuid4().hex[:12]}.log'
         try:
             with open(log_path,'wb') as err:
@@ -378,7 +381,7 @@ class Suite:
             result = self.probe(partial)
             if abs(result['duration']-(end-start)) > max(.6, (end-start)*.02):
                 raise ValueError('Длительность экспорта не прошла проверку')
-            if info['audio'] and not result['audio']:
+            if result['audio']!=expected_audio:
                 raise ValueError('Экспорт потерял аудиодорожку')
             if vertical and (result['width'],result['height']) != (720,1280):
                 raise ValueError('Размер вертикального видео не прошёл проверку')
@@ -393,21 +396,23 @@ class Suite:
     def recordings_dir(self):
         return storage.recording_dir(self)
 
-    def filmstrip(self,cid,start=0,end=None):
+    def filmstrip(self,cid,start=0,end=None,frames=12):
         import math
         clip=self.clip(cid);source=Path(clip['path']);st=source.stat()
         start=float(start);end=float(clip['duration'] if end is None else end)
+        frames=int(frames)
+        if not 1<=frames<=64:raise ValueError('Недопустимое число кадров')
         if not math.isfinite(start) or not math.isfinite(end) or not 0<=start<end<=float(clip['duration'])+.1:
             raise ValueError('Недопустимый диапазон кадров')
-        signature=hashlib.sha256(f"{st.st_size}:{st.st_mtime_ns}:{start:.3f}:{end:.3f}".encode()).hexdigest()[:12]
+        signature=hashlib.sha256(f"v2:{st.st_size}:{st.st_mtime_ns}:{start:.3f}:{end:.3f}:{frames}".encode()).hexdigest()[:12]
         target=self.data/'thumbs'/f'{cid}-strip-{signature}.jpg'
         with self.filmstrip_lock:
             if target.is_file():return target
             from PIL import Image
-            sheet=Image.new('RGB',(160*12,90),(20,26,30))
+            sheet=Image.new('RGB',(160*frames,90),(20,26,30))
             available=0
-            for index in range(12):
-                position=max(0,start+(end-start)*index/12)
+            for index in range(frames):
+                position=max(0,start+(end-start)*(index+.5)/frames)
                 frame=run([self.ff(),'-hide_banner','-loglevel','error','-ss',f'{position:.3f}',
                            '-i',source,'-frames:v','1','-vf','scale=160:90:force_original_aspect_ratio=decrease,pad=160:90:(ow-iw)/2:(oh-ih)/2',
                            '-threads','1','-f','image2pipe','-vcodec','mjpeg','pipe:1'],timeout=20)
@@ -455,14 +460,32 @@ class Suite:
         if not self.window:
             raise ValueError('Введи путь вручную')
         import webview
-        selected = self.window.create_file_dialog(webview.FileDialog.OPEN, file_types=('Приложения (*.exe)',)) if purpose=='auto-app' else self.window.create_file_dialog(webview.FileDialog.FOLDER)
+        selected = self.window.create_file_dialog(webview.FileDialog.OPEN, file_types=('Приложения (*.exe)',)) if purpose in {'auto-app','profile-app'} else self.window.create_file_dialog(webview.FileDialog.FOLDER)
         return {'path': selected[0] if selected else None}
 
 
     def dispatch(self, action, arg):
-        if self.cfg_path.exists():
-            self.cfg = json.loads(self.cfg_path.read_text('utf-8'))
-            self._saved_cfg = json.loads(json.dumps(self.cfg))
+        with self.lock:
+            if self.cfg_path.exists():
+                self.cfg = json.loads(self.cfg_path.read_text('utf-8'))
+                self._saved_cfg = json.loads(json.dumps(self.cfg))
+        if action.startswith('profile_'):
+            import capture_profiles
+            if not self.replay:raise ValueError('Профили доступны в окне AFTERPLAY')
+            if action=='profile_list':return capture_profiles.state(self)
+            if action=='profile_save':return capture_profiles.save(self,arg)
+            if action=='profile_remove':return capture_profiles.remove(self,arg.get('path',''))
+            if action=='profile_apply':return capture_profiles.apply(self,arg.get('path',''))
+            if action=='profile_configure':return capture_profiles.configure(self,arg)
+            if action=='profile_new':return capture_profiles.create(self)
+        if action in {'clip_media_info','clip_frame_step','clip_waveform'}:
+            import editor_media
+            if action=='clip_media_info':return editor_media.info(self,str(arg['id']))
+            if action=='clip_frame_step':return editor_media.frame_step(self,str(arg['id']),arg.get('time',0),arg.get('direction',1))
+            return editor_media.waveform(self,str(arg['id']),arg.get('start',0),arg.get('end'),arg.get('track',0))
+        if action=='replay_mark':
+            if not self.replay:raise ValueError('Запись недоступна')
+            return self.replay.add_marker()
         if action == 'state':
             return {'settings': self.cfg, 'jobs':list(self.jobs.values())[-15:], 'clips':self.clips(),
                     'storage':storage.state(self),'updates':self.updater.state(), 'auto_record':self.auto.state() if self.auto else None,
@@ -552,7 +575,7 @@ class Suite:
                 return self.window.evaluate_js("(()=>{const d=document.querySelector('#dialog'),p=document.querySelector('.player'),r=p?.getBoundingClientRect();return {save:document.querySelector('#saveHotkey')?.value,auto:document.querySelector('#autoHotkey')?.value,autoUpdate:document.querySelector('#autoUpdateEnabled')?.checked,gif:!!document.querySelector('#replaySaveFormat'),gifSeconds:document.querySelector('#replayGifSeconds')?.value,format:document.querySelector('#clipFormat')?.value,exportDisabled:document.querySelector('[data-action=export]')?.disabled,dialogOpen:d.open,dialogWidth:d.clientWidth,player:r?{width:r.width,height:r.height,center:r.x+r.width/2,viewport:innerWidth}:null,image:document.querySelector('.editor-preview img')?.naturalWidth}})()")
             if op=='ui_clip':
                 cid=self.clip(str(arg['id']))['id']
-                self.window.evaluate_js('openClip('+json.dumps(cid)+')')
+                self.window.evaluate_js('state='+json.dumps(self.dispatch('state',{}))+';openClip('+json.dumps(cid)+')')
                 return {'ok':True}
             if op=='ui_playback':
                 return self.window.evaluate_js("({rate:$('#player')?.playbackRate,time:$('#player')?.currentTime,timer:$('#previewTimer')?.checked,exportTimer:$('#exportTimer')?.checked,label:$('#videoTimer')?.textContent,speed:$('#playbackSpeed')?.value,windowHotkey:$('#windowHotkey')?.value,overflow:$('#dialog').scrollWidth>$('#dialog').clientWidth})")
@@ -572,6 +595,30 @@ class Suite:
                 identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a=='save')
                 ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
                 return {'ok':True}
+            if op=='marker_hotkey':
+                identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a=='mark')
+                ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
+                return {'ok':True}
+            if op=='review_info':
+                return self.window.evaluate_js('({layout:window.reviewDebug?.(),errors:window.afterplayErrors||[]})')
+            if op=='review_mode':
+                pane=arg.get('pane','trim')
+                if pane not in {'trim','sound','export','notes'}:raise ValueError('Unsupported pane')
+                self.window.evaluate_js('reviewSetMode('+json.dumps(bool(arg.get('editing')))+','+json.dumps(pane)+')')
+                return {'ok':True}
+            if op=='studio_info':
+                return self.window.evaluate_js("({profiles:!!$('#captureProfile'),mark:!!$('#markHotkey'),wave:!!$('#audioWaveform'),waveReady:!!studioEditor?.wave?.peaks?.length,waveTrack:studioEditor?.wave?.track,waveStatus:$('#waveStatus')?.textContent,exactTime:studioEditor?.exactTime,preciseFrame:!!$('#preciseFrame')?.naturalWidth,position:$('#framePosition')?.textContent,audioOptions:[...($('#exportAudioMode')?.options||[])].map(x=>x.value),previewOptions:[...($('#previewAudioTrack')?.options||[])].map(x=>x.value),previewStatus:$('#previewAudioStatus')?.textContent,previewReady:studioEditor?.audio?.readyState,fps:$('#sourceFps')?.textContent,overflow:$('#dialog').scrollWidth>$('#dialog').clientWidth,errors:window.studioTestError||'',profileForm:!!$('#profilePath')})")
+            if op=='studio_action':
+                choice=arg.get('action')
+                if choice not in {'frame-next','frame-prev','set-in','set-out','profile-new','profile-save','profile-cancel','profile-apply','profile-edit','export','close'}:raise ValueError('Unsupported studio test action')
+                self.window.evaluate_js('window.studioTestError="";action('+json.dumps(choice)+',{dataset:{}}).catch(e=>window.studioTestError=String(e))')
+                return {'ok':True}
+            if op=='studio_fields':
+                fields=arg.get('fields',{})
+                allowed={'profileName','profilePath','profileSeconds','profileFps','profileCq','profileAudio','captureProfile','exportAudioMode','exportGameGain','exportChatGain','previewAudioTrack','waveTrack','markHotkey','clipIn','clipOut','clipName','playbackSpeed'}
+                if not set(fields).issubset(allowed):raise ValueError('Unsupported studio test field')
+                self.window.evaluate_js('for(const [id,value] of Object.entries('+json.dumps(fields)+')){const el=document.getElementById(id);if(el){el.value=String(value);el.dispatchEvent(new Event("change",{bubbles:true}))}}')
+                return {'ok':True}
             return {'console_window':bool(ctypes.windll.kernel32.GetConsoleWindow()),
                     'native_fullscreen':bool(self.window.native.is_fullscreen),
                     'native_visible':bool(self.window.native.Visible),
@@ -585,7 +632,7 @@ class Suite:
             if action=='replay_devices':return self.replay.devices()
             if action=='replay_applications':
                 import process_audio
-                return {'applications':process_audio.applications()}
+                return {'applications':process_audio.applications(),'audio_applications':process_audio.audio_applications()}
             if action=='replay_config':return self.auto.manual('configure',arg)
             if action=='replay_start':return self.job('Включение повтора',lambda j:self.auto.manual('start'))
             if action=='replay_stop':return self.job('Остановка повтора',lambda j:self.auto.manual('stop'))
@@ -666,17 +713,21 @@ def server_for(suite, token=None, port=0):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
-                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
+                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
                 elif route.startswith('filmstrip/'):
                     query=parse_qs(urlparse(self.path).query)
-                    p=suite.filmstrip(route.split('/')[-1],query.get('start',[0])[0],query.get('end',[None])[0])
+                    p=suite.filmstrip(route.split('/')[-1],query.get('start',[0])[0],query.get('end',[None])[0],query.get('frames',[12])[0])
                 elif route.startswith('thumb/'):
                     cid=route.split('/')[-1]
                     suite.clip(cid)
                     p=suite.data/'thumbs'/f'{cid}.jpg'
                 elif route.startswith('media/'):
                     p=Path(suite.clip(route.split('/')[-1])['path'])
+                elif route.startswith('audio-preview/'):
+                    import editor_media
+                    query=parse_qs(urlparse(self.path).query)
+                    p=editor_media.audio_preview(suite,route.split('/')[-1],query.get('track',[0])[0])
                 else: return self.send_json({'error':'Not found'},404)
                 if not p.is_file(): return self.send_json({'error':'Not found'},404)
                 size=p.stat().st_size
@@ -740,6 +791,8 @@ def main():
     if args.mode=='clips':
         from replay import Replay
         suite.replay=Replay(suite)
+        from capture_profiles import ensure_defaults
+        ensure_defaults(suite)
         from auto_record import AutoRecorder
         suite.auto=AutoRecorder(suite)
     server,token=server_for(suite)
@@ -770,7 +823,7 @@ def main():
                 time.sleep(1)
                 report['controls']=suite.window.evaluate_js("({minutes:[...document.querySelector('#replaySeconds').options].map(o=>Number(o.value)/60),audio:[...document.querySelector('#replayAudioMode').options].map(o=>o.value),hasApp:!!document.querySelector('#replayApplication'),hasSave:!!document.querySelector('#replaySave'),body:document.body.innerText.slice(0,2500)})")
                 report['capture']=suite.window.evaluate_js("({modes:[...document.querySelector('#replayCaptureMode').options].map(o=>o.value),fps:[...document.querySelector('#replayFPS').options].map(o=>Number(o.value)),quality:[...document.querySelector('#replayQuality').options].map(o=>o.value),hasOffset:!!document.querySelector('#replayOffset'),hasResolution:!!document.querySelector('#replayHeight')})")
-                report['ok']=bool(report.get('ready') and report['controls']['minutes']==[1,3,5,10,15,20,30] and len(report['controls']['audio'])==4 and report['capture']['modes']==['monitor','window'] and report['capture']['fps']==[24,30,60,90,120] and len(report['capture']['quality'])==3 and report['capture']['hasOffset'] and report['capture']['hasResolution'])
+                report['ok']=bool(report.get('ready') and report['controls']['minutes']==[1,3,5,10,15,20,30] and len(report['controls']['audio'])==5 and report['capture']['modes']==['monitor','window'] and report['capture']['fps']==[24,30,60,90,120] and len(report['capture']['quality'])==3 and report['capture']['hasOffset'] and report['capture']['hasResolution'])
                 suite.window.evaluate_js("tab='settings';render()")
                 report['preferences']=suite.window.evaluate_js("({themes:[...document.querySelector('#interfaceTheme').options].map(o=>o.value),autostart:!!document.querySelector('#launchAtLogin'),desktop:!!document.querySelector('[data-action=shortcut-desktop]'),taskbar:!!document.querySelector('[data-action=shortcut-taskbar]'),updates:!!document.querySelector('[data-action=update-check]'),captureBorder:!!document.querySelector('#captureBorder'),captureBorderChecked:document.querySelector('#captureBorder').checked===!!state.replay.settings.capture_border})")
                 report['ok']=bool(report['ok'] and report['preferences']['themes']==['standard','dark','light'] and all(report['preferences'][key] for key in ('autostart','desktop','taskbar','updates','captureBorder','captureBorderChecked')))

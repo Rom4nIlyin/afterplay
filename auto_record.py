@@ -47,6 +47,7 @@ class AutoRecorder:
         self.lock = threading.RLock(); self.stopped = threading.Event()
         self.settings = validate(suite.cfg.get('auto_record', DEFAULTS))
         self.owner = None; self.previous = None; self.blocked = set()
+        self.previous_profile=''
         self.pending = None; self.pending_at = 0; self.error = ''; self.thread = None
 
     def state(self):
@@ -96,6 +97,7 @@ class AutoRecorder:
             self.suite.cfg['replay'] = copy.deepcopy(self.previous)
             self.suite.save_cfg(); self.previous = None
         self.replay.auto_owned = False
+        self.replay.active_profile=self.previous_profile
 
     def _finish(self):
         owner = self.owner; self.owner = None
@@ -152,9 +154,13 @@ class AutoRecorder:
             if self.clock() - self.pending_at < 2: return
             self.pending = None
             self.previous = copy.deepcopy(self.replay.settings)
+            self.previous_profile=getattr(self.replay,'active_profile','')
             try:
-                self.replay.configure({'capture_mode': 'window', 'window_hwnd': app['hwnd'],
+                from capture_profiles import for_app
+                overrides=for_app(self.suite.cfg,app['path'])
+                self.replay.configure({**overrides,'capture_mode': overrides.get('capture_mode','window'), 'window_hwnd': app['hwnd'],
                                        'audio_follow_window': True, 'game_pid': app['pid']})
+                self.replay.active_profile=self.suite.cfg.get('capture_profiles',{}).get(path_key(app['path']),{}).get('name','')
                 self.replay.auto_owned = True
                 self.owner = {'key': identity, 'name': allowed[identity[0]]['name']}
                 self.replay.start(); self.error = ''

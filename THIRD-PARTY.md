@@ -44,3 +44,8 @@ OpenCV Python 5.0.0.93: https://github.com/opencv/opencv-python
 Bundled wheels retain component licenses and notices in their dist-info folders.
 The capture bridge uses PyAV for raw video / PCM packet multiplexing, without
 re-encoding video before the separate FFmpeg process.
+
+Inter typeface (unmodified Regular, Medium and SemiBold fonts): app/ui/fonts/.
+Copyright: The Inter Project Authors. SIL Open Font License 1.1.
+Full license and original embedded notices: app/ui/fonts/OFL.txt and FONT-NOTICES.txt.
+Project: https://github.com/rsms/inter

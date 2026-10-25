@@ -6,8 +6,8 @@ using System.Windows.Forms;
 [assembly:System.Reflection.AssemblyTitle("AFTERPLAY")]
 [assembly:System.Reflection.AssemblyProduct("AFTERPLAY")]
 [assembly:System.Reflection.AssemblyCompany("AFTERPLAY")]
-[assembly:System.Reflection.AssemblyVersion("1.8.4.0")]
-[assembly:System.Reflection.AssemblyFileVersion("1.8.4.0")]
+[assembly:System.Reflection.AssemblyVersion("1.9.0.0")]
+[assembly:System.Reflection.AssemblyFileVersion("1.9.0.0")]
 
 namespace Afterplay {
     // A local WinForms message filter, active only inside this application's form.
