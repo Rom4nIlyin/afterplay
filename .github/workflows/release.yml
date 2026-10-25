@@ -5,7 +5,7 @@ on:
       version:
         description: Version without v
         required: true
-        default: '1.8.3'
+        default: '1.8.4'
   push:
     branches: ['main']
     paths: ['version.py']
@@ -45,7 +45,7 @@ jobs:
           python scripts/build_portable.py --version $version
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           $bundle = "build/portable-$version/AFTERPLAY Portable"
-          & "$bundle/runtime/python.exe" -c 'import av, windows_capture, pyaudiowpatch, webview; print("Portable imports OK")'
+          & "$bundle/app/runtime/python.exe" -c 'import av, windows_capture, pyaudiowpatch, webview; print("Portable imports OK")'
           if ($LASTEXITCODE -ne 0) { throw 'Portable runtime failed' }
           "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
           "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
@@ -57,10 +57,10 @@ jobs:
           name: afterplay-unsigned-binaries
           if-no-files-found: error
           path: |
-            build/portable-*/AFTERPLAY Portable/AFTERPLAY.exe
-            build/portable-*/AFTERPLAY Portable/Updater.exe
-            build/portable-*/AFTERPLAY Portable/ProcessAudio.dll
-            build/portable-*/AFTERPLAY Portable/ReplayNotification.dll
+            build/portable-${{ env.RELEASE_VERSION }}/AFTERPLAY Portable/AFTERPLAY.exe
+            build/portable-${{ env.RELEASE_VERSION }}/AFTERPLAY Portable/app/Updater.exe
+            build/portable-${{ env.RELEASE_VERSION }}/AFTERPLAY Portable/app/ProcessAudio.dll
+            build/portable-${{ env.RELEASE_VERSION }}/AFTERPLAY Portable/app/ReplayNotification.dll
       - name: Request SignPath signature and wait for maintainer approval
         if: vars.SIGNPATH_ENABLED == 'true'
         uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
@@ -81,10 +81,11 @@ jobs:
         run: |
           $bundle = "build/portable-$env:RELEASE_VERSION/AFTERPLAY Portable"
           foreach ($name in @('AFTERPLAY.exe','Updater.exe','ProcessAudio.dll','ReplayNotification.dll')) {
-            $file = Join-Path 'build/signed' $name
+            $relative = if ($name -eq 'AFTERPLAY.exe') { $name } else { 'app/' + $name }
+            $file = Join-Path 'build/signed' $relative
             $signature = Get-AuthenticodeSignature -LiteralPath $file
             if ($signature.Status -ne 'Valid') { throw "Invalid signature: $name" }
-            Copy-Item -LiteralPath $file -Destination (Join-Path $bundle $name)
+            Copy-Item -LiteralPath $file -Destination (Join-Path $bundle $relative)
           }
           python scripts/repackage_portable.py --bundle $bundle --output dist --version $env:RELEASE_VERSION
           if ($LASTEXITCODE -ne 0) { throw 'Signed bundle verification failed' }

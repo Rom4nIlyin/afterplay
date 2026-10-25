@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from portable_paths import catalog, component as portable_component
 
 MANAGED_COMPONENTS = {
     'processaudio.dll',
@@ -23,15 +24,18 @@ def prepare_runtime(base):
     if os.name != 'nt':
         return []
     base = Path(base).resolve()
-    manifest = base / 'SHA256SUMS.json'
+    manifest = catalog(base)
     if not manifest.is_file():
-        if (base / 'runtime/python313._pth').is_file():
+        if portable_component(base, 'runtime/python313._pth').is_file():
             raise RuntimeError('Не найден SHA256SUMS.json. Распакуйте архив AFTERPLAY целиком.')
         return []  # Development/source installations use their own pip environment.
     expected = json.loads(manifest.read_text(encoding='utf-8-sig'))
     pending = []
     for relative, digest in expected.items():
-        if relative.replace('\\', '/').lower() not in MANAGED_COMPONENTS:
+        managed = relative.replace('\\', '/').lower()
+        if managed.startswith('app/'):
+            managed = managed[4:]
+        if managed not in MANAGED_COMPONENTS:
             continue
         component = (base / relative).resolve()
         if not component.is_relative_to(base):

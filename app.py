@@ -19,10 +19,12 @@ import traceback
 import uuid
 import io
 import storage
+from portable_paths import install_root
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 BASE = Path(__file__).resolve().parent
+ROOT = install_root(BASE)
 NO_WINDOW = 0x08000000 if os.name == 'nt' else 0
 VIDEO_EXT = {'.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.ts', '.gif'}
 
@@ -57,7 +59,7 @@ def safe_child(root, rel):
 
 class Suite:
     def __init__(self, data=None):
-        self.data = Path(data or BASE / 'data')
+        self.data = Path(data or ROOT / 'data')
         self.data.mkdir(parents=True, exist_ok=True)
         for name in ['thumbs', 'exports', 'logs']:
             (self.data / name).mkdir(exist_ok=True)
@@ -88,7 +90,7 @@ class Suite:
         self.app_mode = 'clips'
         self.test_control = False
         from app_update import AppUpdater
-        self.updater = AppUpdater(BASE,self.data)
+        self.updater = AppUpdater(ROOT,self.data)
 
     @contextmanager
     def db(self):
@@ -502,13 +504,13 @@ class Suite:
             return self.cfg['appearance']
         if action=='shortcut_desktop':
             from shortcuts import create_shortcut
-            return {'path':str(create_shortcut(BASE))}
+            return {'path':str(create_shortcut(ROOT))}
         if action=='shortcut_taskbar':
             from shortcuts import taskbar_shortcut
-            return taskbar_shortcut(BASE)
+            return taskbar_shortcut(ROOT)
         if action=='autostart_config':
             from shortcuts import set_autostart
-            result=set_autostart(BASE,arg.get('enabled'))
+            result=set_autostart(ROOT,arg.get('enabled'))
             self.cfg.setdefault('desktop',{}).setdefault(self.app_mode,{})['autostart']=result['enabled']
             self.save_cfg()
             return result
@@ -712,7 +714,7 @@ def server_for(suite, token=None, port=0):
 
 def main():
     from runtime_trust import prepare_runtime
-    prepared_components = prepare_runtime(BASE)
+    prepared_components = prepare_runtime(ROOT)
     parser=argparse.ArgumentParser()
     parser.add_argument('--mode',choices=['clips'],default='clips')
     parser.add_argument('--serve',action='store_true')
@@ -724,7 +726,7 @@ def main():
     instance = None
     if os.name=='nt' and not args.serve:
         from single_instance import DesktopInstance
-        instance = DesktopInstance(Path(args.data or BASE/'data'))
+        instance = DesktopInstance(Path(args.data or ROOT/'data'))
         if not instance.primary:
             instance.close()
             return
@@ -794,6 +796,8 @@ def main():
 if __name__=='__main__':
     try: main()
     except Exception:
-        (BASE/'startup-error.log').write_text(traceback.format_exc(),encoding='utf-8')
-        if os.name=='nt': ctypes.windll.user32.MessageBoxW(None,'Не удалось открыть приложение. См. startup-error.log рядом с app.py.', 'AFTERPLAY',16)
+        log=ROOT/'data/logs/startup-error.log'
+        log.parent.mkdir(parents=True,exist_ok=True)
+        log.write_text(traceback.format_exc(),encoding='utf-8')
+        if os.name=='nt': ctypes.windll.user32.MessageBoxW(None,'Не удалось открыть приложение. См. data/logs/startup-error.log.', 'AFTERPLAY',16)
         raise

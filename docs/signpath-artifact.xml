@@ -3,8 +3,8 @@
   <parameters><parameter name="version" required="true" /></parameters>
   <zip-file>
     <pe-file path="AFTERPLAY.exe" product-name="AFTERPLAY" product-version="${version}"><authenticode-sign /></pe-file>
-    <pe-file path="Updater.exe" product-name="AFTERPLAY" product-version="${version}"><authenticode-sign /></pe-file>
-    <pe-file path="ProcessAudio.dll" product-name="AFTERPLAY" product-version="${version}"><authenticode-sign /></pe-file>
-    <pe-file path="ReplayNotification.dll" product-name="AFTERPLAY" product-version="${version}"><authenticode-sign /></pe-file>
+    <pe-file path="app/Updater.exe" product-name="AFTERPLAY" product-version="${version}"><authenticode-sign /></pe-file>
+    <pe-file path="app/ProcessAudio.dll" product-name="AFTERPLAY" product-version="${version}"><authenticode-sign /></pe-file>
+    <pe-file path="app/ReplayNotification.dll" product-name="AFTERPLAY" product-version="${version}"><authenticode-sign /></pe-file>
   </zip-file>
 </artifact-configuration>

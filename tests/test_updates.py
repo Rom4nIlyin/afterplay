@@ -86,6 +86,31 @@ class UpdateValidationTests(unittest.TestCase):
             self.assertFalse((target/'data').exists())
             self.assertTrue(Path(updater.prepared['stage']).is_dir())
 
+    def test_organized_bundle_download_and_helper_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp=Path(tmp);target=tmp/'installed';(target/'app/runtime').mkdir(parents=True)
+            (target/'app/app.py').write_bytes(b'old application')
+            (target/'app/Updater.exe').write_bytes(b'old helper')
+            (target/'app/runtime/pythonw.exe').write_bytes(b'old runtime')
+            files={('app/'+name if name!='AFTERPLAY.exe' else name):data for name,data in sample_files('1.8.4').items()}
+            sums={name:hashlib.sha256(data).hexdigest() for name,data in files.items()}
+            archive=tmp/'release.zip'
+            with zipfile.ZipFile(archive,'w') as z:
+                for name,data in files.items():z.writestr('AFTERPLAY Portable/'+name,data)
+                z.writestr('AFTERPLAY Portable/app/SHA256SUMS.json',json.dumps(sums))
+            updater=update.AppUpdater(target,target/'data')
+            metadata=json.dumps(release(archive,'1.8.4')).encode()
+            def network(url):return io.BytesIO(metadata if url==update.LATEST_URL else archive.read_bytes())
+            original=update.release_info
+            with patch.object(update,'open_url',side_effect=network),patch.object(update,'release_info',side_effect=lambda info:original(info,current='1.8.3')),patch.dict(os.environ,{'LOCALAPPDATA':str(tmp/'cache')}):
+                self.assertTrue(updater.prepare({})['prepared'])
+            self.assertTrue(updater.state()['supported'])
+            with patch.object(update.subprocess,'Popen') as launch:
+                self.assertTrue(updater.launch()['restarting'])
+                self.assertEqual(Path(launch.call_args.args[0][0]).read_bytes(),b'updater fixture')
+            self.assertEqual((target/'app/Updater.exe').read_bytes(),b'old helper')
+            self.assertFalse((target/'data').exists())
+
 @unittest.skipUnless(os.name=='nt','Windows Shell integration')
 class ShortcutTests(unittest.TestCase):
     def test_desktop_and_autostart_use_launcher_and_preserve_other_shortcuts(self):
@@ -178,5 +203,58 @@ class NativeUpdaterTests(unittest.TestCase):
         status=json.loads((target/'data/update-status.json').read_text('utf-8'))
         self.assertEqual((Path(status['backup'])/'obsolete.exe').read_bytes(),b'obsolete launcher')
         self.assertEqual(status['retired'],['obsolete.exe'])
+
+    def migration(self,name):
+        target,old_stage,plan=self.fixture(name)
+        files=sample_files()
+        files.update({'ui/index.html':b'old ui','Launcher.cs':b'old source','modified.py':b'original source'})
+        for relative,content in files.items():
+            path=target/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
+        (target/'modified.py').write_bytes(b'local changes')
+        (target/'__pycache__').mkdir();(target/'__pycache__/app.cpython-313.pyc').write_bytes(b'bytecode')
+        (target/'SHA256SUMS.json').write_text(json.dumps({name:hashlib.sha256(content).hexdigest() for name,content in files.items()}),'utf-8')
+        stage=old_stage.parent/'organized';stage.mkdir()
+        files={('app/'+name if name!='AFTERPLAY.exe' else name):content for name,content in sample_files('1.8.4').items()}
+        files['app/SHA256SUMS.json']=json.dumps({name:hashlib.sha256(content).hexdigest() for name,content in files.items()}).encode()
+        entries=[]
+        for relative,content in files.items():
+            path=stage/relative;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(content)
+            entries.append({'path':relative,'sha256':hashlib.sha256(content).hexdigest()})
+        value=json.loads(plan.read_text('utf-8'));value.update(stage=str(stage),files=entries,version='1.8.4')
+        plan.write_text(json.dumps(value),'utf-8')
+        return target,stage,plan
+
+    def test_migrates_legacy_layout_and_updates_organized_installation(self):
+        target,stage,plan=self.migration('organized-success')
+        result=subprocess.run([str(self.helper),str(plan)],timeout=30)
+        self.assertEqual(result.returncode,0)
+        self.assertEqual((target/'app/app.py').read_bytes(),(stage/'app/app.py').read_bytes())
+        self.assertEqual({p.name for p in target.iterdir()}, {'AFTERPLAY.exe','app','data','backups','modified.py'})
+        status=json.loads((target/'data/update-status.json').read_text('utf-8'));backup=Path(status['backup'])
+        self.assertEqual((backup/'__pycache__/app.cpython-313.pyc').read_bytes(),b'bytecode')
+        self.assertTrue((backup/'SHA256SUMS.json').is_file())
+        self.assertEqual((target/'modified.py').read_bytes(),b'local changes')
+        self.assertEqual((target/'data/settings.json').read_text('utf-8'),'user settings')
+        self.assertEqual((target/'data/clip.mp4').read_bytes(),b'user video')
+        # The next update accepts app/SHA256SUMS.json and preserves data again.
+        result=subprocess.run([str(self.helper),str(plan)],timeout=30)
+        self.assertEqual(result.returncode,0)
+        self.assertEqual((target/'data/clip.mp4').read_bytes(),b'user video')
+
+    def test_migration_rolls_back_when_an_old_file_cannot_be_retired(self):
+        target,stage,plan=self.migration('organized-rollback')
+        original=(target/'AFTERPLAY.exe').read_bytes()
+        kernel=ctypes.windll.kernel32;kernel.CreateFileW.restype=ctypes.c_void_p
+        kernel.CloseHandle.argtypes=[ctypes.c_void_p]
+        handle=kernel.CreateFileW(str(target/'app.py'),0x80000000,1,None,3,0,None)
+        self.assertNotEqual(handle,ctypes.c_void_p(-1).value)
+        try:result=subprocess.run([str(self.helper),str(plan)],timeout=30)
+        finally:kernel.CloseHandle(handle)
+        self.assertEqual(result.returncode,1)
+        self.assertEqual((target/'AFTERPLAY.exe').read_bytes(),original)
+        self.assertEqual((target/'app.py').read_bytes(),sample_files()['app.py'])
+        self.assertFalse((target/'app/app.py').exists())
+        self.assertTrue((target/'SHA256SUMS.json').is_file())
+        self.assertEqual((target/'data/clip.mp4').read_bytes(),b'user video')
 
 if __name__=='__main__':unittest.main()

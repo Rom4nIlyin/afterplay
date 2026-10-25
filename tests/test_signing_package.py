@@ -34,3 +34,19 @@ class SignedPackageTests(unittest.TestCase):
                 root=Path(temp);bundle,sums=self.fixture(root);sums[name]='a'*64
                 (bundle/'SHA256SUMS.json').write_text(json.dumps(sums),encoding='utf-8')
                 with self.assertRaises(ValueError):pack.repackage(bundle,root/'out','1.7.0')
+
+    def test_organized_signed_helpers_are_catalogued_in_app(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);bundle,_=self.fixture(root);(bundle/'app').mkdir()
+            for name in ('version.py','app.py'):(bundle/name).replace(bundle/'app'/name)
+            (bundle/'app/Updater.exe').write_bytes(b'unsigned helper')
+            files=['AFTERPLAY.exe','app/app.py','app/version.py','app/Updater.exe']
+            sums={name:hashlib.sha256((bundle/name).read_bytes()).hexdigest() for name in files}
+            (bundle/'SHA256SUMS.json').unlink()
+            (bundle/'app/SHA256SUMS.json').write_text(json.dumps(sums),'utf-8')
+            (bundle/'app/Updater.exe').write_bytes(b'signed helper')
+            archive=pack.repackage(bundle,root/'out','1.7.0')
+            with zipfile.ZipFile(archive) as z:
+                catalog=json.loads(z.read('AFTERPLAY Portable/app/SHA256SUMS.json'))
+                self.assertEqual(catalog['app/Updater.exe'],hashlib.sha256(b'signed helper').hexdigest())
+                self.assertEqual(z.read('AFTERPLAY Portable/app/app.py'),b'original source')

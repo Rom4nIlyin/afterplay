@@ -15,6 +15,7 @@ import urllib.request
 import uuid
 import zipfile
 from version import VERSION
+from portable_paths import catalog, component
 
 REPOSITORY = 'Rom4nIlyin/afterplay'
 LATEST_URL = f'https://api.github.com/repos/{REPOSITORY}/releases/latest'
@@ -98,18 +99,20 @@ def unpack_verified(archive, destination, expected_version):
         for info,name in members:
             target=destination/name;target.parent.mkdir(parents=True,exist_ok=True)
             with z.open(info) as source,target.open('wb') as out:shutil.copyfileobj(source,out,1024*1024)
-    manifest=json.loads((destination/'SHA256SUMS.json').read_text('utf-8'))
+    manifest_name=catalog(destination).relative_to(destination).as_posix()
+    manifest=json.loads((destination/manifest_name).read_text('utf-8'))
     if not isinstance(manifest,dict):raise ValueError('Некорректный каталог обновления')
-    required={'app.py','version.py','Updater.exe','AFTERPLAY.exe','runtime/pythonw.exe'}
+    prefix='app/' if manifest_name.startswith('app/') else ''
+    required={prefix+name for name in ('app.py','version.py','Updater.exe','runtime/pythonw.exe')}|{'AFTERPLAY.exe'}
     if not required.issubset(manifest):raise ValueError('Неполный комплект обновления')
-    if {name for _,name in members}!=set(manifest)|{'SHA256SUMS.json'}:raise ValueError('Архив не соответствует каталогу файлов')
+    if {name for _,name in members}!=set(manifest)|{manifest_name}:raise ValueError('Архив не соответствует каталогу файлов')
     for name,checksum in manifest.items():
         safe_name(name)
         if not isinstance(checksum,str) or not re.fullmatch('[0-9a-f]{64}',checksum) or digest(destination/name)!=checksum:
             raise ValueError('Проверка SHA-256 не пройдена: '+name)
-    version_text=(destination/'version.py').read_text('utf-8').strip()
+    version_text=component(destination,'version.py').read_text('utf-8').strip()
     if version_text!=f"VERSION = '{expected_version}'":raise ValueError('Версия внутри архива не совпадает с релизом')
-    return [{'path':name,'sha256':digest(destination/name)} for name in sorted([*manifest,'SHA256SUMS.json'])]
+    return [{'path':name,'sha256':digest(destination/name)} for name in sorted([*manifest,manifest_name])]
 
 class AppUpdater:
     def __init__(self, root, data):
@@ -133,7 +136,7 @@ class AppUpdater:
         except (OSError,ValueError):pass
         return {'version':VERSION,'latest':self.latest,'busy':self.busy,'prepared':bool(self.prepared),
                 'error':self.error,'last_result':result,
-                'supported':(self.root/'Updater.exe').is_file() and (self.root/'runtime/pythonw.exe').is_file()}
+                'supported':component(self.root,'Updater.exe').is_file() and component(self.root,'runtime/pythonw.exe').is_file()}
 
     def check(self):
         try:
@@ -173,7 +176,7 @@ class AppUpdater:
             job.update(progress=85,message='Проверка и распаковка обновления')
             files=unpack_verified(archive,cache/'bundle',latest['version'])
             # Run an independent helper so no runtime file being replaced is loaded.
-            helper=cache/'Updater.exe';shutil.copy2(cache/'bundle/Updater.exe',helper)
+            helper=cache/'Updater.exe';shutil.copy2(component(cache/'bundle','Updater.exe'),helper)
             self.prepared={'target':str(self.root),'stage':str(cache/'bundle'),'version':latest['version'],
                            'files':files,'status':str(self.data/'update-status.json'),'restart':True,'quiet':False}
             archive.unlink();job.update(progress=100,message='Готово к перезапуску');self.busy=False
@@ -188,7 +191,8 @@ class AppUpdater:
         if not self.prepared:raise ValueError('Сначала скачайте обновление')
         plan={**self.prepared,'parent_pid':os.getpid()}
         stage=Path(plan['stage']);helper=stage.parent/'Updater.exe'
-        if digest(helper)!=next(f['sha256'] for f in plan['files'] if f['path']=='Updater.exe'):
+        helper_name=component(stage,'Updater.exe').relative_to(stage).as_posix()
+        if digest(helper)!=next(f['sha256'] for f in plan['files'] if f['path']==helper_name):
             raise ValueError('Компонент обновления повреждён')
         path=stage.parent/'plan.json';path.write_text(json.dumps(plan,ensure_ascii=False),'utf-8')
         subprocess.Popen([str(helper),str(path)],cwd=stage.parent,stdin=subprocess.DEVNULL,

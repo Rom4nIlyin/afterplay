@@ -24,6 +24,23 @@ FFMPEG_URL = 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essential
 FFMPEG_SHA256 = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
 
 
+def organize_portable(target):
+    """Keep the launcher, instructions and clearly named folders at the top level."""
+    app = target / 'app'
+    app.mkdir()
+    (target / 'README.md').replace(target / 'docs/USER-GUIDE.md')
+    guide = target / 'docs/USER-GUIDE.md'
+    guide.write_text(guide.read_text('utf-8').replace('(docs/', '('), encoding='utf-8')
+    shutil.copy2(ROOT / 'docs/PORTABLE.md', target / 'README.md')
+    for path in list(target.iterdir()):
+        if path.name in {'app', 'docs', 'AFTERPLAY.exe', 'README.md'}:
+            continue
+        if path.name in {'LICENSE', 'THIRD-PARTY.md', 'FFmpeg-COPYING.GPLv3.txt', 'CHANGELOG.md'}:
+            path.replace(target / 'docs' / path.name)
+        else:
+            path.replace(app / path.name)
+
+
 def install_ffmpeg(cache,runtime):
     archive=Path(cache)/'ffmpeg-9.0.2-essentials_build.zip'
     download(FFMPEG_URL,archive)
@@ -95,7 +112,7 @@ foreach ($name in @('AFTERPLAY.exe','Updater.exe','ProcessAudio.dll','ReplayNoti
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', default='1.8.3')
+    parser.add_argument('--version', default='1.8.4')
     args = parser.parse_args()
     if os.name != 'nt' or sys.version_info[:2] != (3, 13) or struct.calcsize('P') != 8:
         parser.error('Use Windows x64 and 64-bit Python 3.13.')
@@ -106,7 +123,9 @@ def main():
     target = ROOT / 'build' / ('portable-' + args.version) / 'AFTERPLAY Portable'
     # Do not delete or overwrite an earlier build or user data.
     target.mkdir(parents=True, exist_ok=False)
-    for name in FILES:
+    for name in (*FILES, 'portable_paths.py'):
+        if name.endswith(('.cs', '.manifest')):
+            continue  # Development sources belong in Git, not the installed bundle.
         shutil.copy2(ROOT / name, target / name)
     (target / 'version.py').write_text(f"VERSION = '{args.version}'\n", encoding='utf-8')
     shutil.copytree(ROOT / 'ui', target / 'ui')
@@ -139,10 +158,11 @@ def main():
     subprocess.run(['powershell.exe', '-NoProfile', '-Command', script], check=True,
                    env=signature_env)
     shutil.copy2(installer, prerequisites / installer.name)
+    organize_portable(target)
     files = sorted(p for p in target.rglob('*') if p.is_file()
                    and '__pycache__' not in p.parts and p.suffix != '.pyc')
     sums = {p.relative_to(target).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
-    manifest = target / 'SHA256SUMS.json'
+    manifest = target / 'app/SHA256SUMS.json'
     manifest.write_text(json.dumps(sums, indent=2), encoding='utf-8')
     files.append(manifest)
     dist = ROOT / 'dist'

@@ -57,5 +57,14 @@ class RuntimeTrustTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'SHA256SUMS.json'):
             prepare_runtime(self.root)
 
+    def test_organized_catalog_prepares_only_managed_components(self):
+        (self.root/'app').mkdir();(self.root/'app/app.py').write_text('# app','utf-8')
+        good,digest=self.component('app/ProcessAudio.dll')
+        other,other_digest=self.component('app/unrelated.dll')
+        entries={'app/ProcessAudio.dll':digest,'app/unrelated.dll':other_digest}
+        (self.root/'app/SHA256SUMS.json').write_text(json.dumps(entries),'utf-8')
+        self.assertEqual(prepare_runtime(self.root),['app/ProcessAudio.dll'])
+        self.assertFalse(self.marked(good));self.assertTrue(self.marked(other))
+
 if __name__ == '__main__':
     unittest.main()

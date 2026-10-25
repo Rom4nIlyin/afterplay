@@ -1,0 +1,46 @@
+{
+  "version": "1.8.4",
+  "python_tests": 66,
+  "timeline_tests": "passed",
+  "portable_root": [
+    "AFTERPLAY.exe",
+    "README.md",
+    "app",
+    "docs"
+  ],
+  "native": {
+    "hidden_smoke": true,
+    "original_hotkeys_registered": {
+      "save": "Alt+F10",
+      "auto": "Alt+F9",
+      "window": "Alt+M"
+    },
+    "single_instance": true,
+    "updater_supported": true,
+    "capture_backend": "D3D11 to NVENC",
+    "capture_resolution": [
+      960,
+      540
+    ],
+    "capture_fps": 30,
+    "save_trigger": "registered hotkey handler via WM_HOTKEY",
+    "duration_seconds": 60.027044,
+    "video_streams": 1,
+    "audio_streams": 1,
+    "audio_peak": 0.030702032148838043,
+    "full_decode": true,
+    "exit_code": 0,
+    "focus_observation": {
+      "equal_before_and_after_save": false,
+      "controlled_focus_test": false
+    }
+  },
+  "migration_tests": [
+    "legacy to organized",
+    "organized to organized",
+    "retire only unchanged files",
+    "preserve modified source, user settings and media",
+    "rollback with a locked old source file"
+  ],
+  "game_launched": false
+}
