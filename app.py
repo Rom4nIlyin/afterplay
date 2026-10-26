@@ -141,9 +141,15 @@ class Suite:
             try:
                 result = fn(self.jobs[jid])
                 self.jobs[jid].update(status='done', progress=100, result=result, message='Готово')
+                if label=='Экспорт видео':
+                    import customization
+                    customization.sound(self,'success')
             except Exception as e:
                 self.jobs[jid].update(status='error', message=str(e))
                 self.log('error', job=label, error=str(e), trace=traceback.format_exc())
+                if label=='Экспорт видео':
+                    import customization
+                    customization.sound(self,'error')
         threading.Thread(target=worker, daemon=True).start()
         return {'job': jid}
 
@@ -187,8 +193,15 @@ class Suite:
         wh = re.search(r'Video:.*?\b(\d{2,5})x(\d{2,5})\b', text)
         if not d or not wh:
             raise ValueError('Не удалось прочитать видео')
-        return {'duration': int(d[1])*3600+int(d[2])*60+float(d[3]),
+        result={'duration': int(d[1])*3600+int(d[2])*60+float(d[3]),
                 'width': int(wh[1]), 'height': int(wh[2]), 'audio': len(re.findall(r'Stream #.*Audio:', text))}
+        try:
+            import av
+            with av.open(str(path)) as media:
+                result['audio_titles']=[s.metadata.get('title') or s.metadata.get('handler_name','') for s in media.streams.audio]
+                result['fps']=float(media.streams.video[0].average_rate or 60)
+        except Exception:pass
+        return result
 
     def internal_media(self, path):
         path=Path(path)
@@ -269,6 +282,9 @@ class Suite:
         p=run([self.ff(),'-hide_banner','-loglevel','error','-ss',str(min(1,info['duration']/3)),
                '-i',path,'-frames:v','1','-vf','scale=480:-2','-y',thumb],timeout=30)
         if p.returncode:self.log('thumbnail_failed',path=str(path))
+        if self.replay and self.replay.active_profile:
+            with self.lock:
+                self.cfg.setdefault('clip_games',{})[cid]=self.replay.active_profile;self.save_cfg()
         return cid
 
     def recycle_video(self,arg):
@@ -352,7 +368,7 @@ class Suite:
         vf = 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1' if vertical else 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1'
         if timer:
             from timer_overlay import video_filter
-            vf += ',' + video_filter()
+            vf += ',' + video_filter(self.cfg.get('customization'),info.get('fps',60),self.cfg.get('language','ru'))
         from audio_tracks import export_audio
         audio_filters,audio_maps,expected_audio,titles=export_audio(info,arg)
         cmd = [self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-i', src,
@@ -469,6 +485,12 @@ class Suite:
             if self.cfg_path.exists():
                 self.cfg = json.loads(self.cfg_path.read_text('utf-8'))
                 self._saved_cfg = json.loads(json.dumps(self.cfg))
+        if action.startswith('customize_'):
+            import customization
+            return customization.dispatch(self,action,arg)
+        if action=='language_config':
+            import localization
+            return localization.configure(self,arg.get('language'))
         if action.startswith('profile_'):
             import capture_profiles
             if not self.replay:raise ValueError('Профили доступны в окне AFTERPLAY')
@@ -518,8 +540,10 @@ class Suite:
         if action=='appearance_config':
             appearance=self.cfg.setdefault('appearance',{})
             if 'theme' in arg:
-                if arg['theme'] not in {'standard','dark','light'}:raise ValueError('Неизвестная тема')
+                from customization import THEMES
+                if arg['theme'] not in THEMES:raise ValueError('Неизвестная тема')
                 appearance['theme']=arg['theme']
+                self.cfg.setdefault('customization',{})['theme']=arg['theme']
             if 'library_view' in arg:
                 if arg['library_view'] not in {'gallery','list'}:raise ValueError('Неизвестный вид библиотеки')
                 appearance['library_view']=arg['library_view']
@@ -564,11 +588,43 @@ class Suite:
             op=arg.get('op','info')
             if op=='ui_tab':
                 choice=arg.get('tab','library')
-                if choice not in {'library','settings','replay','favorites','exports'}:raise ValueError('Неизвестный экран')
+                if choice not in {'library','settings','replay','favorites','exports','customize'}:raise ValueError('Неизвестный экран')
                 self.window.evaluate_js('tab='+json.dumps(choice)+';render()')
                 return {'ok':True}
             if op=='ui_check':
                 return self.window.evaluate_js("({title:document.title,theme:document.documentElement.dataset.theme,auto:!!document.querySelector('#autoEnabled'),hotkeys:!!document.querySelector('#saveHotkey'),logo:document.querySelector('#brandMark img')?.naturalWidth,overflow:document.documentElement.scrollWidth>window.innerWidth,cards:document.querySelectorAll('.settings-card').length})")
+            if op=='custom_info':
+                return self.window.evaluate_js("({debug:window.customDebug?.(),tab,pane:typeof customPane!=='undefined'?customPane:null,themeCount:document.querySelectorAll('.custom-theme').length,mic:!!$('#microphoneEnabled'),micOptions:$('#microphoneDevice')?.options.length,errors:window.afterplayErrors||[],text:document.querySelector('main').innerText.slice(0,3500),dialog:$('#dialog').open?$('#dialog').innerText:null,presetButtons:[...document.querySelectorAll('.custom-preset-item')].map(e=>({name:e.querySelector('[data-action=custom-preset-load]').textContent,deleteLabel:e.querySelector('[data-action=custom-preset-delete]').getAttribute('aria-label')}))})")
+            if op=='localization_info':
+                return self.window.evaluate_js("({language:window.afterplayI18n?.language,documentLanguage:document.documentElement.lang,missing:window.afterplayI18n?.untranslated(),errors:window.afterplayErrors||[],debug:window.customDebug?.(),languageSelect:$('#interfaceLanguage')?.value,review:window.reviewDebug?.(),frame:$('#player')?{width:$('#player').clientWidth,height:$('#player').clientHeight,videoWidth:$('#player').videoWidth,videoHeight:$('#player').videoHeight,layout:['#dialog','.dialog-head','.review-viewer','.review-transport'].map(s=>{const e=$(s);return e?{selector:s,width:e.clientWidth,height:e.clientHeight,style:e.getAttribute('style'),rows:getComputedStyle(e).gridTemplateRows}:null})}:null})")
+            if op=='language_select':
+                value=arg.get('language')
+                if value not in {'ru','en'}:raise ValueError('Unsupported language')
+                self.window.evaluate_js("$('#interfaceLanguage').value="+json.dumps(value)+";$('#interfaceLanguage').dispatchEvent(new Event('change',{bubbles:true}))")
+                return {'ok':True}
+            if op=='custom_hover':
+                cid=self.clip(str(arg['id']))['id']
+                self.window.evaluate_js("document.querySelector('[data-clip=\""+cid+"\"]')?.dispatchEvent(new PointerEvent('pointerover',{bubbles:true}))")
+                return {'ok':True}
+            if op=='custom_hover_stop':self.window.evaluate_js('customStopHover()');return {'ok':True}
+            if op=='custom_resize':
+                from System.Drawing import Size
+                from System import Action
+                width=max(1050,min(2000,int(arg.get('width',1600))));height=max(700,min(1200,int(arg.get('height',1000))))
+                self.window.native.Invoke(Action(lambda:setattr(self.window.native,'Size',Size(width,height))))
+                return {'ok':True}
+            if op=='custom_action':
+                action=arg.get('action','')
+                if action not in {'custom-theme','custom-pane','custom-scene','custom-background','custom-save','custom-cancel','custom-reset','custom-sound','custom-notice','custom-workspace','custom-cover','custom-preset-save','custom-preset-load','custom-preset-delete','custom-preset-delete-confirm','custom-preset-export','custom-preset-import'}:raise ValueError('Unsupported custom test action')
+                self.window.evaluate_js('window.customTestError="";action('+json.dumps(action)+',{dataset:'+json.dumps(arg.get('dataset',{}))+'}).catch(e=>window.customTestError=String(e))')
+                return {'ok':True}
+            if op=='custom_fields':
+                import customization
+                values=arg.get('values',{})
+                if not set(values)<=set(customization.DEFAULTS):raise ValueError('Unknown custom test setting')
+                customization.validate(values)
+                self.window.evaluate_js('Object.assign(customDraft,'+json.dumps(values)+');customChanged();render()')
+                return {'ok':True}
             if op=='ui_diagnostics':
                 return self.window.evaluate_js("({tab,auto:typeof autoSettings,hotkeys:typeof hotkeySettings,errors:window.afterplayErrors||[],text:document.querySelector('main').innerText.slice(0,2500),render:window.renderDesktopExtras?.toString().slice(0,450)})")
             if op=='ui_features':
@@ -708,13 +764,21 @@ def server_for(suite, token=None, port=0):
                 result=suite.dispatch(req['action'],req.get('args',{}))
                 self.send_json(result)
             except Exception as e:
-                self.send_json({'error':str(e)},400)
+                import localization
+                self.send_json({'error':localization.translate(suite,str(e))},400)
         def do_GET(self):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
                 if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
+                elif route in {'customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
+                    p=BASE/'ui'/route
+                elif route.startswith('backgrounds/'):
+                    p=safe_child(BASE/'ui',route)
+                elif route.startswith('custom-assets/'):
+                    import customization
+                    p=customization.asset_path(suite,route.split('/')[-1])
                 elif route.startswith('filmstrip/'):
                     query=parse_qs(urlparse(self.path).query)
                     p=suite.filmstrip(route.split('/')[-1],query.get('start',[0])[0],query.get('end',[None])[0],query.get('frames',[12])[0])
@@ -773,6 +837,7 @@ def main():
     parser.add_argument('--data')
     parser.add_argument('--smoke',action='store_true')
     parser.add_argument('--report-url',action='store_true')
+    parser.add_argument('--tab',choices=['library','replay','customize'],default='library')
     args=parser.parse_args()
     instance = None
     if os.name=='nt' and not args.serve:
@@ -796,8 +861,8 @@ def main():
         from auto_record import AutoRecorder
         suite.auto=AutoRecorder(suite)
     server,token=server_for(suite)
-    url=f'http://127.0.0.1:{server.server_port}/{token}/index.html?mode={args.mode}'
-    if args.report_url:print(url+'&tab=replay',flush=True)
+    url=f'http://127.0.0.1:{server.server_port}/{token}/index.html?mode={args.mode}&tab={args.tab}'
+    if args.report_url:print(url,flush=True)
     if args.serve:
         print(url,flush=True)
         server.serve_forever()
@@ -826,7 +891,7 @@ def main():
                 report['ok']=bool(report.get('ready') and report['controls']['minutes']==[1,3,5,10,15,20,30] and len(report['controls']['audio'])==5 and report['capture']['modes']==['monitor','window'] and report['capture']['fps']==[24,30,60,90,120] and len(report['capture']['quality'])==3 and report['capture']['hasOffset'] and report['capture']['hasResolution'])
                 suite.window.evaluate_js("tab='settings';render()")
                 report['preferences']=suite.window.evaluate_js("({themes:[...document.querySelector('#interfaceTheme').options].map(o=>o.value),autostart:!!document.querySelector('#launchAtLogin'),desktop:!!document.querySelector('[data-action=shortcut-desktop]'),taskbar:!!document.querySelector('[data-action=shortcut-taskbar]'),updates:!!document.querySelector('[data-action=update-check]'),captureBorder:!!document.querySelector('#captureBorder'),captureBorderChecked:document.querySelector('#captureBorder').checked===!!state.replay.settings.capture_border})")
-                report['ok']=bool(report['ok'] and report['preferences']['themes']==['standard','dark','light'] and all(report['preferences'][key] for key in ('autostart','desktop','taskbar','updates','captureBorder','captureBorderChecked')))
+                report['ok']=bool(report['ok'] and report['preferences']['themes']==['standard','dark','light','obsidian','glass','aurora','ember','paper'] and all(report['preferences'][key] for key in ('autostart','desktop','taskbar','updates','captureBorder','captureBorderChecked')))
                 report['engine']='Microsoft Edge WebView2 / pywebview'
                 atomic_json(suite.data/f'verification-native-{args.mode}.json',report)
             finally:

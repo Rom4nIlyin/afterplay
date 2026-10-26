@@ -1,7 +1,7 @@
 'use strict';
 icons.list='<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>';
 const libraryView=()=>state.settings.appearance?.library_view||'gallery';
-const dateLabel=c=>new Date(c.mtime*1000).toLocaleString('ru-RU',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const dateLabel=c=>new Date(c.mtime*1000).toLocaleString(window.i18nLocale?.()||'ru-RU',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 const originalClipCard=clipCard;
 clipCard=function(c){
  if(libraryView()!=='list')return originalClipCard(c);

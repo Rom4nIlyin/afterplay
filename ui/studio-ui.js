@@ -13,7 +13,7 @@ window.studioChatPath=function(){
 };
 function installChatSelector(){
  if(tab!=='replay'||!$('#replayAudioMode'))return;
- if(!$('#replayChatField'))$('#replayAudioMode').closest('.field').insertAdjacentHTML('afterend',`<div class="field" id="replayChatField"><label for="replayChat">Приложение чата</label><select id="replayChat"></select><small>В MP4: общий звук, только игра, только чат. Микрофон не записывается. Discord определяется и при сворачивании в трей.</small></div>`);
+ if(!$('#replayChatField'))$('#replayAudioMode').closest('.field').insertAdjacentHTML('afterend',`<div class="field" id="replayChatField"><label for="replayChat">Приложение чата</label><select id="replayChat"></select><small>В MP4: общий звук, только игра, только чат. Микрофон настраивается отдельно ниже. Discord определяется и при сворачивании в трей.</small></div>`);
  const select=$('#replayChat'),cfg=state.replay?.settings||{},rows=replayDevices?.audio_applications||[];
  const signature=JSON.stringify(rows.map(a=>[a.pid,a.path]));
  if(select.dataset.signature!==signature&&!select.matches(':focus')&&!window.afterplayDropdowns?.isOpen('replayChat')){
@@ -114,7 +114,9 @@ openClip=function(id){
   $('#sourceFps').textContent=metadata.fps.toFixed(3).replace(/\.?0+$/,'')+' FPS';
   $('#waveTrack').innerHTML=metadata.audio.map(a=>`<option value="${a.index}">${esc(a.title)}</option>`).join('')||'<option value="0">Без звука</option>';
   $('#previewAudioTrack').innerHTML='<option value="original">Общий звук · из видео</option>'+metadata.audio.map(a=>`<option value="${a.index}">${esc(a.title)}</option>`).join('');
-  if(metadata.audio.length>=3){$('#exportAudioMode').insertAdjacentHTML('beforeend','<option value="game">Только игра</option><option value="chat">Только Discord / чат</option>');$('#exportTrackGains').hidden=false}
+  if(metadata.audio.some(t=>t.title==='Игра'))$('#exportAudioMode').insertAdjacentHTML('beforeend','<option value="game">Только игра</option>');
+  if(metadata.audio.some(t=>t.title==='Discord / чат'))$('#exportAudioMode').insertAdjacentHTML('beforeend','<option value="chat">Только Discord / чат</option>');
+  if(metadata.audio.some(t=>t.title==='Игра'||t.title==='Discord / чат'))$('#exportTrackGains').hidden=false;
   window.buildStudioMixer?.(current,metadata);scheduleWave();
  }).catch(error=>{if(studioEditor===current)$('#waveStatus').textContent=error.message});
 };

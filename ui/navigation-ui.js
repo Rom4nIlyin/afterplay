@@ -21,9 +21,9 @@ window.addEventListener('popstate',event=>{
  restoringRoute=true;
  try{
   if($('#dialog').open)closeBeforeHistory();
-  tab=['library','replay','favorites','tags','exports','settings'].includes(route.tab)?route.tab:'library';
-  tagFilter=route.tag||'';renderBeforeHistory();
-  if(route.clip&&state.clips.some(c=>c.id===route.clip))openBeforeHistory(route.clip);
+  tab=['library','replay','favorites','tags','exports','settings','customize'].includes(route.tab)?route.tab:'library';
+  tagFilter=route.tag||'';render();
+  if(route.clip&&state.clips.some(c=>c.id===route.clip))openClip(route.clip);
  }finally{restoringRoute=false}
 });
 function historyDirection(direction){direction<0?history.back():history.forward()}

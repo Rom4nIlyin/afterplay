@@ -31,13 +31,21 @@ openClip=function(id){
  const controller=new AbortController(),on=(el,event,fn)=>el.addEventListener(event,fn,{signal:controller.signal});
  let frame=null,disposed=false,wasFullscreen=false,lastFullscreenExit=-1000;
  function remember(key,value){try{localStorage.setItem(key,String(value))}catch{}}
- function updateTimer(time=window.studioFrameTime?.()??player.currentTime){timer.textContent=elapsedLabel(Math.max(0,time-(trimState?.start||0)));timerCue.text=timer.textContent}
+ function updateTimer(time=window.studioFrameTime?.()??player.currentTime){
+  const value=Math.max(0,time-(trimState?.start||0)),cfg=typeof customSettings==='function'?customSettings():{};
+  const label=cfg.timer_format==='frames'?'Кадр '+Math.floor(value*(studioEditor?.metadata?.fps||60)+.0001):cfg.timer_format==='seconds'?elapsedLabel(value).split('.')[0]:elapsedLabel(value);
+  timer.textContent=window.afterplayI18n?.text(label)||label;timerCue.text=timer.textContent;
+ }
  function positionTimer(){
   const rect=player.getBoundingClientRect(),ratio=(player.videoWidth/player.videoHeight)||16/9;
   const width=Math.min(rect.width,rect.height*ratio),height=width/ratio;
-  timer.style.top=((rect.height-height)/2+height*.025)+'px';
-  timer.style.right=((rect.width-width)/2+height*.025)+'px';
-  timer.style.fontSize=Math.max(10,height*.032)+'px';
+  const cfg=typeof customSettings==='function'?customSettings():{},x=(cfg.timer_x??97.5)/100,y=(cfg.timer_y??2.5)/100;
+  timer.style.fontSize=Math.max(10,height*.032*(cfg.timer_size??100)/100)+'px';
+  timer.style.fontFamily=cfg.timer_font==='sans'?"'AFTERPLAY Inter',sans-serif":'Consolas,monospace';
+  timer.style.color=cfg.timer_color||'#ffffff';timer.style.background=`rgba(0,0,0,${(cfg.timer_background??65)/100})`;
+  timer.style.top=((rect.height-height)/2+(height-timer.offsetHeight)*y)+'px';
+  timer.style.left=((rect.width-width)/2+(width-timer.offsetWidth)*x)+'px';timer.style.right='auto';
+  timerCue.position=cfg.timer_x??97.5;timerCue.line=cfg.timer_y??2.5;
  }
  function setTimer(value){
   enabled=value;timer.hidden=!value;$('#previewTimer').checked=value;$('#exportTimer').checked=value;

@@ -15,6 +15,7 @@ function reviewDispose(){
  const current=reviewState;reviewState=null;
  if(current){current.abort.abort();current.observer?.disconnect()}
  const dialog=$('#dialog');dialog.classList.remove('review-dialog');delete dialog.dataset.editing;delete dialog.dataset.kind;
+ dialog.style.removeProperty('width');dialog.style.removeProperty('height');delete dialog.dataset.vertical;
 }
 const beforeReviewModal=modal;
 modal=function(title,body,actions=''){
@@ -39,6 +40,7 @@ function reviewSetMode(editing,pane=null){
  const current=reviewState;if(!current)return;
  if(pane)current.pane=pane;
  current.editing=!!editing;$('#dialog').dataset.editing=String(current.editing);
+ if(current.editing){$('#dialog').style.removeProperty('width');$('#dialog').style.removeProperty('height')}
  current.aside.hidden=!current.editing;
  if(current.timeline)current.timeline.hidden=!current.editing;
  for(const tab of current.aside.querySelectorAll('[data-review-pane]')){
@@ -53,7 +55,26 @@ function reviewSetMode(editing,pane=null){
   requestAnimationFrame(()=>{if(reviewState!==current)return;updateTrimVisuals();scheduleWave()});
  }
  reviewClock();
+ reviewFitViewer();
 }
+function reviewFitViewer(){
+ const current=reviewState,dialog=$('#dialog');
+ if(!current?.player||current.editing||!dialog.open)return;
+ const player=current.player,ratio=(player.videoWidth||selected?.width||16)/(player.videoHeight||selected?.height||9);
+ dialog.dataset.vertical=String(ratio<1);
+ const viewer=dialog.querySelector('.review-viewer'),header=dialog.querySelector('.dialog-head');if(!viewer||!header)return;
+ const style=getComputedStyle(viewer),px=x=>Number.parseFloat(x)||0;
+ const paddingX=px(style.paddingLeft)+px(style.paddingRight),paddingY=px(style.paddingTop)+px(style.paddingBottom);
+ const controls=dialog.querySelector('.review-transport')?.getBoundingClientRect().height||52;
+ const chrome=header.getBoundingClientRect().height+paddingY+20+controls+px(style.rowGap)*2+2;
+ const maxHeight=Math.floor(innerHeight*.94),maxWidth=Math.min(1560,innerWidth*.96);
+ const videoWidth=Math.max(100,Math.min(maxWidth-paddingX-2,(maxHeight-chrome)*ratio));
+ const width=Math.ceil(videoWidth+paddingX+2)+'px',height=Math.ceil(videoWidth/ratio+chrome)+'px';
+ const changed=dialog.style.width!==width||dialog.style.height!==height;
+ dialog.style.width=width;dialog.style.height=height;
+ if(changed)requestAnimationFrame(reviewFitViewer);
+}
+window.addEventListener('resize',()=>requestAnimationFrame(reviewFitViewer));
 function reviewPanel(name,label){
  const panel=document.createElement('section');panel.className='review-tool-panel';panel.dataset.reviewPanel=name;
  panel.id='review-panel-'+name;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-label',label);
@@ -67,6 +88,7 @@ openClip=function(id){
  const player=$('#player'),gif=!player||player.tagName!=='VIDEO';
  const abort=new AbortController(),on=(object,event,handler)=>object?.addEventListener(event,handler,{signal:abort.signal});
  const current=reviewState={id,abort,gif,player:gif?null:player,pane:gif?'notes':'trim',editing:false,seeking:false,previousVolume:1};
+ if(!gif)on(player,'loadedmetadata',()=>requestAnimationFrame(reviewFitViewer));
  const dialog=$('#dialog');dialog.classList.add('review-dialog');dialog.dataset.kind=gif?'gif':'video';
  const preview=editor.querySelector('.editor-preview'),notes=editor.querySelector('.editor-notes');
  const oldBelow=editor.querySelector('.editor-below'),summary=editor.querySelector('.recording-summary');
@@ -161,7 +183,7 @@ openClip=function(id){
   e.preventDefault();const index=e.key==='Home'?0:e.key==='End'?buttons.length-1:(at+(e.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;
   buttons[index].focus();reviewSetMode(true,buttons[index].dataset.reviewPane);
  });
- reviewSetMode(false);dialog.scrollTop=0;($('#reviewPlay')||$('[data-action="review-edit"]')).focus({preventScroll:true});
+ reviewSetMode(false);requestAnimationFrame(reviewFitViewer);dialog.scrollTop=0;($('#reviewPlay')||$('[data-action="review-edit"]')).focus({preventScroll:true});
 };
 const beforeReviewWave=scheduleWave;
 scheduleWave=function(){if(reviewState&&!reviewState.editing)return;return beforeReviewWave()};

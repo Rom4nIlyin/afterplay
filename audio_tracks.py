@@ -14,7 +14,8 @@ class AudioPackets:
         self.timelines=[AudioTimeline(self.rate,self.channels,epoch,offset_ms) for _ in sources]
         self.multitrack=len(sources)>1
         self.streams=[]
-        for title in (TITLES if self.multitrack else TITLES[:1]):
+        titles=device.get('titles') or (TITLES if self.multitrack else TITLES[:1])
+        for title in titles:
             stream=mux.add_stream('pcm_f32le',rate=self.rate)
             stream.codec_context.layout='stereo' if self.channels==2 else 'mono'
             stream.codec_context.format='flt';stream.time_base=Fraction(1,self.rate)
@@ -65,7 +66,9 @@ def export_audio(info,args):
             if isinstance(gain,bool) or not isinstance(gain,(int,float)) or not 0<=gain<=100:raise ValueError('Громкость: от 0 до 100%')
             seen.add(index);filters.append(f'[0:a:{index}]volume={gain/100:.6f}[a{position}]')
         if not selected:return [],['-an'],0,[]
-        if len(selected)==1:return ['-filter_complex',';'.join(filters)],['-map','[a0]'],1,[TITLES[0]]
+        if len(selected)==1:
+            titles=info.get('audio_titles',[]);index=selected[0]['index']
+            return ['-filter_complex',';'.join(filters)],['-map','[a0]'],1,[titles[index] if index<len(titles) else TITLES[0]]
         inputs=''.join(f'[a{i}]' for i in range(len(selected)))
         filters.append(f'{inputs}amix=inputs={len(selected)}:normalize=0:duration=longest[chosen]')
         return ['-filter_complex',';'.join(filters)],['-map','[chosen]'],1,[TITLES[0]]
@@ -75,6 +78,29 @@ def export_audio(info,args):
         if isinstance(value,bool) or not isinstance(value,(int,float)) or not 0<=value<=100:raise ValueError('Громкость: от 0 до 100%')
         gains.append(value/100)
     count=info['audio']
+    titles=info.get('audio_titles',[])
+    # A three-track file may now be mix + device + microphone, not game + chat.
+    has_microphone=titles and any('микрофон' in title.casefold() for title in titles)
+    if has_microphone and mode in {'game','chat'}:
+        target='Игра' if mode=='game' else 'Discord / чат'
+        index=next((i for i,title in enumerate(titles) if title==target),None)
+        if index is None:raise ValueError('В этом файле нет дорожки: '+target)
+        gain=gains[0 if mode=='game' else 1] if mode!='mix' else 1
+        return ['-filter_complex',f'[0:a:{index}]volume={gain:.6f}[selected]'],['-map','[selected]'],1,[target]
+    if has_microphone and mode in {'mix','all'}:
+        if count==1:return [],['-map','0:a:0'],1,titles
+        if gains==[1,1]:return [],['-map','0:a?' if mode=='all' else '0:a:0'],count if mode=='all' else 1,titles if mode=='all' else [titles[0]]
+        sources=list(range(1,count)) if count>1 and titles[0]=='Общий звук' else list(range(count))
+        filters=[]
+        for position,index in enumerate(sources):
+            gain=gains[0] if titles[index]=='Игра' else gains[1] if titles[index]=='Discord / чат' else 1
+            tail=f',asplit=2[m{position}][s{position}]' if mode=='all' else f'[m{position}]'
+            filters.append(f'[0:a:{index}]volume={gain:.6f}'+tail)
+        filters.append(''.join(f'[m{i}]' for i in range(len(sources)))+f'amix=inputs={len(sources)}:normalize=0[mix]')
+        maps=['-map','[mix]']
+        if mode=='all':
+            for i in range(len(sources)):maps+=['-map',f'[s{i}]']
+        return ['-filter_complex',';'.join(filters)],maps,1+len(sources) if mode=='all' else 1,[TITLES[0],*(titles[i] for i in sources)] if mode=='all' else [TITLES[0]]
     if mode=='none' or not count:return [],['-an'],0,[]
     if mode in {'game','chat'} and count<3:raise ValueError('В этом файле нет отдельных дорожек игры и чата')
     if mode=='all' and gains==[1,1]:return [],['-map','0:a?'],count,[]

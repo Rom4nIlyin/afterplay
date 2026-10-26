@@ -1,4 +1,4 @@
-# AFTERPLAY 1.9.0
+# AFTERPLAY 1.10.0
 
 Запуск: **AFTERPLAY.exe**.
 
@@ -42,3 +42,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\app\Update-Existing.ps
 ## Запись и монтаж
 
 Профили редактируются прямо на странице «Повтор». По умолчанию записываются весь экран и звук устройства. В монтаже доступны точные кадры, обрезка, звуковые дорожки и экспорт. Руководство: STUDIO.md.
+
+Оформление, наборы, фоны и английский язык: [docs/CUSTOMIZATION.md](docs/CUSTOMIZATION.md).

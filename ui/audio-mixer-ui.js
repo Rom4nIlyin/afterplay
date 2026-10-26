@@ -8,7 +8,7 @@ window.buildStudioMixer=function(current,metadata){
  const mixed=tracks.length>=3&&/общий|mix/i.test(tracks[0].title)?0:null;
  box.classList.add('studio-mixer');box.querySelector('label').hidden=true;legacy.hidden=true;
  const controls=document.createElement('div');controls.className='studio-audio-tracks';
- controls.innerHTML='<h3>Звуковые дорожки</h3><p class="hint">Включай нужные дорожки для прослушивания. Общий звук уже содержит игру и чат.</p>'+tracks.map(track=>`<div class="studio-audio-track"><label class="check"><input type="checkbox" data-audio-track="${track.index}" ${track.enabled?'checked':''}>${esc(track.title)}</label><input type="range" data-audio-gain="${track.index}" min="0" max="100" step="1" value="100" aria-label="Громкость: ${esc(track.title)}"><output data-audio-level="${track.index}">100%</output></div>`).join('')+(tracks.length?'':'<p class="hint">В этой записи нет звука.</p>');
+ controls.innerHTML='<h3>Звуковые дорожки</h3><p class="hint">Включай нужные дорожки для прослушивания. Общий звук уже содержит все записанные источники.</p>'+tracks.map(track=>`<div class="studio-audio-track"><label class="check"><input type="checkbox" data-audio-track="${track.index}" ${track.enabled?'checked':''}>${esc(track.title)}</label><input type="range" data-audio-gain="${track.index}" min="0" max="100" step="1" value="100" aria-label="Громкость: ${esc(track.title)}"><output data-audio-level="${track.index}">100%</output></div>`).join('')+(tracks.length?'':'<p class="hint">В этой записи нет звука.</p>');
  box.prepend(controls);
  $('#exportTrackGains').hidden=true;
  const option=document.createElement('option');option.value='custom';option.textContent='Выбранные дорожки · как в прослушивании';$('#exportAudioMode').append(option);

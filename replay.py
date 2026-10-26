@@ -1,6 +1,6 @@
 """Visible, opt-in desktop replay with NVENC and WASAPI output loopback.
 
-No microphone or game injection; optional allowlist automation lives in auto_record.
+Optional isolated microphone; allowlist automation lives in auto_record.
 """
 import array
 import csv
@@ -25,7 +25,8 @@ NO_WINDOW = 0x08000000
 MINUTES = (1,3,5,10,15,20,30)
 DEFAULTS = {'seconds':300, 'fps':60, 'mbps':20, 'monitor':'primary', 'audio':'default',
             'save_format':'mp4', 'gif_seconds':5, 'audio_mode':'system', 'game_pid':0, 'game_path':'',
-            'chat_path':'','chat_pid':0,**video_quality.DEFAULTS}
+            'chat_path':'','chat_pid':0,'microphone_enabled':False,'microphone_device':'default',
+            'microphone_name':'','microphone_gain':100,**video_quality.DEFAULTS}
 
 def monitors():
     class Info(ctypes.Structure):
@@ -118,6 +119,7 @@ class Replay:
         self.last_saved=None;self.hotkey_ok=False;self.hotkey_thread=None;self.hotkey_tid=None
         self.session_marks=[];self.active_profile=''
         self._extra_audio_captures=[];self._extra_audio_readers=[]
+        self._microphone=None;self.audio_titles=None
         self.tray=None;self.auto_owned=False;self.hotkeys=None
         self.settings={**DEFAULTS,**suite.cfg.get('replay',{})}
         if 'audio_mode' not in suite.cfg.get('replay',{}) and self.settings['audio']=='none':
@@ -130,9 +132,12 @@ class Replay:
         self._audio_queue=queue.Queue(maxsize=64)
 
     def devices(self):
+        import microphone
+        try: microphones=microphone.devices()
+        except Exception: microphones=[]
         try: devices=audio_devices()
         except Exception: devices=[]
-        return {'monitors':monitors(),'audio':devices,'applications':process_audio.applications(),
+        return {'monitors':monitors(),'audio':devices,'microphones':microphones,'applications':process_audio.applications(),
                 'audio_applications':process_audio.audio_applications(),
                 'process_audio_supported':process_audio.supported(),'settings':self.settings}
 
@@ -140,6 +145,14 @@ class Replay:
         if self.phase in {'starting','recording','stopping'} or self.saving:
             raise ValueError('Сначала останови повтор и дождись сохранения')
         cfg={**self.settings}
+        if 'microphone_enabled' in args:
+            if type(args['microphone_enabled']) is not bool:raise ValueError('Нужен переключатель микрофона')
+            cfg['microphone_enabled']=args['microphone_enabled']
+        if 'microphone_gain' in args:
+            if type(args['microphone_gain']) not in (int,float) or not 0<=args['microphone_gain']<=100:raise ValueError('Громкость микрофона: 0–100%')
+            cfg['microphone_gain']=args['microphone_gain']
+        if 'microphone_device' in args:cfg['microphone_device']=str(args['microphone_device'])
+        if 'microphone_name' in args:cfg['microphone_name']=str(args['microphone_name'])[:250]
         if 'window_path' in args:
             import ntpath
             path=str(args['window_path']).strip()
@@ -207,8 +220,26 @@ class Replay:
                 self.suite.save_cfg()
         return self.state()
 
+    def _prune_markers(self,now=None):
+        """Only markers in the still-saveable interval count as live markers."""
+        with self.lock:
+            if self.phase in {'starting','recording'} and hasattr(self,'capture_epoch'):
+                end=max(0,time.perf_counter()-self.capture_epoch) if now is None else max(0,float(now))
+            elif self.session:
+                rows=closed_segments(self.session);end=rows[-1]['end'] if rows else 0
+            else:end=0
+            cutoff=max(self.interval_start,end-self.settings['seconds'],0)
+            values=[value for value in self.session_marks if cutoff-1e-6<=value<=end+1e-6] if self.session else []
+            if values!=self.session_marks:
+                self.session_marks=values
+                if self.session and self.session.exists():
+                    import live_markers
+                    live_markers.persist(self.session,values)
+            return values
+
     def state(self):
         with self.lock:
+            self._prune_markers()
             rows=closed_segments(self.session) if self.session else []
             length=min(self.settings['seconds'],max(0,rows[-1]['end']-max(rows[0]['start'],self.interval_start))) if rows else 0
             return {'phase':self.phase,'error':self.error,'buffer_seconds':round(length,1),
@@ -229,10 +260,12 @@ class Replay:
         with self.lock:
             if self.phase!='recording':raise ValueError('Метки доступны во время записи')
             moment=max(0,time.perf_counter()-self.capture_epoch)
-            self.session_marks=[value for value in self.session_marks if value>=moment-self.settings['seconds']]
+            self._prune_markers(moment)
             if len(self.session_marks)>=1000:raise ValueError('Достигнут предел в 1000 меток')
             self.session_marks.append(moment);live_markers.persist(self.session,self.session_marks)
-        if self.suite.desktop:self.suite.desktop.notify('Момент отмечен',f'{int(moment)//60:02d}:{moment%60:06.3f} · метка появится в сохранённом клипе')
+        import customization
+        customization.sound(self.suite,'mark')
+        if self.suite.desktop:self.suite.desktop.notify('Момент отмечен',f'{int(moment)//60:02d}:{moment%60:06.3f} · метка появится в сохранённом клипе',feedback=False)
         return {'time':moment,'count':len(self.session_marks)}
 
     def _capture_command(self,monitor,audio,backend):
@@ -244,7 +277,7 @@ class Replay:
             cmd+=['-thread_queue_size','8','-probesize','32768','-analyzeduration','0',
                   '-f','nut','-colorspace','bt709','-color_range','tv','-i','pipe:0','-map','0:v:0']
         if audio:
-            count=3 if audio.get('sources') else 1
+            count=len(audio.get('titles') or (('Общий звук','Игра','Discord / чат') if audio.get('sources') else ('Общий звук',)))
             for index in range(count):cmd+=['-map',f'{1 if self.native_gpu else 0}:a:{index}']
             cmd+=['-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
             if self.native_gpu:cmd+=['-shortest']
@@ -299,6 +332,28 @@ class Replay:
                     audio['name']='Игра + '+chat['name']+' · 3 дорожки'
                     audio['sources']=[{**audio,'name':'Игра','queue':queue.Queue(maxsize=256)},
                                       {'pid':chat['pid'],'process':True,'exclude':False,'name':'Discord / чат','queue':queue.Queue(maxsize=256)}]
+            if self.settings.get('microphone_enabled'):
+                import microphone
+                devices=microphone.devices();chosen=None
+                if self.settings['microphone_device']=='default':chosen=next((d for d in devices if d['default']),None)
+                else:
+                    chosen=next((d for d in devices if d['name']==self.settings.get('microphone_name')),None)
+                    if not chosen and not self.settings.get('microphone_name'):chosen=next((d for d in devices if d['id']==self.settings['microphone_device']),None)
+                if not chosen:raise ValueError('Микрофон недоступен. Выберите устройство заново или отключите микрофон.')
+                mic={'microphone':True,'device':chosen,'name':'Микрофон','queue':queue.Queue(maxsize=256)}
+                if audio:
+                    if not audio.get('sources'):
+                        original=audio
+                        if original['rate']!=48000 or original['channels']!=2:
+                            # Loopback is converted to the same format as microphone/process audio.
+                            original['resample']=True
+                        audio={'rate':48000,'channels':2,'name':original['name'],'output_name':original['name'],
+                               'sources':[{**original,'name':'Игра' if mode=='game' else 'Звук устройства','queue':queue.Queue(maxsize=256)}]}
+                    audio['sources'].append(mic)
+                    audio['titles']=['Общий звук',*(s['name'] for s in audio['sources'])]
+                else:audio={'rate':48000,'channels':2,'name':'Микрофон','sources':[mic],'titles':['Микрофон']}
+                audio['name']+=' + микрофон' if mode!='none' else ''
+            self.audio_titles=audio.get('titles') or (['Общий звук','Игра','Discord / чат'] if audio.get('sources') else ['Общий звук']) if audio else []
             self.audio_name=audio['name'] if audio else 'Без звука'
             check=subprocess.run([self.suite.ff(),'-v','error','-f','lavfi','-i','color=s=640x360:r=30',
                                   '-frames:v','1','-c:v','h264_nvenc','-f','null','-'],
@@ -358,7 +413,7 @@ class Replay:
             threading.Thread(target=self._progress_reader,args=(self.proc,),daemon=True).start()
             self.started=time.monotonic()
             self.phase='recording'
-            self.suite.log('replay_start',monitor=monitor,system_audio=self.audio_name,microphone=False,
+            self.suite.log('replay_start',monitor=monitor,system_audio=self.audio_name,microphone=self.settings.get('microphone_enabled',False),
                            encoder=self.encoder,output_size=self.output_size,gpu_capture=self.native_gpu,backend_note=self.backend_note,settings=self.settings)
             threading.Thread(target=self._maintain,args=(audio,),daemon=True).start()
             return self.state()
@@ -370,7 +425,14 @@ class Replay:
     def _open_audio(self,device):
         if device.get('sources'):
             for source in device['sources']:
-                capture=process_audio.open_capture(source['pid'],False)
+                if source.get('microphone'):
+                    import microphone
+                    self._microphone=microphone.Capture(source['device'],source['queue'],self.settings['microphone_gain'])
+                    continue
+                if not source.get('process'):
+                    self._open_loopback(source,source['queue'],output_rate=48000)
+                    continue
+                capture=process_audio.open_capture(source['pid'],source.get('exclude',False))
                 self._extra_audio_captures.append(capture)
                 reader=threading.Thread(target=self._process_audio_reader,args=(capture,source['queue']),daemon=True)
                 self._extra_audio_readers.append(reader);reader.start()
@@ -381,7 +443,14 @@ class Replay:
             self._process_reader=threading.Thread(target=self._process_audio_reader,args=(capture,),daemon=True)
             self._process_reader.start()
             return
+        self._open_loopback(device,self._audio_queue)
+
+    def _open_loopback(self,device,destination,output_rate=None):
         import pyaudiowpatch as pa
+        resampler=None
+        if output_rate:
+            import av
+            resampler=av.AudioResampler(format='flt',layout='stereo',rate=output_rate)
         self._audio_manager=pa.PyAudio()
         def callback(data,frames,clock,status):
             if self.stop_event.is_set():return (None,pa.paComplete)
@@ -392,13 +461,19 @@ class Replay:
                 if peak>.00003:self.last_signal=time.monotonic()
                 timestamp=clock.get('input_buffer_adc_time',0)
                 if abs(timestamp-time.perf_counter())>30:timestamp=time.perf_counter()-frames/device['rate']
-                packet=(timestamp,data)
-                try:self._audio_queue.put_nowait(packet)
-                except queue.Full:
-                    try:self._audio_queue.get_nowait()
-                    except queue.Empty:pass
-                    try:self._audio_queue.put_nowait(packet)
-                    except queue.Full:pass
+                blocks=[data]
+                if resampler:
+                    import numpy as np
+                    frame=av.AudioFrame.from_ndarray(np.frombuffer(data,dtype='<f4').reshape(1,-1),format='flt',layout='stereo' if device['channels']==2 else 'mono')
+                    frame.sample_rate=device['rate']
+                    blocks=[b.to_ndarray().astype('<f4').tobytes() for b in resampler.resample(frame)]
+                for block in blocks:
+                    try:destination.put_nowait((timestamp,block))
+                    except queue.Full:
+                        try:destination.get_nowait()
+                        except queue.Empty:pass
+                        try:destination.put_nowait((timestamp,block))
+                        except queue.Full:pass
             return (None,pa.paContinue)
         self._audio_stream=self._audio_manager.open(format=pa.paFloat32,channels=device['channels'],rate=device['rate'],
                          input=True,input_device_index=device['id'],frames_per_buffer=1024,stream_callback=callback)
@@ -453,6 +528,9 @@ class Replay:
             if self.audio_error:
                 self.error='Ошибка захвата звука приложения: '+self.audio_error
                 self.stop();self.phase='error';break
+            if self._microphone and self._microphone.error:
+                self.error='Микрофон: '+self._microphone.error
+                self.stop(preserve=True);self.phase='error';break
             if self.proc.poll() is not None:
                 code=self.proc.returncode
                 self.error=f'Запись завершилась с кодом {code}. Подробности: data/logs/replay-{self.session.name}.log'
@@ -461,6 +539,7 @@ class Replay:
                 self.error='Нет кадров от захвата. Останови повтор и проверь журнал в data/logs.'
                 self.stop();self.phase='error';break
             with self.lock:
+                self._prune_markers()
                 rows=closed_segments(self.session)
                 if rows and not self.saving:
                     threshold=rows[-1]['end']-self.settings['seconds']-6
@@ -474,7 +553,7 @@ class Replay:
                 if audio.get('process') and not process_audio.is_alive(audio['pid']):
                     self.error='Выбранная игра или приложение закрыто. Запусти его и включи повтор заново.'
                     self.stop();self.phase='error';break
-                if audio.get('sources') and not process_audio.is_alive(audio['sources'][1]['pid']):
+                if any(s.get('process') and not process_audio.is_alive(s['pid']) for s in audio.get('sources',[])):
                     self.stop(preserve=True)
                     try:
                         saved=self.save({'progress':0},allow_stopped=True)
@@ -485,7 +564,7 @@ class Replay:
                 try:
                     if self.settings['audio_mode']=='system' and self.settings['audio']=='default':
                         current=next((d for d in audio_devices() if d['default']),None)
-                        if not current or current['name']!=audio['name']:
+                        if not current or current['name']!=audio.get('output_name',audio['name']):
                             self.error='Устройство системного звука изменилось. Включи повтор заново.'
                             self.stop();self.phase='error';break
                 except Exception:pass
@@ -535,15 +614,20 @@ class Replay:
             try:manager.terminate()
             except Exception:pass
             self._audio_manager=None
+        if self._microphone:
+            self._microphone.close();self._microphone=None
         try:self.logfile.close()
         except Exception:pass
         with self.lock:
             self.proc=None;self.phase='off';self.started=None
             if not self.saving and not preserve:self._cleanup_session(self.session);self.session=None
+            self._prune_markers()
         self.suite.log('replay_stop')
         return self.state()
 
     def save(self,job,allow_stopped=False):
+        from audio_tracks import TITLES
+        audio_titles=self.audio_titles if self.audio_titles is not None else (list(TITLES) if self.settings['audio_mode']=='multitrack' else ['Общий звук'] if self.settings['audio_mode']!='none' else [])
         with self.lock:
             if self.phase!='recording' and not (allow_stopped and self.session):raise ValueError('Сначала включи повтор')
             if self.saving:raise ValueError('Предыдущий повтор ещё сохраняется')
@@ -552,6 +636,7 @@ class Replay:
             # The next interval begins at this invocation after a successful
             # save. Capture keeps running while the current clip is encoded.
             cutoff=max(0,time.perf_counter()-self.capture_epoch) if self.phase=='recording' else (rows[-1]['end'] if rows else 0)
+            mark_snapshot=tuple(self._prune_markers(cutoff))
         stage=None;partial=None
         try:
             destination=self.suite.recordings_dir()
@@ -584,9 +669,9 @@ class Replay:
                 self.last_saved=gif_media.encode(self.suite,listing,target,skip,duration,job)
                 self.suite.index_video(target)
                 import live_markers
-                self.last_saved['marks']=live_markers.attach(self.suite,target,self.session_marks,selected[0]['start']+skip,duration)
+                self.last_saved['marks']=live_markers.attach(self.suite,target,mark_snapshot,selected[0]['start']+skip,duration)
                 self.suite.log('replay_save',**self.last_saved)
-                with self.lock:self.interval_start=cutoff
+                with self.lock:self.interval_start=cutoff;self._prune_markers()
                 return self.last_saved
             name='Повтор-'+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.mp4'
             target=destination/name
@@ -598,9 +683,7 @@ class Replay:
                  '-f','mpegts','-i','pipe:0','-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
                  '-c','copy','-video_track_timescale','90000','-avoid_negative_ts','disabled',
                  '-use_editlist','1','-movflags','+faststart','-y',str(partial)]
-            if self.settings['audio_mode']=='multitrack':
-                from audio_tracks import TITLES
-                for index,title in enumerate(TITLES):cmd[-2:-2]=[f'-metadata:s:a:{index}','title='+title,f'-metadata:s:a:{index}','handler_name='+title,f'-disposition:a:{index}','default' if index==0 else '0']
+            for index,title in enumerate(audio_titles):cmd[-2:-2]=[f'-metadata:s:a:{index}','title='+title,f'-metadata:s:a:{index}','handler_name='+title,f'-disposition:a:{index}','default' if index==0 else '0']
             proc=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=NO_WINDOW)
             with self.suite.lock:self.suite.children.add(proc)
             pipe=proc.stdin;proc.stdin=None;copy_errors=[]
@@ -624,9 +707,9 @@ class Replay:
             if copy_errors:raise ValueError('Не удалось прочитать буфер: '+str(copy_errors[0]))
             job.update(progress=80,message='Проверка видео и звука')
             info=self.suite.probe(partial)
-            validate_export(partial,duration,self.settings['fps'],self.settings['audio_mode']!='none')
+            validate_export(partial,duration,self.settings['fps'],bool(audio_titles))
             if self.settings['audio_mode']!='none' and info['audio']<1:raise ValueError('В сохранённом повторе нет аудиодорожки')
-            if self.settings['audio_mode']=='multitrack' and info['audio']!=3:raise ValueError('Сохранение потеряло отдельные аудиодорожки')
+            if info['audio']!=len(audio_titles):raise ValueError('Сохранение потеряло отдельные аудиодорожки')
             if partial.stat().st_size<1000:raise ValueError('Пустой повтор')
             os.replace(partial,target)
             self.last_saved={'path':str(target),'bytes':target.stat().st_size,**info,
@@ -634,9 +717,9 @@ class Replay:
                              'capture_end':selected[0]['start']+skip+duration}
             self.suite.index_video(target)
             import live_markers
-            self.last_saved['marks']=live_markers.attach(self.suite,target,self.session_marks,selected[0]['start']+skip,duration)
+            self.last_saved['marks']=live_markers.attach(self.suite,target,mark_snapshot,selected[0]['start']+skip,duration)
             self.suite.log('replay_save',**self.last_saved)
-            with self.lock:self.interval_start=cutoff
+            with self.lock:self.interval_start=cutoff;self._prune_markers()
             return self.last_saved
         finally:
             if partial:partial.unlink(missing_ok=True)

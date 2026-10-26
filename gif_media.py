@@ -27,7 +27,9 @@ def encode(suite, source, target, start, duration, job, width=720, timer=False):
     overlay = ''
     if timer:
         from timer_overlay import video_filter
-        overlay = video_filter() + ','
+        import av
+        with av.open(str(source)) as media:source_fps=float(media.streams.video[0].average_rate or 60)
+        overlay = video_filter(suite.cfg.get('customization'),source_fps,suite.cfg.get('language','ru')) + ','
     graph = (f"[0:v]setpts=PTS-STARTPTS,trim=start={trim_start:.6f}:duration={duration:.6f},setpts=PTS-STARTPTS,"
              f"fps=15,scale=w='min({width},iw)':h=-2:flags=lanczos,setsar=1,{overlay}split[a][b];"
              '[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a[v]')
