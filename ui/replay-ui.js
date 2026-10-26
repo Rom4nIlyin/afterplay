@@ -2,16 +2,35 @@
 icons.trash='<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>';
 let replayDevices=null,replayLoading=false;
 const options=(rows,value)=>rows.map(([v,label])=>`<option value="${esc(String(v))}" ${String(v)===String(value)?'selected':''}>${esc(label)}</option>`).join('');
+function captureStatus(r){
+ if(r.continuous&&r.replay_enabled)return 'Обычная запись и повтор включены';
+ if(r.continuous)return 'Идёт обычная запись';
+ if(r.replay_enabled)return 'Повтор включён';
+ return 'Запись и повтор выключены';
+}
+function captureDetail(r){
+ const parts=[];if(r.continuous)parts.push('Вся запись · '+fmt(r.recording_seconds||0));
+ if(r.replay_enabled)parts.push('Повтор · последние '+(r.settings.seconds/60)+' мин · '+fmt(r.buffer_seconds||0));
+ return parts.join(' | ')||'Выбери обычную запись или повтор. Их можно включить одновременно.';
+}
+function captureControls(r){
+ const busy=['starting','stopping'].includes(r.phase)||r.saving,manual=r.continuous||r.pending_recording;
+ return button(manual?'replay-record-stop':'replay-record-start',manual?'Отключить запись':'Включить запись',manual?'close':'play',manual?'danger':'primary',busy?'disabled':'')+
+  (state.settings.hotkeys?.record?`<kbd>${esc(state.settings.hotkeys.record)}</kbd>`:'')+
+  button(r.replay_enabled?'replay-stop':'replay-start',r.replay_enabled?'Отключить повтор':'Включить повтор','clock','secondary',busy?'disabled':'')+
+  button('replay-save',`Сохранить последние ${(r.settings?.seconds||300)/60} мин`,'download','secondary',`id="replaySave" ${r.phase!=='recording'||busy?'disabled':''}`)+
+  `<span class="replay-hotkey"><span class="kbd">${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</span><span id="hotkeyStatus"></span></span>`;
+}
 window.replayPage=function(){
  setTimeout(syncReplayApplications,0);
  const r=state.replay||{},cfg=r.settings||{},minutes=(cfg.seconds||300)/60,mode=cfg.audio_mode||'system';
  if(!replayDevices&&!replayLoading)refreshReplayDevices().catch(e=>toast(e.message,true));
- const screens=replayDevices?.monitors||[],audio=replayDevices?.audio||[],apps=replayDevices?.applications||[],active=['starting','recording','stopping'].includes(r.phase)||r.saving;
- return `<div class="page-head"><div><div class="eyebrow">KEEP YOUR BEST MOMENTS</div><h1>Мгновенный повтор</h1><p>Играешь — буфер обновляется. Нажимаешь клавиши — момент сохранён.</p></div><span class="pill gold">H.264 · GPU / CPU</span></div>
- <section class="replay-hero"><div class="replay-orb" id="replayOrb">${icon('clock')}</div><div class="replay-main"><div class="eyebrow" id="replayPhase">ПОВТОР ВЫКЛЮЧЕН</div><div class="replay-time"><span id="replayTime">00:00</span><small id="replayLimit">/ ${fmt(cfg.seconds||300).slice(3)}</small></div><p id="replayDescription">Включи буфер перед игрой, чтобы сохранить предшествующие события.</p><div class="replay-track"><span id="replayFill"></span></div></div></section>
- <div class="actions replay-actions">${active?button('replay-stop','Остановить повтор','close','danger'):button('replay-start','Включить повтор','play','primary')}${button('replay-save',`Сохранить последние ${minutes} мин`,'download','secondary',`id="replaySave" ${r.phase!=='recording'||r.saving?'disabled':''}`)}<span class="replay-hotkey"><span class="kbd">${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</span><span id="hotkeyStatus"></span></span></div>
+ const screens=replayDevices?.monitors||[],audio=replayDevices?.audio||[],apps=replayDevices?.applications||[],active=['starting','recording','stopping'].includes(r.phase)||r.saving||r.pending_recording;
+ return `<div class="page-head"><div><div class="eyebrow">KEEP YOUR BEST MOMENTS</div><h1>Запись и повтор</h1><p>Обычная запись сохраняет всю сессию. Повтор сохраняет последние X минут. Можно использовать оба режима одновременно.</p></div><span class="pill gold">H.264 · GPU / CPU</span></div>
+ <section class="replay-hero"><div class="replay-orb" id="replayOrb">${icon('clock')}</div><div class="replay-main"><div class="eyebrow" id="replayPhase">ЗАПИСЬ ВЫКЛЮЧЕНА</div><div class="replay-time"><span id="replayTime">00:00</span><small id="replayLimit">/ ${fmt(cfg.seconds||300).slice(3)}</small></div><p id="replayDescription">Первое нажатие начинает запись, повторное сохраняет её целиком.</p><div class="replay-track"><span id="replayFill"></span></div></div></section>
+ <div class="actions replay-actions capture-mode-actions">${captureControls(r)}</div>
  <div class="two-col replay-layout"><section class="panel panel-pad replay-config"><div class="panel-title">ЗАХВАТ И КАЧЕСТВО</div>
- <section class="replay-config-group"><h3>Видео и сохранение</h3><div class="replay-config-fields"><div class="field"><label>Длительность буфера</label><select id="replaySeconds" ${active?'disabled':''}>${[1,3,5,10,15,20,30].map(n=>`<option value="${n*60}" ${minutes===n?'selected':''}>${n} мин</option>`).join('')}</select><small>После успешного сохранения новый интервал начинается с момента нажатия. Если прошло меньше выбранного времени, сохраняется только эта часть. Длинный буфер требует больше места на диске.</small></div>
+ <section class="replay-config-group"><h3>Видео и сохранение</h3><div class="replay-config-fields"><div class="field"><label>Буфер повтора</label><select id="replaySeconds" ${active?'disabled':''}>${[1,3,5,10,15,20,30].map(n=>`<option value="${n*60}" ${minutes===n?'selected':''}>${n} мин</option>`).join('')}</select><small>После успешного сохранения новый интервал начинается с момента нажатия. Если прошло меньше выбранного времени, сохраняется только эта часть. Этот лимит действует только для повтора. Ручная запись сохраняется целиком в MP4 до отключения; длительность ограничена свободным местом на диске.</small></div>
  <div class="field"><label>Что записывать</label><select id="replayCaptureMode" ${active?'disabled':''}>${options([['monitor','Весь выбранный экран'],['window','Только окно приложения']],cfg.capture_mode||'monitor')}</select></div>
  <div class="field" id="replayMonitorField" ${(cfg.capture_mode||'monitor')==='monitor'?'':'hidden'}><label>Экран</label><select id="replayMonitor" ${active?'disabled':''}><option value="primary" ${cfg.monitor==='primary'?'selected':''}>Основной экран</option>${screens.map(m=>`<option value="${esc(m.id)}" ${cfg.monitor===m.id?'selected':''}>${esc(m.id)} · ${m.width} × ${m.height}</option>`).join('')}</select></div>
  <div class="field" id="replayWindowField" ${cfg.capture_mode==='window'?'':'hidden'}><label>Окно для записи</label><select id="replayWindow" ${active?'disabled':''}><option value="0">${cfg.window_title?esc(cfg.window_title)+' · выбрано ранее':'Запусти приложение и выбери окно'}</option>${apps.map(a=>`<option value="${a.hwnd}" ${a.hwnd===cfg.window_hwnd?'selected':''}>${esc(a.name)} — ${esc(a.title)}</option>`).join('')}</select><small>Другие окна поверх приложения не попадают в запись. Не сворачивай выбранное окно. Для игры используй оконный режим без рамки. Защищённые окна могут не захватываться.</small></div>
@@ -31,7 +50,7 @@ window.replayPage=function(){
  <div class="time-inputs"><div><label>Качество звука</label><select id="replayAudioBitrate" ${active?'disabled':''}>${options([128,192,256,320].map(n=>[n,n+' кбит/с']),cfg.audio_bitrate||192)}</select></div><div><label>Сдвиг звука, мс</label><input id="replayOffset" type="number" min="-2000" max="2000" step="10" value="${cfg.audio_offset_ms||0}" ${active?'disabled':''}></div></div><div class="field"><small>Обычно оставляй 0. Отрицательное значение сдвигает звук раньше, положительное — позже.</small></div>
  <div class="audio-level"><span id="audioIndicator"></span><div><b id="audioLabel">Ожидает запуска</b><small id="audioSource">${esc(r.audio_name||'')}</small></div><div class="audio-meter"><span id="audioMeter"></span></div></div>
  </div></section><small id="replayAppStatus" class="hint">Список окон обновляется автоматически каждые 3 секунды.</small><div class="actions" style="margin-top:20px">${button('replay-settings','Сохранить параметры для этого профиля','check','primary',active?'disabled':'')}${button('replay-devices','Обновить список','refresh','quiet',active?'disabled':'')}</div></section>
- <section><div class="panel panel-pad"><div class="panel-title">КАК СОХРАНИТЬ МОМЕНТ</div><p style="font-size:12px">1. Нажми «Включить повтор» или настрой автозапись.<br><br>2. После нужного момента нажми <b>${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</b>.<br><br>3. Готовая запись появится в библиотеке и разделе «Экспорт».</p><div class="notice">Если с запуска прошло меньше ${minutes} мин, сохранится накопленная часть. Состояние записи видно в окне и в подсказке значка трея. Остановить запись можно здесь или через меню трея.</div></div><div class="panel panel-pad" style="margin-top:18px"><div class="panel-title">СОСТОЯНИЕ</div><p id="replayInfo" style="font-size:12px"></p><div id="replayLast" class="hint"></div><div class="actions" style="margin-top:18px">${button('open-exports','Открыть записи','folder')}</div></div></section></div>
+ <section><div class="panel panel-pad"><div class="panel-title">КАК СОХРАНИТЬ МОМЕНТ</div><p style="font-size:12px">1. Нажми «Включить запись».<br><br>2. Чтобы закончить обычную запись, нажми «Отключить запись».<br><br>Для повтора нажми «Включить повтор», а после нужного момента — <b>${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</b> или «Сохранить последние ${minutes} мин».<br><br>3. Готовая запись появится в библиотеке и разделе «Экспорт».</p><div class="notice">Ручная запись сохраняется целиком в MP4, в том числе если длится час и больше. Лимит буфера относится только к повтору. Состояние записи видно в окне и в подсказке значка трея. Остановить запись можно здесь или через меню трея.</div></div><div class="panel panel-pad" style="margin-top:18px"><div class="panel-title">СОСТОЯНИЕ</div><p id="replayInfo" style="font-size:12px"></p><div id="replayLast" class="hint"></div><div class="actions" style="margin-top:18px">${button('open-exports','Открыть записи','folder')}</div></div></section></div>
  <div id="replayError" class="notice hidden"></div>`;
 };
 window.renderDesktopExtras=function(){
@@ -42,24 +61,27 @@ window.renderDesktopExtras=function(){
 };
 window.updateReplay=function(){
  if(mode!=='clips'||!state.replay)return;
- const r=state.replay,limit=r.settings.seconds||300,active=['starting','recording'].includes(r.phase),seconds=Math.min(limit,r.buffer_seconds||0);
- $('#headerStatus').textContent=active?'● ИДЁТ ЗАПИСЬ · '+fmt(seconds):'Личная видеотека · повтор выключен';
+ const r=state.replay,limit=r.settings.seconds||300,active=['starting','recording'].includes(r.phase),seconds=r.continuous?(r.recording_seconds||0):Math.min(limit,r.buffer_seconds||0);
+ $('#headerStatus').textContent=active?'● '+captureStatus(r)+' · '+fmt(seconds):'Личная видеотека · запись выключена';
  $('.local-dot').classList.toggle('recording-dot',active);
  if(tab!=='replay')return;
  const phase=$('#replayPhase');if(!phase)return;
- phase.textContent=({off:'ПОВТОР ВЫКЛЮЧЕН',starting:'ЗАПУСК ЗАПИСИ',recording:'● ИДЁТ ЗАПИСЬ',stopping:'ОСТАНОВКА',error:'ЗАПИСЬ ОСТАНОВЛЕНА'})[r.phase]||'ПОВТОР ВЫКЛЮЧЕН';
+ phase.textContent=r.saving?'СОХРАНЕНИЕ ВИДЕО':active?captureStatus(r):r.pending_recording?'Запись ожидает сохранения':captureStatus(r);
  $('#replayOrb').classList.toggle('active',active);
- $('#replayTime').textContent=fmt(seconds).slice(3);$('#replayFill').style.width=(seconds/limit*100)+'%';
- $('#replayDescription').textContent=active?(seconds<limit?'Буфер наполняется. Можно сохранить уже записанную часть.':`Буфер заполнен: доступны последние ${limit/60} мин.`):'Включи буфер перед игрой, чтобы сохранить предшествующие события.';
- $('#replaySave').disabled=r.phase!=='recording'||r.saving;
- $('#hotkeyStatus').textContent=r.hotkey_ok?'Сохранить повтор · работает в фоне':'Сочетание клавиш недоступно';
+ $('#replayTime').textContent=fmt(seconds);
+ $('#replayLimit').textContent=r.continuous?'· вся запись':r.replay_enabled?'/ '+fmt(limit):'· до отключения';
+ $('#replayFill').style.width=(r.continuous?(active?100:0):Math.min(100,seconds/limit*100))+'%';
+ $('#replayDescription').textContent=r.continuous?'Обычная запись сохраняется целиком при отключении. Последние X минут можно сохранить отдельно, не прерывая запись.':r.replay_enabled?'Повтор хранит последние '+limit/60+' мин. Сохрани момент кнопкой или своей горячей клавишей.':'Включи обычную запись или повтор. Оба режима могут работать одновременно.';
+ const controls=$('.capture-mode-actions'),signature=[r.phase,r.continuous,r.replay_enabled,r.saving,r.pending_recording,limit].join(':');
+ if(controls&&controls.dataset.signature!==signature){controls.innerHTML=captureControls(r);controls.dataset.signature=signature}
+ if($('#hotkeyStatus'))$('#hotkeyStatus').textContent=r.hotkey_ok?'Сохранить повтор · работает в фоне':'Сочетание клавиш недоступно';
  $('#audioLabel').textContent=!active?'Ожидает запуска':r.settings.audio_mode==='none'?'Звук выключен':r.audio_recent?'Есть звуковой сигнал':'Сейчас тишина';
  $('#audioSource').textContent=r.audio_name||'';
  $('#audioIndicator').classList.toggle('signal',r.audio_recent&&active);
  $('#audioMeter').style.width=Math.min(100,Math.sqrt(r.audio_peak||0)*140)+'%';
- $('#replayInfo').textContent=active?`${r.engine} · ${r.encoder==='h264_nvenc'?'H.264 NVENC':'H.264 CPU'} · ${(r.output_size||[]).join(' × ')} · ${r.settings.fps} FPS · ${r.settings.quality_mode==='quality'?'CQ / CRF '+r.settings.cq:r.settings.mbps+' Мбит/с'}. Буфер: ${size(r.disk_bytes)}. Повторено кадров: ${r.duplicate_frames||0}; пропущено: ${r.dropped_frames||0}.`:'Запись экрана не выполняется. Запуск без консоли; сворачивание в трей настраивается в разделе «Настройки».';
+ $('#replayInfo').textContent=active?`${r.engine} · ${r.encoder==='h264_nvenc'?'H.264 NVENC':'H.264 CPU'} · ${(r.output_size||[]).join(' × ')} · ${r.settings.fps} FPS. На диске: ${size(r.disk_bytes)}.`:'Запись экрана не выполняется.';
  if(active&&r.backend_note)$('#replayInfo').textContent+=' '+r.backend_note;
- $('#replayLast').textContent=r.last_saved?`Последний повтор: ${fmt(r.last_saved.duration)} · ${size(r.last_saved.bytes)}`:'';
+ $('#replayLast').textContent=r.last_saved?`Последнее видео: ${fmt(r.last_saved.duration)} · ${size(r.last_saved.bytes)}`:'';
  $('#replayError').classList.toggle('hidden',!r.error);$('#replayError').textContent=r.error||'';
 };
 function updateCaptureFields(){
@@ -85,8 +107,8 @@ window.replayAction=async function(a,el){
  if(a==='desktop-exit'){await api('desktop_exit');return}
  if(a==='replay-devices'){await refreshReplayDevices(true);toast('Список окон и устройств обновлён');return}
  if(a==='replay-settings'){await replaySettings();await refresh(false);toast('Параметры профиля сохранены');return}
- if(a==='replay-start'){await replaySettings();await task('replay_start',{},()=>{refresh(false);toast('Повтор включён · сохранить: '+(state.settings.hotkeys?.save||'Ctrl+Alt+F10'))});return}
- if(a==='replay-stop'){await task('replay_stop',{},()=>{refresh(false);toast('Запись остановлена')});return}
+ if(a==='replay-start'||a==='replay-record-start'){if(tab==='replay'&&!['starting','recording','stopping'].includes(state.replay.phase))await window.prepareSelectedProfile();await task(a==='replay-start'?'replay_start':'recording_start',{},()=>{refresh(false);toast(a==='replay-start'?'Повтор включён':'Обычная запись включена')});return}
+ if(a==='replay-stop'||a==='replay-record-stop'){await task(a==='replay-stop'?'replay_stop':'recording_stop',{},()=>{refresh(false);toast(a==='replay-stop'?'Повтор выключен':'Запись сохранена в библиотеке')});return}
  if(a==='replay-save'){await task('replay_save',{},r=>{refresh(false);modal('Повтор сохранён',`<p>${fmt(r.duration)} · ${r.width} × ${r.height} · аудиодорожек: ${r.audio}</p><div class="result-path" style="margin-top:15px">${esc(r.path)}</div>`,button('close','Готово','check','quiet')+button('open-exports','Открыть папку','folder','primary'))});return}
 };
 function replaceReplayOptions(id,rows,placeholder){
@@ -166,6 +188,6 @@ window.videoDeleteAction=async function(a,el){
 const beforeGifReplayPage=window.replayPage;
 window.replayPage=function(){
  let html=beforeGifReplayPage();const cfg=state.replay?.settings||{},busy=['starting','recording','stopping'].includes(state.replay?.phase)||state.replay?.saving;
- return html.replace('<div class="field">',`<div class="field"><label for="replaySaveFormat">Сохранять момент как</label><select id="replaySaveFormat" ${busy?'disabled':''}><option value="mp4" ${cfg.save_format!=='gif'?'selected':''}>Видео MP4 · последние минуты</option><option value="gif" ${cfg.save_format==='gif'?'selected':''}>Анимация GIF · последние 2–15 секунд</option></select><small>GIF сохраняется той же горячей клавишей, без звука, 15 кадров/с, ширина до 720 px. Временный буфер записи используется для обоих форматов.</small></div><div class="field" id="replayGifField" ${cfg.save_format==='gif'?'':'hidden'}><label for="replayGifSeconds">Длительность GIF, секунды</label><input id="replayGifSeconds" type="number" min="2" max="15" step="1" value="${cfg.gif_seconds||5}" ${busy?'disabled':''}></div><div class="field">`);
+ return html.replace('<div class="field">',`<div class="field"><label for="replaySaveFormat">Формат повтора</label><select id="replaySaveFormat" ${busy?'disabled':''}><option value="mp4" ${cfg.save_format!=='gif'?'selected':''}>Видео MP4 · последние минуты</option><option value="gif" ${cfg.save_format==='gif'?'selected':''}>Анимация GIF · последние 2–15 секунд</option></select><small>Ручная запись всегда сохраняется целиком в MP4. Эти параметры формата и буфера используются только для повтора.</small></div><div class="field" id="replayGifField" ${cfg.save_format==='gif'?'':'hidden'}><label for="replayGifSeconds">Длительность GIF, секунды</label><input id="replayGifSeconds" type="number" min="2" max="15" step="1" value="${cfg.gif_seconds||5}" ${busy?'disabled':''}></div><div class="field">`);
 };
 document.addEventListener('change',e=>{if(e.target.id==='replaySaveFormat')$('#replayGifField').hidden=e.target.value!=='gif'});

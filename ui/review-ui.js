@@ -11,6 +11,41 @@ const reviewIcons={
  mute:'<path d="m11 5-6 4H2v6h3l6 4zM16 9l6 6m0-6-6 6"/>'
 };
 function reviewIcon(name){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${reviewIcons[name]||icons[name]||icons.file}</svg>`}
+// Fullscreen UI visibility.
+function installFullscreenUI({stage,controls,seek,player,on,signal,delay=1500}){
+ let timer=null,dragging=false,disposed=false,inside=true;
+ const active=()=>document.fullscreenElement===stage;
+ function cancel(){if(timer!==null){clearTimeout(timer);timer=null}}
+ function setHidden(hidden){
+  if(hidden&&(controls.contains(document.activeElement)||document.activeElement===seek))stage.focus({preventScroll:true});
+  stage.classList.toggle('review-controls-hidden',hidden);
+  controls.inert=hidden;seek.inert=hidden;
+ }
+ function hide(force=false){
+  cancel();
+  if(!active()||disposed){setHidden(false);return}
+  if(!force&&(dragging||controls.querySelector('details[open]')))return;
+  if(force)dragging=false;
+  setHidden(true);
+ }
+ function show(){
+  cancel();if(active()&&!inside){setHidden(true);return}setHidden(false);
+  if(active()&&!disposed)timer=setTimeout(()=>hide(),delay);
+ }
+ function leave(){inside=false;hide(true)}
+ function enter(){inside=true;show()}
+ on(stage,'pointermove',enter);on(stage,'pointerenter',enter);
+ on(stage,'pointerleave',leave);on(window,'blur',leave);
+ on(document,'pointerout',event=>{if(event.relatedTarget===null)leave()});
+ on(stage,'pointerdown',event=>{dragging=controls.contains(event.target)||event.target===seek;show()});
+ on(window,'pointerup',()=>{if(dragging){dragging=false;show()}});
+ controls.addEventListener('toggle',show,{capture:true,signal});
+ on(player,'play',show);on(player,'pause',show);on(player,'seeked',show);
+ on(document,'afterplay-frame',show);
+ signal.addEventListener('abort',()=>{disposed=true;cancel();setHidden(false)},{once:true});
+ return {show,update(){inside=true;show()}};
+}
+// End fullscreen UI visibility.
 function reviewDispose(){
  const current=reviewState;reviewState=null;
  if(current){current.abort.abort();current.observer?.disconnect()}
@@ -107,7 +142,7 @@ openClip=function(id){
  heading.insertBefore(headActions,closeButton);
  if(!gif){
   player.controls=false;
-  const stage=$('.playback-stage');reviewMove(viewer,stage);
+  const stage=$('.playback-stage');stage.tabIndex=-1;reviewMove(viewer,stage);
   const seek=document.createElement('input');seek.id='reviewSeek';seek.className='review-seek';seek.type='range';seek.min=0;seek.max=selected.duration||1;seek.step='.001';seek.value=0;seek.setAttribute('aria-label','Положение воспроизведения');viewer.append(seek);
   const controls=$('.playback-controls'),frameControls=controls.querySelector('.studio-frame-controls');controls.classList.add('review-transport');
   const speedRow=controls.querySelector('.speed-row'),presets=controls.querySelector('.speed-presets'),timer=controls.querySelector('.timer-actions'),help=controls.querySelector(':scope > small');
@@ -153,14 +188,33 @@ openClip=function(id){
   reviewMove(viewer,trim);
   const setVolume=value=>{player.volume=value;if(studioEditor?.audio)studioEditor.audio.volume=value;$('#reviewMute').innerHTML=reviewIcon(value>0?'volume':'mute');$('#reviewMute').title=value>0?'Выключить звук':'Включить звук';$('#reviewMute').setAttribute('aria-label',$('#reviewMute').title)};
   on($('#reviewPlay'),'click',async()=>{if(player.paused){try{await player.play()}catch(error){toast(error.message,true)}}else player.pause()});
-  on(player,'click',()=>$('#reviewPlay').click());
+  on(player,'click',e=>{e.preventDefault();e.stopPropagation();if(document.fullscreenElement===stage)stage.focus({preventScroll:true});$('#reviewPlay').click()});
   on(player,'dblclick',()=>fullscreen.click());
   on(seek,'input',()=>{current.seeking=true;player.currentTime=Number(seek.value);reviewClock()});on(seek,'change',()=>{current.seeking=false;reviewClock()});
   on($('#reviewVolume'),'input',e=>setVolume(Number(e.target.value)));
   on($('#reviewMute'),'click',()=>{if(player.volume>0){current.previousVolume=player.volume;setVolume(0)}else setVolume(current.previousVolume||1);$('#reviewVolume').value=player.volume});
   on($('#previewAudioTrack'),'change',()=>setVolume(player.volume));
-  on(fullscreen,'click',()=>player.requestFullscreen().catch(error=>toast(error.message,true)));
-  on(document,'fullscreenchange',()=>{player.controls=document.fullscreenElement===player});
+  const transportHome=controls.parentNode,transportNext=controls.nextSibling,seekHome=seek.parentNode,seekNext=seek.nextSibling;
+  const fullscreenUI=installFullscreenUI({stage,controls,seek,player,on,signal:abort.signal});current.showControls=fullscreenUI.show;
+  on(fullscreen,'click',()=>{
+   const request=document.fullscreenElement?document.exitFullscreen():stage.requestFullscreen();
+   request.catch(error=>toast(error.message,true));
+  });
+  on(document,'fullscreenchange',()=>{
+   const active=document.fullscreenElement===stage;
+   // The native video control layer also handles surface clicks. Keep our
+   // transport in fullscreen so a click always has exactly one owner.
+   player.controls=false;
+   controls.classList.toggle('review-fullscreen-transport',active);
+   seek.classList.toggle('review-fullscreen-seek',active);
+   if(active){stage.append(controls,seek);stage.focus({preventScroll:true})}
+   else{
+    if(controls.parentNode===stage)transportHome.insertBefore(controls,transportNext?.parentNode===transportHome?transportNext:null);
+    if(seek.parentNode===stage)seekHome.insertBefore(seek,seekNext?.parentNode===seekHome?seekNext:null);
+   }
+   fullscreen.title=active?'Выйти из полного экрана':'Во весь экран';fullscreen.setAttribute('aria-label',fullscreen.title);
+   fullscreenUI.update();
+  });
   for(const event of ['timeupdate','play','pause','ended','loadedmetadata','seeked','ratechange'])on(player,event,reviewClock);
   on(speedMenu,'toggle',()=>{if(speedMenu.open)for(const other of controls.querySelectorAll('details'))if(other!==speedMenu)other.open=false});
   on(presets,'click',e=>{if(e.target.closest('[data-rate]'))speedMenu.open=false});
@@ -197,10 +251,26 @@ action=async function(name,element){
  return beforeReviewAction(name,element);
 };
 $('#dialog').addEventListener('close',reviewDispose);
+function reviewHandlesSpace(e){
+ return reviewState?.player&&e.code==='Space'&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&
+  !e.target.closest('input,textarea,select,button,summary,[contenteditable=true]');
+}
+function reviewHandlesFullscreenKey(e){
+ return reviewState?.player&&e.code==='KeyF'&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&
+  !e.target.closest('input,textarea,select,[contenteditable=true],[role=combobox],[role=listbox]');
+}
+// Own the entire key press before Chromium's native fullscreen controls see it.
+// Keyup must also be consumed to avoid synthesizing a second button activation.
 document.addEventListener('keydown',e=>{
- if(!reviewState?.player||e.code!=='Space'||e.ctrlKey||e.altKey||e.metaKey||e.target.closest('input,textarea,select,button,summary,[contenteditable=true]'))return;
- e.preventDefault();$('#reviewPlay').click();
-});
+ if(reviewHandlesFullscreenKey(e)){
+  e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)$('#reviewFullscreen').click();return;
+ }
+ if(!reviewHandlesSpace(e))return;
+ e.preventDefault();e.stopImmediatePropagation();reviewState.showControls?.();if(!e.repeat)$('#reviewPlay').click();
+},{capture:true});
+document.addEventListener('keyup',e=>{
+ if(reviewHandlesSpace(e)||reviewHandlesFullscreenKey(e)){e.preventDefault();e.stopImmediatePropagation()}
+},{capture:true});
 window.reviewDebug=()=>reviewState?{
  mode:reviewState.editing?'edit':'view',pane:reviewState.pane,gif:reviewState.gif,
  sidebarHidden:reviewState.aside.hidden,timelineHidden:reviewState.timeline?.hidden??true,

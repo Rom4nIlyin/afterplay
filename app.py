@@ -634,7 +634,7 @@ class Suite:
                 self.window.evaluate_js('state='+json.dumps(self.dispatch('state',{}))+';openClip('+json.dumps(cid)+')')
                 return {'ok':True}
             if op=='ui_playback':
-                return self.window.evaluate_js("({rate:$('#player')?.playbackRate,time:$('#player')?.currentTime,timer:$('#previewTimer')?.checked,exportTimer:$('#exportTimer')?.checked,label:$('#videoTimer')?.textContent,speed:$('#playbackSpeed')?.value,windowHotkey:$('#windowHotkey')?.value,overflow:$('#dialog').scrollWidth>$('#dialog').clientWidth})")
+                return self.window.evaluate_js("({rate:$('#player')?.playbackRate,time:$('#player')?.currentTime,paused:$('#player')?.paused,fullscreen:document.fullscreenElement?.className||null,exactTime:studioEditor?.exactTime,frameHidden:$('#preciseFrame')?.hidden,frameReady:$('#preciseFrame')?.complete,timer:$('#previewTimer')?.checked,exportTimer:$('#exportTimer')?.checked,label:$('#videoTimer')?.textContent,speed:$('#playbackSpeed')?.value,windowHotkey:$('#windowHotkey')?.value,overflow:$('#dialog').scrollWidth>$('#dialog').clientWidth})")
             if op=='window_hotkey':
                 identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a=='window')
                 ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
@@ -683,6 +683,10 @@ class Suite:
                     'tray_visible':bool(self.desktop.icon.visible),'mode':self.app_mode,
                     'icon_name':getattr(self.desktop,'current_icon_name',None),
                     'icon_error':getattr(self.desktop,'icon_error','')}
+        if action in {'recording_start','recording_stop'}:
+            if not self.replay:raise ValueError('Запись доступна только в AFTERPLAY')
+            operation='start_recording' if action=='recording_start' else 'stop_recording'
+            return self.job('Включение записи' if action=='recording_start' else 'Сохранение записи',lambda job:self.auto.manual(operation,job))
         if action.startswith('replay_'):
             if not self.replay:raise ValueError('Повтор доступен только в AFTERPLAY')
             if action=='replay_devices':return self.replay.devices()
@@ -690,8 +694,8 @@ class Suite:
                 import process_audio
                 return {'applications':process_audio.applications(),'audio_applications':process_audio.audio_applications()}
             if action=='replay_config':return self.auto.manual('configure',arg)
-            if action=='replay_start':return self.job('Включение повтора',lambda j:self.auto.manual('start'))
-            if action=='replay_stop':return self.job('Остановка повтора',lambda j:self.auto.manual('stop'))
+            if action=='replay_start':return self.job('Включение повтора',lambda j:self.auto.manual('start_replay'))
+            if action=='replay_stop':return self.job('Остановка повтора',lambda j:self.auto.manual('stop_replay'))
             if action=='replay_save':return self.replay.save_job()
         if action == 'browse': return self.browse(arg.get('purpose'))
         if action == 'settings':

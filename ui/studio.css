@@ -34,3 +34,6 @@
 .studio-audio-track output{font-size:11px;font-variant-numeric:tabular-nums}.studio-mixer>small{display:block;margin:14px 0;font-size:11px}
 .replay-config [data-action=replay-settings]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600;min-height:44px}
 @media(max-width:1000px){.studio-profile-meta{grid-template-columns:1fr}}
+#replaySave[hidden]{display:none}
+
+.quick-replay{flex-wrap:wrap}.quick-replay .quick-actions{flex-wrap:wrap;justify-content:flex-start}.capture-mode-actions{flex-wrap:wrap}.quick-actions .replay-hotkey{margin-left:0}

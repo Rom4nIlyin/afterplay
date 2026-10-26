@@ -18,11 +18,14 @@ class Desktop:
         items=[pystray.MenuItem(lambda item:translate(suite,'Открыть '+self.title),self.show,default=True)]
         if suite.replay:
             items.extend([pystray.MenuItem(lambda item:translate(suite,'Сохранить последние '+str(suite.replay.settings['seconds']//60)+' мин'),lambda *_:suite.replay.save_job(),
-                                          enabled=lambda item:suite.replay.phase=='recording'),
+                                          enabled=lambda item:suite.replay.phase=='recording' and not suite.replay.saving and not suite.replay.finishing),
                           pystray.MenuItem(lambda item:translate(suite,'Отметить момент'),lambda *_:suite.replay.add_marker(),
                                           enabled=lambda item:suite.replay.phase=='recording'),
-                          pystray.MenuItem(lambda item:translate(suite,'Остановить повтор'),lambda *_:threading.Thread(target=suite.replay.stop,daemon=True).start(),
-                                          enabled=lambda item:suite.replay.phase=='recording')])
+                          pystray.MenuItem(lambda item:translate(suite,'Отключить запись' if suite.replay.continuous else 'Включить запись'),lambda *_:suite.replay.recording_job(),
+                                          enabled=lambda item:suite.replay.phase not in {'starting','stopping'} and not suite.replay.saving and not suite.replay.finishing),
+                          pystray.MenuItem(lambda item:translate(suite,'Отключить повтор' if suite.replay.replay_enabled else 'Включить повтор'),
+                                          lambda *_:suite.job('Переключение повтора',lambda job:suite.auto.manual('stop_replay' if suite.replay.replay_enabled else 'start_replay')),
+                                          enabled=lambda item:suite.replay.phase not in {'starting','stopping'} and not suite.replay.saving and not suite.replay.finishing)])
         items.extend([pystray.Menu.SEPARATOR,pystray.MenuItem(lambda item:translate(suite,'Выйти полностью'),self.exit)])
         self.icon=pystray.Icon('AFTERPLAY-'+mode,self.image,self.title,menu=pystray.Menu(*items))
         self.icon.run_detached()
@@ -129,7 +132,7 @@ class Desktop:
 
     def _status(self):
         from PIL import ImageDraw
-        last=None
+        last=None;last_modes=None
         last_hotkey=None
         last_language=None
         while self.alive:
@@ -137,7 +140,8 @@ class Desktop:
             active=bool(replay and replay.phase in {'starting','recording','stopping'})
             hotkey=self.suite.cfg.get('hotkeys',{}).get('save','Ctrl+Alt+F10')
             current_language=language(self.suite)
-            if active!=last or hotkey!=last_hotkey or current_language!=last_language:
+            modes=(replay.continuous,replay.replay_enabled,replay.saving,replay.finishing) if replay else None
+            if active!=last or modes!=last_modes or hotkey!=last_hotkey or current_language!=last_language:
                 im=self.recording_image if active else self.image
                 try:
                     self.icon.icon=im
@@ -156,7 +160,7 @@ class Desktop:
                         if previous:previous.Dispose()
                     self.suite.window.native.Invoke(Action(assign))
                 except Exception as e:self.icon_error=str(e)
-                last=active;last_hotkey=hotkey;last_language=current_language
+                last=active;last_modes=modes;last_hotkey=hotkey;last_language=current_language
             time.sleep(.3)
 
     def shutdown(self):

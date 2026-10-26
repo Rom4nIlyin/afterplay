@@ -5,7 +5,7 @@ on:
       version:
         description: Version without v
         required: true
-        default: '1.10.0'
+        default: '1.10.3'
   push:
     branches: ['main']
     paths: ['version.py']
@@ -43,6 +43,12 @@ jobs:
           Get-ChildItem ui -Filter *.js | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE -ne 0) { throw "UI syntax failed: $($_.Name)" } }
           node tests/test_viewport.js
           if ($LASTEXITCODE -ne 0) { throw 'Timeline tests failed' }
+          node tests/test_playback_controls.js
+          if ($LASTEXITCODE -ne 0) { throw 'Playback controls tests failed' }
+          node tests/test_fullscreen_ui.js
+          if ($LASTEXITCODE -ne 0) { throw 'Fullscreen controls tests failed' }
+          node tests/test_profile_forms.js
+          if ($LASTEXITCODE -ne 0) { throw 'Profile form tests failed' }
           python -m unittest discover -s tests
           if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
           python scripts/build_portable.py --version $version

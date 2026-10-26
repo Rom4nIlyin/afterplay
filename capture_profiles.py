@@ -16,13 +16,27 @@ def ensure_defaults(suite):
     """One editable desktop profile, with previous settings retained on migration."""
     with suite.lock:
         profiles=suite.cfg.setdefault('capture_profiles',{})
+        changed=False
+        default=profiles.get(DEFAULT_PROFILE)
+        if default and (default.get('path') or default.get('settings',{}).get('capture_mode')=='window'):
+            # Older forms could accidentally save an application's fields into
+            # the reserved desktop identity. Preserve its application copy.
+            path=default.get('path','')
+            if path and key(path) not in profiles:
+                profiles[key(path)]={**copy.deepcopy(default),'id':path}
+            profiles.pop(DEFAULT_PROFILE)
         if DEFAULT_PROFILE not in profiles:
             settings={**validated(suite.replay.settings),'capture_mode':'monitor','audio_mode':'system',
                       'monitor':'primary','audio':'default','chat_path':''}
             profiles[DEFAULT_PROFILE]={'id':DEFAULT_PROFILE,'path':'','name':'По умолчанию · весь экран','settings':settings}
+            changed=True
         selected=suite.cfg.get('selected_capture_profile')
         if selected and key(selected) in profiles:
+            if changed and key(selected)==DEFAULT_PROFILE:
+                apply(suite,DEFAULT_PROFILE)
+                return
             suite.replay.active_profile=profiles[key(selected)]['name']
+            if changed:suite.save_cfg()
             return
         previous=copy.deepcopy(suite.replay.settings)
         if previous.get('capture_mode')!='monitor' or previous.get('audio_mode')!='system':
@@ -44,6 +58,8 @@ def configure(suite,args):
         if not name:raise ValueError('Укажите название профиля')
         values=args.get('settings',{})
         validated(values)
+        if key(identifier)==DEFAULT_PROFILE and (path or values.get('capture_mode',profile['settings'].get('capture_mode'))!='monitor'):
+            raise ValueError('Профиль по умолчанию предназначен для экрана. Для приложения создай отдельный профиль.')
         if path and (not ntpath.isabs(path) or ntpath.splitext(path)[1].lower()!='.exe'):raise ValueError('Укажите полный путь к приложению .exe')
         old_settings=copy.deepcopy(replay.settings);old_cfg=copy.deepcopy(suite.cfg)
         try:
@@ -120,7 +136,10 @@ def save(suite,args,persist=True):
         profiles=suite.cfg.setdefault('capture_profiles',{})
         previous=key(args.get('id','')) if args.get('id') else None
         if previous and previous not in profiles:raise ValueError('Редактируемый профиль не найден')
+        if previous==DEFAULT_PROFILE and (path or settings.get('capture_mode',suite.replay.settings['capture_mode'])!='monitor'):
+            raise ValueError('Профиль по умолчанию предназначен для экрана. Для приложения создай отдельный профиль.')
         identifier=path or (previous if previous and previous.startswith('screen:') else 'screen:'+uuid.uuid4().hex)
+        if previous is None and key(identifier) in profiles:raise ValueError('Для этого приложения уже есть профиль. Выбери его для изменения.')
         if previous and key(identifier)!=previous and key(identifier) in profiles:raise ValueError('Для этого приложения уже есть профиль')
         profile={'id':identifier,'path':path,'name':str(args.get('name') or ntpath.basename(path) or 'Весь экран')[:100],'settings':settings}
         if len(profiles)>=100 and key(identifier) not in profiles and previous is None:raise ValueError('Не больше 100 профилей')

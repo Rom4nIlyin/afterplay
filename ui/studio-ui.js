@@ -37,6 +37,7 @@ window.renderDesktopExtras=function(){
  beforeStudioExtras?.();if(tab!=='settings')return;
  const card=$('#windowHotkey')?.closest('.settings-card');
  if(card&&!$('#markHotkey'))$('#windowHotkey').closest('.field').insertAdjacentHTML('afterend',`<div class="field"><label for="markHotkey">Отметить момент во время записи · необязательно</label><input class="hotkey-input" id="markHotkey" value="${esc(state.settings.hotkeys?.mark||'')}" placeholder="Не назначена" autocomplete="off" spellcheck="false"><small>Оставь пустым, чтобы использовать кнопку или меню трея. Существующие сочетания сохраняются.</small></div>`);
+ if(card&&!$('#recordHotkey'))$('#saveHotkey').closest('.field').insertAdjacentHTML('afterend',`<div class="field"><label for="recordHotkey">Включить / отключить обычную запись · необязательно</label><input class="hotkey-input" id="recordHotkey" value="${esc(state.settings.hotkeys?.record||'')}" placeholder="Не назначена" autocomplete="off" spellcheck="false"><small>Повтор сохраняется прежней клавишей. Для обычной записи можно назначить отдельное сочетание.</small></div>`);
 };
 function closeStudioEditor(){
  const current=studioEditor;studioEditor=null;
@@ -69,11 +70,24 @@ function scheduleWave(){
 async function stepFrame(direction){
  const current=studioEditor;if(!current)return;
  current.player.pause();current.audio.pause();
+ const generation=current.frameGeneration=(current.frameGeneration||0)+1;
  const result=await api('clip_frame_step',{id:current.id,time:current.exactTime??current.player.currentTime,direction});
- if(studioEditor!==current)return;
- await new Promise(resolve=>{const done=()=>resolve();current.player.addEventListener('seeked',done,{once:true});current.player.currentTime=result.time;setTimeout(done,700)});
- if(studioEditor!==current)return;
- current.image.src=result.image;current.image.hidden=false;current.exactTime=result.time;
+ if(studioEditor!==current||current.frameGeneration!==generation||!current.player.paused)return;
+ const nextImage=new Image();nextImage.src=result.image;await nextImage.decode();
+ if(studioEditor!==current||current.frameGeneration!==generation||!current.player.paused)return;
+ // Keep a decoded still over the video throughout the native seek. Replacing
+ // its source only after decoding prevents a flash of a different video frame.
+ current.frameSeeking=true;current.exactTime=result.time;
+ current.image.src=result.image;current.image.hidden=false;
+ try{
+  await new Promise(resolve=>{
+   let timer;const done=()=>{clearTimeout(timer);current.player.removeEventListener('seeked',done);resolve()};
+   current.player.addEventListener('seeked',done);timer=setTimeout(done,1000);
+   current.player.currentTime=result.time;
+   if(!current.player.seeking)done();
+  });
+ }finally{current.frameSeeking=false}
+ if(studioEditor!==current||current.frameGeneration!==generation)return;
  document.dispatchEvent(new CustomEvent('afterplay-frame',{detail:{time:result.time}}));
  $('#framePosition').textContent=trimFormat(result.time);updateTrimVisuals();
 }
@@ -89,9 +103,9 @@ openClip=function(id){
  $('#trimTrack').insertAdjacentHTML('afterend',`<section class="studio-wave"><div class="studio-wave-head"><label for="waveTrack">Звуковая волна</label><select id="waveTrack" aria-label="Дорожка звуковой волны"><option value="0">Общий звук</option></select><small id="sourceFps"></small></div><canvas id="audioWaveform" height="72" aria-label="Звуковая волна; нажми для перехода к моменту"></canvas><small id="waveStatus" aria-live="polite">Читаю дорожки…</small></section>`);
  $('.export-details').insertAdjacentHTML('beforeend',`<div class="field"><label for="exportAudioMode">Звук в MP4</label><select id="exportAudioMode"><option value="all">Сохранить все дорожки</option><option value="mix">Только общий звук</option><option value="none">Без звука</option></select></div><div id="exportTrackGains" class="studio-gain-grid" hidden><label>Игра: <output id="gameGainLabel">100%</output><input id="exportGameGain" type="range" min="0" max="100" value="100"></label><label>Discord / чат: <output id="chatGainLabel">100%</output><input id="exportChatGain" type="range" min="0" max="100" value="100"></label><small>Громкость при экспорте. Исходная запись сохраняется.</small></div>`);
  $('.playback-controls').insertAdjacentHTML('beforeend',`<div class="studio-listen"><label for="previewAudioTrack">Прослушивание</label><select id="previewAudioTrack"><option value="original">Общий звук</option></select><small id="previewAudioStatus"></small></div>`);
- function clearExact(){current.exactTime=null;image.hidden=true}
+ function clearExact(){current.frameGeneration=(current.frameGeneration||0)+1;current.exactTime=null;image.hidden=true}
  function alignAudio(){if(current.mixer){current.mixer.seek();return}if($('#previewAudioTrack')?.value==='original')return;current.audio.currentTime=player.currentTime;current.audio.playbackRate=player.playbackRate}
- on(player,'seeking',()=>{clearExact();alignAudio();drawWave()});
+ on(player,'seeking',()=>{if(!current.frameSeeking)clearExact();alignAudio();drawWave()});
  on(player,'timeupdate',()=>{if(current.exactTime===null)$('#framePosition').textContent=trimFormat(player.currentTime);if(current.mixer||(!current.audio.paused&&Math.abs(current.audio.currentTime-player.currentTime)>.15))alignAudio();drawWave()});
  on(player,'play',()=>{clearExact();if(current.mixer){current.mixer.play();return}if($('#previewAudioTrack').value!=='original'){alignAudio();current.audio.play().catch(error=>$('#previewAudioStatus').textContent='Не удалось воспроизвести дорожку: '+error.message)}});
  on(player,'pause',()=>{current.audio.pause();current.mixer?.pause()});on(player,'ended',()=>{current.audio.pause();current.mixer?.pause()});on(player,'ratechange',()=>{current.audio.playbackRate=player.playbackRate;current.mixer?.rate()});
@@ -131,7 +145,7 @@ const beforeStudioAction=action;
 action=async function(a,el){
  if(a==='live-mark'){const value=await api('replay_mark');toast('Момент отмечен: '+trimFormat(value.time));return}
  if(a==='hotkeys-save'){
-  const values={save:$('#saveHotkey').value,auto:$('#autoHotkey').value,window:$('#windowHotkey').value,mark:$('#markHotkey')?.value||''};
+  const values={save:$('#saveHotkey').value,auto:$('#autoHotkey').value,window:$('#windowHotkey').value,mark:$('#markHotkey')?.value||'',record:$('#recordHotkey')?.value||''};
   state.settings.hotkeys=await api('hotkeys_config',values);await refresh();toast('Горячие клавиши сохранены');return;
  }
  if(a==='frame-prev'||a==='frame-next'){studioFrameQueue=studioFrameQueue.catch(()=>{}).then(()=>stepFrame(a==='frame-prev'?-1:1));await studioFrameQueue;return}

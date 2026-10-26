@@ -16,7 +16,7 @@
 
 ## Играй. Отмечай. Сохраняй.
 
-AFTERPLAY держит последние **1–30 минут** в обновляемом буфере. После нужного события нажми свою горячую клавишу — получишь видео прошедшего момента. Дальше можно выбрать точный отрезок, настроить звук и экспортировать клип.
+Нажми **«Включить запись»**, чтобы начать, и **«Отключить запись»**, чтобы сохранить всё видео с начала сессии. Можно записывать час и дольше, пока хватает места на диске. **«Включить повтор»** отдельно запускает буфер последних **1–30 минут**. Оба режима могут работать одновременно: сохранение повтора не прерывает обычную запись. Дальше можно выбрать точный отрезок, настроить звук и экспортировать клип.
 
 | Момент | Что умеет AFTERPLAY |
 | :--- | :--- |
@@ -48,16 +48,18 @@ AFTERPLAY держит последние **1–30 минут** в обновл�
 
 Открой запись, нажми **Монтаж**, перетащи границы или укажи точное время. Выбери звуковые дорожки, добавь таймер при необходимости и сохрани результат. Исходная запись остаётся на месте.
 
+**F** переключает полный экран, **пробел** и клик по видео — воспроизведение и паузу. Полноэкранные кнопки, перемотка и курсор скрываются через 1,5 секунды бездействия; движение мыши возвращает управление.
+
 <img src="docs/media/editor.jpg" alt="Монтаж AFTERPLAY: просмотр, точные границы отрезка и дорожка миниатюр" width="100%">
 
 **Микрофон — по желанию.** Он включается в параметрах профиля, сохраняется отдельной дорожкой и может быть исключён из прослушивания или экспорта. [Руководство по записи и монтажу →](docs/STUDIO.md)
 
 ## Быстрый старт
 
-1. Скачай **`AFTERPLAY-1.10.0-Portable-Win64.zip`** со [страницы релиза](https://github.com/Rom4nIlyin/afterplay/releases/latest) и распакуй архив целиком.
+1. Скачай **`AFTERPLAY-1.10.3-Portable-Win64.zip`** со [страницы релиза](https://github.com/Rom4nIlyin/afterplay/releases/latest) и распакуй архив целиком.
 2. Запусти **`AFTERPLAY.exe`**. Python и FFmpeg входят в комплект; при необходимости программа предложит установить WebView2.
-3. На странице **Повтор** выбери источник, звук и длительность. Включи повтор.
-4. Сохрани момент своей горячей клавишей, затем открой его в библиотеке. Сочетания можно настроить.
+3. На странице **Запись и повтор** выбери профиль, источник и звук. Изменения профиля сохрани зелёной кнопкой.
+4. Включи обычную запись, повтор или оба режима. Прежняя горячая клавиша сохраняет последние X минут; обычная запись сохраняется целиком при отключении. Для неё можно назначить отдельное сочетание.
 
 **Язык:** Настройки → Язык интерфейса → Русский / English. Выбор сохраняется после перезапуска.
 
@@ -111,6 +113,6 @@ AFTERPLAY Portable/
 
 ## English
 
-**AFTERPLAY is a portable instant replay recorder, video library and clip editor for Windows.** Keep the last 1–30 minutes, save a past moment with a configurable hotkey, trim it precisely and export MP4 or GIF. Customize eight themes, image/GIF/video backgrounds, reusable appearance presets, sound cues and notifications. Optional microphone audio is saved as a separate track.
+**AFTERPLAY is a portable video recorder, instant replay buffer, video library and clip editor for Windows.** Record a complete session or keep the last 1–30 minutes; both modes can run together. Your replay hotkey saves the last X minutes without stopping manual recording. Trim precisely and export MP4 or GIF. F toggles fullscreen; Space and a click on the video toggle playback. Fullscreen controls hide after 1.5 seconds of inactivity. Customize eight themes, image/GIF/video backgrounds, reusable appearance presets, sound cues and notifications. Optional microphone audio is saved as a separate track.
 
 [Download for Windows](https://github.com/Rom4nIlyin/afterplay/releases/latest) → extract the entire archive → run **AFTERPLAY.exe**. Switch to English in **Settings → Interface language**. User recordings and settings stay on your computer; an account is not required for capture or editing.

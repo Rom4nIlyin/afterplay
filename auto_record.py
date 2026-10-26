@@ -79,15 +79,26 @@ class AutoRecorder:
 
     def manual(self, operation, args=None):
         with self.lock:
+            if operation in {'start_recording','start_replay'}:
+                result=self.replay.begin_recording() if operation=='start_recording' else self.replay.begin_replay()
+                if operation=='start_recording':self.owner=None;self.replay.auto_owned=False
+                return result
+            if operation in {'stop_recording','stop_replay'}:
+                self.blocked.update((path_key(a['path']),a['pid']) for a in self.applications())
+                self.replay.auto_owned=False
+                result=self.replay.finish_recording(args) if operation=='stop_recording' else self.replay.end_replay()
+                self.owner=None;self.replay.auto_owned=False
+                if self.replay.phase not in {'starting','recording','stopping'}:self._restore()
+                return result
             if operation == 'stop':
                 self.blocked.update((path_key(a['path']), a['pid']) for a in self.applications())
                 self.replay.auto_owned = False
-                result = self.replay.stop()
+                result = self.replay.finish_recording(args) if getattr(self.replay,'continuous',False) else self.replay.stop()
                 self._restore()
                 self.owner = None
                 return result
             if operation == 'start':
-                return self.replay.start()
+                return self.replay.start(continuous=True)
             if operation == 'configure':
                 return self.replay.configure(args)
 
@@ -138,7 +149,7 @@ class AutoRecorder:
                     if present and self.replay.phase == 'error': self.blocked.add(identity)
                     self._finish()
                 return
-            if self.replay.phase in {'starting', 'recording', 'stopping'} or self.replay.saving:
+            if self.replay.phase in {'starting', 'recording', 'stopping'} or self.replay.saving or (getattr(self.replay,'continuous',False) and self.replay.session):
                 return  # Never replace a manually started recording.
             candidates = [a for a in apps if path_key(a['path']) in allowed
                           and (path_key(a['path']), a['pid']) not in self.blocked
