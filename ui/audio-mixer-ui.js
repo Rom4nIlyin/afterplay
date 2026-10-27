@@ -17,15 +17,16 @@ window.buildStudioMixer=function(current,metadata){
  function align(track){
   track.audio.playbackRate=current.player.playbackRate;
   if(track.audio.readyState>=1&&Math.abs(track.audio.currentTime-current.player.currentTime)>.08)track.audio.currentTime=current.player.currentTime;
-  track.audio.volume=Math.min(1,current.player.volume*track.gain);
+  track.audio.muted=nativeOriginal||!track.enabled;
+  track.audio.volume=track.audio.muted?0:Math.min(1,current.player.volume*track.gain);
  }
  function load(track){
   if(track.loaded)return;
-  track.loaded=true;track.audio.preload='auto';track.audio.src=base+'audio-preview/'+current.id+'?track='+track.index;track.audio.load();
+  track.loaded=true;track.audio.muted=true;track.audio.volume=0;track.audio.preload='auto';track.audio.src=base+'audio-preview/'+current.id+'?track='+track.index;track.audio.load();
  }
  function play(track){
-  if(nativeOriginal||!track.enabled)return;load(track);align(track);
-  if(track.audio.readyState>=2)track.audio.play().catch(error=>{if(studioEditor===current)status.textContent='Звук: '+error.message});
+  if(current.player.paused)return;load(track);align(track);
+  if(track.audio.readyState>=2&&track.audio.paused)track.audio.play().catch(error=>{if(studioEditor===current&&track.enabled)status.textContent='Звук: '+error.message});
  }
  function statusText(){
   const selected=tracks.filter(track=>track.enabled);
@@ -37,13 +38,13 @@ window.buildStudioMixer=function(current,metadata){
   for(const track of tracks){
    controls.querySelector(`[data-audio-track="${track.index}"]`).checked=track.enabled;
    controls.querySelector(`[data-audio-gain="${track.index}"]`).disabled=!track.enabled;
-   if(track.enabled&&!nativeOriginal){load(track);align(track);if(!current.player.paused)play(track)}else track.audio.pause();
+   load(track);align(track);if(!current.player.paused)play(track);else track.audio.pause();
   }
   if(exportChanged)$('#exportAudioMode').value='custom';statusText();
  }
  for(const track of tracks){
   on(track.audio,'loadedmetadata',()=>align(track));
-  on(track.audio,'canplay',()=>{if(track.enabled&&!current.player.paused)play(track)});
+  on(track.audio,'canplay',()=>{if(!current.player.paused)play(track)});
   on(track.audio,'error',()=>{if(studioEditor===current&&track.enabled)status.textContent='Не удалось загрузить дорожку «'+track.title+'»'});
  }
  on(controls,'change',e=>{
@@ -58,7 +59,7 @@ window.buildStudioMixer=function(current,metadata){
   controls.querySelector(`[data-audio-level="${track.index}"]`).textContent=e.target.value+'%';refresh(true);
  });
  on(current.player,'volumechange',()=>tracks.forEach(align));
- current.mixer={tracks,seek:()=>tracks.filter(t=>t.enabled).forEach(align),play:()=>tracks.forEach(play),pause:()=>tracks.forEach(t=>t.audio.pause()),rate:()=>tracks.forEach(align),
+ current.mixer={tracks,seek:()=>tracks.forEach(align),play:()=>tracks.forEach(play),pause:()=>tracks.forEach(t=>t.audio.pause()),rate:()=>tracks.forEach(align),
   select(value){nativeOriginal=value==='original';for(const track of tracks)track.enabled=track.index===Number(value==='original'?0:value);refresh()},
   export:()=>tracks.filter(t=>t.enabled).map(t=>({index:t.index,gain:Math.round(t.gain*100)})),
   dispose(){abort.abort();for(const track of tracks){track.audio.pause();track.audio.removeAttribute('src');track.audio.load()}}

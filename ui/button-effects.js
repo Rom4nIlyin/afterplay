@@ -2,7 +2,7 @@
 // Delegation also covers buttons created by dialogs, profiles and the library.
 (()=>{
  function prepareButton(button){
-  if(button.matches('[role=slider],[data-edge],.trim-handle')){
+  if(button.matches('#rysya-cat,[role=slider],[data-edge],.trim-handle')){
    button.classList.remove('ap-cursor','ap-cursor-relative');return;
   }
   if(button.classList.contains('ap-cursor'))return;

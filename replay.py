@@ -370,7 +370,7 @@ class Replay:
             choice=self.settings['encoder']
             if choice=='h264_nvenc' and check.returncode:raise ValueError('NVENC недоступен. Выберите автоматический кодировщик или CPU.')
             self.encoder=('h264_nvenc' if check.returncode==0 else 'libx264') if choice=='auto' else choice
-            if self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto':
+            if self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto' and process_audio.windows_version()[2]>=18362:
                 if gpu_capture.available(self.suite.ff()):
                     size=gpu_capture.source_size(window,monitor)
                     self.output_size=video_quality.output_size(self.settings,*size)
@@ -395,10 +395,11 @@ class Replay:
             if self.native_gpu:
                 monitor={'width':size[0],'height':size[1]}
             else:
-                self.video_source=VideoSource(hwnd=window['hwnd'] if window else None,
-                                              monitor_index=None if window else monitor['wgc_index'],
-                                              fps=self.settings['fps'],cursor=self.settings['cursor'],
-                                              capture_border=self.settings['capture_border'])
+                from capture_media import create_video_source
+                self.video_source,source_name=create_video_source(hwnd=window['hwnd'] if window else None,monitor=monitor,
+                                                                  fps=self.settings['fps'],cursor=self.settings['cursor'],
+                                                                  capture_border=self.settings['capture_border'])
+                self.engine=source_name+' · '+('окно' if window else 'экран')
                 monitor={'width':self.video_source.width,'height':self.video_source.height}
             self.window_hwnd=window['hwnd'] if window else None
             self.output_size=video_quality.output_size(self.settings,monitor['width'],monitor['height'])

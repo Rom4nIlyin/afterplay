@@ -151,6 +151,21 @@ class StudioMediaTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):cls.temp.cleanup()
 
+    def test_audio_previews_prepare_all_aac_tracks_without_reencoding(self):
+        from unittest.mock import patch
+        import subprocess
+        with patch('editor_media.subprocess.Popen',wraps=subprocess.Popen) as opened:
+            previews=[editor_media.audio_preview(self.suite,self.cid,i) for i in (1,2,0)]
+            self.assertEqual(opened.call_count,1)
+            command=opened.call_args.args[0]
+            self.assertNotIn('-af',command)
+            self.assertEqual(command.count('copy'),3)
+        for index,preview in zip((1,2,0),previews):
+            with av.open(str(self.video)) as original,av.open(str(preview)) as isolated:
+                expected=[bytes(p) for p in original.demux(original.streams.audio[index]) if p.size][:4]
+                actual=[bytes(p) for p in isolated.demux(isolated.streams.audio[0]) if p.size][:4]
+                self.assertEqual(actual,expected)
+
     def test_exact_steps_follow_decoded_pts_and_waveform_uses_requested_audio(self):
         metadata=editor_media.info(self.suite,self.cid)
         self.assertAlmostEqual(metadata['fps'],30000/1001,places=5)

@@ -32,3 +32,6 @@ __pycache__/
 
 # Generated built-in background shipped with the interface
 !ui/backgrounds/aurora.mp4
+
+# Owned, credited pet audio is part of the interface, not a user recording.
+!ui/pets/purr.wav

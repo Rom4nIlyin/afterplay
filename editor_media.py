@@ -32,7 +32,8 @@ def info(suite,cid):
             return TITLES[index] if len(media.streams.audio)==3 and index<3 else 'Общий звук' if index==0 else f'Дорожка {index+1}'
         return {'fps':float(rate) if rate else 30,'rate':str(rate or 30),
                 'duration':clip['duration'],
-                'audio':[{'index':i,'title':title(stream,i),
+                'audio':[{'index':i,'title':title(stream,i),'codec':stream.codec_context.name,
+                          'start':float((stream.start_time or 0)*stream.time_base),
                           'channels':stream.codec_context.channels} for i,stream in enumerate(media.streams.audio)]}
 
 
@@ -102,21 +103,29 @@ def audio_preview(suite,cid,track):
     clip,path=source(suite,cid);track=int(track)
     metadata=info(suite,cid)
     if not 0<=track<len(metadata['audio']):raise ValueError('Аудиодорожка не найдена')
-    target=_cache(suite,cid,path,'audio',track).with_suffix('.m4a')
+    targets={item['index']:_cache(suite,cid,path,'audio2',item['index']).with_suffix('.m4a') for item in metadata['audio']}
+    target=targets[track]
     with _preview_lock:
         if target.is_file():return target
-        temporary=target.with_suffix('.partial.m4a')
-        command=[suite.ff(),'-v','error','-i',str(path),'-map',f'0:a:{track}','-vn',
-                 '-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a','192k','-movflags','+faststart','-y',str(temporary)]
+        # All sources are prepared in one pass. Native AAC needs no re-encoding.
+        pending=[item for item in metadata['audio'] if not targets[item['index']].is_file()]
+        temporary={item['index']:targets[item['index']].with_suffix('.partial.m4a') for item in pending}
+        command=[suite.ff(),'-v','error','-i',str(path)]
+        for item in pending:
+            command+=['-map',f'0:a:{item["index"]}','-vn']
+            if item['codec']=='aac' and abs(item['start'])<.04:command+=['-c:a','copy']
+            else:command+=['-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a','192k']
+            command+=['-movflags','+faststart','-y',str(temporary[item['index']])]
         proc=None
         try:
             with (suite.data/'logs'/'audio-preview.log').open('wb') as errors:
                 proc=subprocess.Popen(command,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=errors,creationflags=0x08000000 if os.name=='nt' else 0)
                 with suite.lock:suite.children.add(proc)
-                if proc.wait(timeout=max(60,clip['duration']*.5)) or not temporary.is_file():raise ValueError('Не удалось подготовить прослушивание дорожки')
-            temporary.replace(target);return target
+                if proc.wait(timeout=max(60,clip['duration']*.5)) or any(not p.is_file() or not p.stat().st_size for p in temporary.values()):raise ValueError('Не удалось подготовить прослушивание дорожки')
+            for index,path in temporary.items():path.replace(targets[index])
+            return target
         finally:
             if proc:
                 if proc.poll() is None:proc.kill();proc.wait()
                 with suite.lock:suite.children.discard(proc)
-            temporary.unlink(missing_ok=True)
+            for path in temporary.values():path.unlink(missing_ok=True)

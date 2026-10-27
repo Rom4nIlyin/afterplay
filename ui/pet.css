@@ -1,0 +1,21 @@
+/* Rysya lives above the app, with mouse input confined to his silhouette. */
+#rysya-layer{position:fixed;inset:0;z-index:120;pointer-events:none;overflow:hidden;contain:layout style;isolation:isolate}
+#rysya-layer[hidden]{display:none!important}
+#rysya-cat{all:unset;box-sizing:border-box;position:absolute;width:144px;height:144px;pointer-events:auto;cursor:pointer;touch-action:none;user-select:none;transform-origin:50% 91.40625%;clip-path:inset(6% 5% 6% 5%);-webkit-tap-highlight-color:transparent}
+#rysya-cat:focus-visible{outline:2px solid var(--accent,#9ccfc9);outline-offset:-12px;border-radius:40%}
+#rysya-cat,#rysya-cat:hover,#rysya-cat:active{background:transparent!important;border:0!important;box-shadow:none!important;transition:none!important}
+#rysya-cat::before,#rysya-cat::after{display:none!important}
+#rysya-cat[data-mood="sleep"]{clip-path:inset(38% 5% 6% 5%)}
+#rysya-cat .rysya-sprite{display:block;width:100%;height:100%;background-image:url('pets/rysya.png');background-size:600% 800%;background-repeat:no-repeat;filter:drop-shadow(0 1px 1px #ffffff42) drop-shadow(0 3px 3px #0008);transform-origin:50% 91.40625%;pointer-events:none}
+#rysya-cat[data-mood="petted"] .rysya-sprite{animation:rysya-nuzzle 1.2s ease-in-out infinite}
+#rysya-cat[data-mood="startled"] .rysya-sprite{animation:rysya-shiver .14s ease-in-out 6}
+.rysya-bubble{position:absolute;transform:translate(-50%,-100%);padding:5px 9px;border:1px solid var(--border,#5d7174);border-radius:12px;background:var(--panel,#172126);color:var(--text,#edf1f5);font:600 12px/1.3 Inter,sans-serif;white-space:nowrap;opacity:0;transition:opacity .18s;box-shadow:0 3px 12px #0003;pointer-events:none}
+.rysya-bubble.visible{opacity:1}
+.rysya-settings-head{display:flex;align-items:center;gap:18px;margin-bottom:12px}
+.rysya-portrait{flex:0 0 78px;height:78px;background:url('pets/rysya.png') 0 0/600% 800% no-repeat;filter:drop-shadow(0 2px 2px #0005)}
+.rysya-settings-head h2{margin:0 0 6px}.rysya-settings-head p{margin:0}
+#petSettings .actions{margin:14px 0 18px;gap:12px;flex-wrap:wrap}
+#petSettings .check{display:flex;align-items:center;gap:9px}
+@keyframes rysya-nuzzle{0%,100%{transform:rotate(-1deg) scaleY(1)}50%{transform:rotate(1deg) scaleY(.98)}}
+@keyframes rysya-shiver{0%,100%{transform:translateX(-1px)}50%{transform:translateX(1px)}}
+@media(prefers-reduced-motion:reduce){#rysya-cat .rysya-sprite{animation:none!important}.rysya-bubble{transition:none}}

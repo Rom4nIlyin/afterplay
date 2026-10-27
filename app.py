@@ -4,7 +4,6 @@ from contextlib import contextmanager
 import ctypes
 import hashlib
 import json
-import mimetypes
 import os
 from pathlib import Path
 import re
@@ -56,6 +55,48 @@ def safe_child(root, rel):
         if x.is_symlink() or (hasattr(x, 'is_junction') and x.is_junction()):
             raise ValueError('Ссылки и junction не поддерживаются')
     return p
+
+
+def verify_interface_bundle(root):
+    """Catch partial extraction before opening an unstyled, unusable WebView."""
+    root=Path(root);catalog=root/'app/SHA256SUMS.json'
+    if not catalog.is_file():return
+    ui=root/'app/ui';index=ui/'index.html'
+    if not index.is_file():raise RuntimeError('Не найден app/ui/index.html. Распакуйте AFTERPLAY целиком в новую папку.')
+    sums=json.loads(catalog.read_text('utf-8'))
+    names={'index.html'}
+    names.update(urlparse(name).path for name in re.findall(r'(?:src|href)="([^"]+)"',index.read_text('utf-8')) if not urlparse(name).scheme)
+    broken=[]
+    for name in sorted(names):
+        path=safe_child(ui,name);key='app/ui/'+name
+        if not path.is_file() or key not in sums or hashlib.sha256(path.read_bytes()).hexdigest()!=sums[key]:broken.append(name)
+    if broken:raise RuntimeError('Файлы интерфейса отсутствуют или повреждены: '+', '.join(broken)+'. Распакуйте полный ZIP AFTERPLAY в новую папку; подробности в data/logs/host.log.')
+
+
+def monitor_interface(suite,url,pause=time.sleep,polls=24):
+    """Retry one failed first load and retain a bounded, local startup report."""
+    if not suite.window.events.loaded.wait(30):
+        report={'ready':False,'error':'WebView2 load event timed out'}
+        atomic_json(suite.data/'logs/ui-startup.json',report);suite.log('ui_startup_failed',report=report)
+        return False
+    expression="({ready:typeof state!=='undefined'&&!!state.replay&&typeof render==='function',documentState:document.readyState,errors:window.afterplayErrors||[],customErrors:window.customErrors||[],resources:performance.getEntriesByType('resource').filter(r=>['script','link'].includes(r.initiatorType)).map(r=>({name:r.name.split('/').at(-1),status:r.responseStatus,bytes:r.decodedBodySize}))})"
+    for attempt in range(2):
+        report={}
+        for _ in range(polls):
+            if suite.desktop and suite.desktop.exiting:return False
+            try:report=suite.window.evaluate_js(expression) or {}
+            except Exception as error:report={'ready':False,'error':str(error)}
+            report['attempt']=attempt+1
+            if report.get('ready'):
+                atomic_json(suite.data/'logs/ui-startup.json',report)
+                return True
+            pause(.25)
+        atomic_json(suite.data/'logs/ui-startup.json',report)
+        suite.log('ui_startup_retry' if attempt==0 else 'ui_startup_failed',report=report)
+        if attempt==0:suite.window.load_url(url)
+    if suite.desktop:
+        suite.desktop.notify('AFTERPLAY','Не удалось загрузить интерфейс. Подробности: data/logs/ui-startup.json.','error',feedback=False)
+    return False
 
 class Suite:
     def __init__(self, data=None):
@@ -582,6 +623,15 @@ class Suite:
             result=self.updater.launch()
             threading.Timer(.5,self.desktop.exit).start()
             return result
+        if action=='pet_config':
+            cfg={'enabled':False,'sound':True,**self.cfg.get('pet',{})}
+            for key in ('enabled','sound'):
+                if key in arg:
+                    if not isinstance(arg[key],bool):raise ValueError('Некорректная настройка питомца')
+                    cfg[key]=arg[key]
+            self.cfg['pet']={key:cfg[key] for key in ('enabled','sound')}
+            self.save_cfg()
+            return self.cfg['pet']
         if action=='onboarding_config':
             status=arg.get('status')
             if status not in {'skipped','completed'}:raise ValueError('Некорректный статус обучения')
@@ -601,6 +651,8 @@ class Suite:
             return {'ok':True}
         if action=='desktop_test' and self.test_control:
             op=arg.get('op','info')
+            if op=='boot_info':
+                return self.window.evaluate_js("({href:location.href,ready:document.readyState,render:typeof render,state:typeof state,errors:window.afterplayErrors||[],customErrors:window.customErrors||[],scripts:[...document.scripts].map(s=>s.src),resources:performance.getEntriesByType('resource').map(r=>({name:r.name.split('/').at(-1),status:r.responseStatus,duration:r.duration,bytes:r.decodedBodySize}))})")
             if op=='ui_tab':
                 choice=arg.get('tab','library')
                 if choice not in {'library','settings','replay','favorites','exports','customize'}:raise ValueError('Неизвестный экран')
@@ -608,6 +660,8 @@ class Suite:
                 return {'ok':True}
             if op=='ui_check':
                 return self.window.evaluate_js("({title:document.title,theme:document.documentElement.dataset.theme,auto:!!document.querySelector('#autoEnabled'),hotkeys:!!document.querySelector('#saveHotkey'),logo:document.querySelector('#brandMark img')?.naturalWidth,overflow:document.documentElement.scrollWidth>window.innerWidth,cards:document.querySelectorAll('.settings-card').length})")
+            if op=='pet_info':
+                return self.window.evaluate_js("({...window.afterplayPet?.info(),settings:!!document.querySelector('#petSettings'),errors:window.afterplayErrors||[]})")
             if op=='custom_info':
                 return self.window.evaluate_js("({debug:window.customDebug?.(),tab,pane:typeof customPane!=='undefined'?customPane:null,themeCount:document.querySelectorAll('.custom-theme').length,mic:!!$('#microphoneEnabled'),micOptions:$('#microphoneDevice')?.options.length,errors:window.afterplayErrors||[],text:document.querySelector('main').innerText.slice(0,3500),dialog:$('#dialog').open?$('#dialog').innerText:null,presetButtons:[...document.querySelectorAll('.custom-preset-item')].map(e=>({name:e.querySelector('[data-action=custom-preset-load]').textContent,deleteLabel:e.querySelector('[data-action=custom-preset-delete]').getAttribute('aria-label')}))})")
             if op=='localization_info':
@@ -756,7 +810,15 @@ class Suite:
 
 def server_for(suite, token=None, port=0):
     token = token or secrets.token_urlsafe(32)
+    content_types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8',
+                   '.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8',
+                   '.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg',
+                   '.ico':'image/x-icon','.ttf':'font/ttf','.mp4':'video/mp4','.m4a':'audio/mp4',
+                   '.m4v':'video/mp4','.mov':'video/quicktime','.mkv':'video/x-matroska',
+                   '.avi':'video/x-msvideo','.ts':'video/mp2t',
+                   '.webm':'video/webm','.gif':'image/gif','.wav':'audio/wav'}
     class Handler(BaseHTTPRequestHandler):
+        protocol_version='HTTP/1.1'
         def log_message(self, *args): pass
         def send_json(self, obj, status=200):
             b=json.dumps(obj,ensure_ascii=False).encode()
@@ -782,8 +844,10 @@ def server_for(suite, token=None, port=0):
                 req=json.loads(self.rfile.read(size))
                 result=suite.dispatch(req['action'],req.get('args',{}))
                 self.send_json(result)
+            except (BrokenPipeError,ConnectionAbortedError,ConnectionResetError):pass
             except Exception as e:
                 import localization
+                suite.log('http_request_failed',route='api',error=str(e))
                 self.send_json({'error':localization.translate(suite,str(e))},400)
         def do_GET(self):
             route=self.route()
@@ -791,7 +855,7 @@ def server_for(suite, token=None, port=0):
             try:
                 if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
-                elif route in {'onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
+                elif route in {'pet-ui.js','pet.css','pets/rysya.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
                     p=BASE/'ui'/route
                 elif route.startswith('backgrounds/'):
                     p=safe_child(BASE/'ui',route)
@@ -822,10 +886,11 @@ def server_for(suite, token=None, port=0):
                     if m[1]: start=int(m[1]); end=int(m[2]) if m[2] else end
                     elif m[2]: start=max(0,size-int(m[2]))
                     if start>=size or start>end:
-                        self.send_response(416); self.send_header('Content-Range',f'bytes */{size}'); self.end_headers(); return
+                        self.send_response(416); self.send_header('Content-Range',f'bytes */{size}'); self.send_header('Content-Length','0'); self.end_headers(); return
                     end=min(end,size-1)
                 self.send_response(206 if ranged else 200)
-                self.send_header('Content-Type',mimetypes.guess_type(p.name)[0] or 'application/octet-stream')
+                self.send_header('Content-Type',content_types.get(p.suffix.lower(),'application/octet-stream'))
+                self.send_header('Cache-Control','no-store')
                 self.send_header('Content-Length',str(end-start+1))
                 self.send_header('Accept-Ranges','bytes')
                 self.send_header('X-Content-Type-Options','nosniff')
@@ -841,8 +906,13 @@ def server_for(suite, token=None, port=0):
                         if not b: break
                         self.wfile.write(b); remaining-=len(b)
             except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError): pass
-            except Exception as e: self.send_json({'error':str(e)},400)
-    server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
+            except Exception as e:
+                suite.log('http_request_failed',route=route,error=str(e))
+                self.send_json({'error':str(e)},400)
+    class LocalHTTPServer(ThreadingHTTPServer):
+        request_queue_size=128
+        daemon_threads=True
+    server=LocalHTTPServer(('127.0.0.1',port),Handler)
     server.daemon_threads=True
     return server,token
 
@@ -865,6 +935,7 @@ def main():
         if not instance.primary:
             instance.close()
             return
+    verify_interface_bundle(ROOT)
     suite=Suite(args.data)
     if prepared_components:suite.log('portable_components_prepared',components=prepared_components)
     suite.app_mode=args.mode
@@ -925,6 +996,7 @@ def main():
                 else:
                     if suite.desktop:suite.desktop.attach_navigation()
                     if suite.auto:suite.auto.start()
+                    threading.Thread(target=monitor_interface,args=(suite,url),daemon=True).start()
                     threading.Thread(target=suite.automatic_updates,daemon=True).start()
             webview.start(ready,gui='edgechromium',private_mode=True,
                           storage_path=str(suite.data/'webview'/args.mode),

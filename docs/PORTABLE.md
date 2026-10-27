@@ -1,4 +1,4 @@
-# AFTERPLAY 1.11.0
+# AFTERPLAY 1.11.2
 
 Запуск: **AFTERPLAY.exe**.
 

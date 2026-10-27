@@ -130,7 +130,7 @@ openClip=function(id){
  const workspace=document.createElement('div');workspace.className='review-workspace';
  const viewer=document.createElement('section');viewer.className='review-viewer';viewer.setAttribute('aria-label','Просмотр записи');
  const aside=document.createElement('aside');aside.className='review-sidebar';current.aside=aside;
- const names=gif?[['notes','Заметки']]:[['trim','Обрезка'],['sound','Звук'],['export','Экспорт'],['notes','Заметки']];
+ const names=gif?[['export','Экспорт'],['notes','Заметки']]:[['trim','Обрезка'],['sound','Звук'],['export','Экспорт'],['notes','Заметки']];
  const tabs=document.createElement('nav');tabs.className='review-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Инструменты записи');
  tabs.innerHTML=names.map(([name,label])=>`<button type="button" role="tab" data-review-pane="${name}" aria-controls="review-panel-${name}" aria-selected="false">${label}</button>`).join('');
  aside.append(tabs);
@@ -239,7 +239,10 @@ openClip=function(id){
  reviewMove(summary,$('#sourceFps'));reviewMove(info,summary);panels.notes.append(info);
  reviewMove(panels.notes,notes);notes.querySelector('.editor-card-head')?.remove();
  const external=document.createElement('div');external.className='review-external';
- for(const action of ['open-clip','open-clip-folder'])reviewMove(external,preview.querySelector(`[data-action="${action}"]`));panels.notes.append(external);
+ reviewMove(external,preview.querySelector('[data-action="open-clip"]'));panels.notes.append(external);
+ const exportTools=document.createElement('div');exportTools.className='review-export-tools';
+ reviewMove(exportTools,preview.querySelector('[data-action="open-clip-folder"]'));
+ reviewMove(exportTools,notes.querySelector('[data-action="delete-video"]'));panels.export.append(exportTools);
  oldBelow?.remove();preview?.remove();
  on(tabs,'click',e=>{const tab=e.target.closest('[data-review-pane]');if(tab)reviewSetMode(true,tab.dataset.reviewPane)});
  on(tabs,'keydown',e=>{

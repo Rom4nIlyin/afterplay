@@ -28,9 +28,10 @@ def source_size(window,monitor):
     if not window:return monitor['width'],monitor['height']
     # Get physical client dimensions even when hosted by a DPI-unaware process.
     user=ctypes.windll.user32
-    user.SetThreadDpiAwarenessContext.restype=ctypes.c_void_p
-    user.SetThreadDpiAwarenessContext.argtypes=[ctypes.c_void_p]
-    previous=user.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+    set_dpi=getattr(user,'SetThreadDpiAwarenessContext',None)
+    if set_dpi:
+        set_dpi.restype=ctypes.c_void_p;set_dpi.argtypes=[ctypes.c_void_p]
+    previous=set_dpi(ctypes.c_void_p(-4)) if set_dpi else None
     try:
         rect=wintypes.RECT()
         if not user.GetClientRect(wintypes.HWND(window['hwnd']),ctypes.byref(rect)):
@@ -38,7 +39,7 @@ def source_size(window,monitor):
         if rect.right<2 or rect.bottom<2:raise ValueError('Окно не готово к записи')
         return rect.right,rect.bottom
     finally:
-        if previous:user.SetThreadDpiAwarenessContext(previous)
+        if previous:set_dpi(previous)
 
 
 def source_filter(cfg,window,monitor,size):

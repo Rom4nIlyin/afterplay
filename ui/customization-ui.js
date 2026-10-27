@@ -211,7 +211,9 @@ openClip=function(id){
  customStopHover();beforeCustomOpen(id);const c=customSettings();
  if($('#player')?.tagName==='VIDEO'){
   const button=document.createElement('button');button.className='button quiet';button.dataset.action='custom-cover';button.textContent='Этот кадр — обложка';
-  document.querySelector('[data-review-panel="notes"]')?.append(button);
+  const tools=document.querySelector('.review-export-tools');
+  if(tools)tools.insertBefore(button,tools.querySelector('[data-action="delete-video"]'));
+  else document.querySelector('[data-review-panel="export"]')?.append(button);
   if(c.editor_start==='edit')reviewSetMode(true,c.editor_tab);
  }
 };

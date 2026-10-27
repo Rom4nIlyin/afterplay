@@ -1,0 +1,19 @@
+/* Common form controls must keep their geometry inside every panel. */
+.clips label.check{display:flex;align-items:center;gap:10px;min-width:0;line-height:1.5}
+.clips input[type=checkbox]{appearance:auto;box-sizing:border-box;width:17px;height:17px;min-width:17px;max-width:17px;min-height:17px;max-height:17px;flex:0 0 17px;margin:0;padding:0;accent-color:var(--accent);vertical-align:middle}
+.clips .studio-audio-track label.check{display:grid;grid-template-columns:17px minmax(0,1fr);gap:10px;margin:0;align-items:center}
+.clips .studio-audio-track{column-gap:12px;row-gap:10px}
+.clips .actions,.clips .dialog-actions,.clips .review-external,.clips .studio-profile-row{gap:10px}
+.clips .review-external{margin-top:20px}
+.clips .review-export-tools{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.clips .review-export-tools button{justify-content:flex-start;min-height:40px;padding:10px 12px;font-size:13px;text-align:left}
+.clips .review-export-tools [data-action=delete-video]{margin-top:4px}
+.clips .review-tool-panel .editor-card-actions{gap:10px}
+.clips .speed-presets{gap:8px}
+.clips .custom-preset-item{gap:6px}
+.clips .custom-preset-item>[data-action=custom-preset-load],.clips .custom-preset-item>.custom-preset-delete{border-radius:8px}
+.clips .custom-preset-item>.custom-preset-delete{border-left:1px solid var(--line)}
+.clips .custom-nav-order>div{column-gap:10px;row-gap:8px}
+.clips .custom-nav-order label.check{margin:0}
+.clips .custom-tabs{gap:8px}
+.clips .review-tabs{gap:6px}

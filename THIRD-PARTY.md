@@ -49,3 +49,9 @@ Inter typeface (unmodified Regular, Medium and SemiBold fonts): app/ui/fonts/.
 Copyright: The Inter Project Authors. SIL Open Font License 1.1.
 Full license and original embedded notices: app/ui/fonts/OFL.txt and FONT-NOTICES.txt.
 Project: https://github.com/rsms/inter
+
+Optional Rysya companion audio: "Whiskers' purr edit.ogg", Adam Cuerden,
+edited by X!, released into the public domain (PD-self).
+Source: https://commons.wikimedia.org/wiki/File:Whiskers%27_purr_edit.ogg
+The app includes a quiet 4.8-second processed excerpt as app/ui/pets/purr.wav.
+Processing details and artwork credits: app/ui/pets/CREDITS.md.

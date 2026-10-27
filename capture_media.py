@@ -83,6 +83,57 @@ class VideoSource:
         try:self.control.stop()
         except Exception:pass
 
+
+class GdiVideoSource:
+    """Timestamped compatibility capture without the Windows 10 1903 WGC APIs."""
+    def __init__(self,*,hwnd=None,monitor=None,fps=30,**_):
+        from PIL import ImageGrab
+        import numpy as np
+        self.lock=threading.Lock();self.closed=False;self.error='';self.received=0;self.dropped=0;self.last_read=0
+        self.first=None;self.latest=None;self.serial=0;self.clock_fallback=False;self._stop=threading.Event()
+        def grab():
+            if hwnd:image=ImageGrab.grab(window=int(hwnd))
+            else:
+                area=monitor or {}
+                x=area.get('x',area.get('left'));y=area.get('y',area.get('top'))
+                bbox=(x,y,x+area['width'],y+area['height']) if x is not None and y is not None else None
+                image=ImageGrab.grab(bbox=bbox,all_screens=True)
+            image=image.convert('RGB');rgb=np.asarray(image);pixels=np.empty((*rgb.shape[:2],4),dtype=np.uint8)
+            pixels[:,:,:3]=rgb[:,:,::-1];pixels[:,:,3]=255
+            with self.lock:
+                self.serial+=1;self.received+=1
+                if self.latest and self.last_read<self.latest[2]:self.dropped+=1
+                self.latest=(time.perf_counter(),pixels,self.serial)
+                if self.first is None:self.first=self.latest
+        grab();self.height,self.width=self.first[1].shape[:2]
+        def capture():
+            while not self._stop.is_set():
+                started=time.perf_counter()
+                try:grab()
+                except Exception as error:self.error=str(error);break
+                self._stop.wait(max(0,1/max(1,fps)-(time.perf_counter()-started)))
+        self.thread=threading.Thread(target=capture,daemon=True);self.thread.start()
+
+    def get(self):
+        with self.lock:
+            if self.latest:self.last_read=self.latest[2]
+            return self.latest
+
+    def stop(self):
+        self.closed=True;self._stop.set();self.thread.join(timeout=2)
+
+
+def create_video_source(*,hwnd=None,monitor=None,fps=60,cursor=True,capture_border=False):
+    from process_audio import windows_version
+    if windows_version()[2]>=18362:
+        try:
+            source=VideoSource(hwnd=hwnd,monitor_index=None if hwnd else monitor['wgc_index'],fps=fps,cursor=cursor,capture_border=capture_border)
+            return source,'Windows Graphics Capture'
+        except Exception:
+            # GDI uses PrintWindow for a selected HWND, never a desktop crop.
+            pass
+    return GdiVideoSource(hwnd=hwnd,monitor=monitor,fps=fps),'GDI · совместимый захват'
+
 class MediaMux:
     """Both streams carry timestamps from Windows QPC, including silent gaps."""
     def __init__(self,source,audio_queue,audio,fps,stop_event,offset_ms=0,output_size=None):
