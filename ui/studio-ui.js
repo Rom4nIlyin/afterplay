@@ -145,7 +145,7 @@ const beforeStudioAction=action;
 action=async function(a,el){
  if(a==='live-mark'){const value=await api('replay_mark');toast('Момент отмечен: '+trimFormat(value.time));return}
  if(a==='hotkeys-save'){
-  const values={save:$('#saveHotkey').value,auto:$('#autoHotkey').value,window:$('#windowHotkey').value,mark:$('#markHotkey')?.value||'',record:$('#recordHotkey')?.value||''};
+  const values={save:$('#saveHotkey').value,window:$('#windowHotkey').value,mark:$('#markHotkey')?.value||'',record:$('#recordHotkey')?.value||''};
   state.settings.hotkeys=await api('hotkeys_config',values);await refresh();toast('Горячие клавиши сохранены');return;
  }
  if(a==='frame-prev'||a==='frame-next'){studioFrameQueue=studioFrameQueue.catch(()=>{}).then(()=>stepFrame(a==='frame-prev'?-1:1));await studioFrameQueue;return}

@@ -93,7 +93,7 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaises(ValueError):profiles.apply(suite,profile['path'])
 
     def test_optional_marker_binding_preserves_existing_keys_and_rejects_conflicts(self):
-        old={'save':'Alt+F10','auto':'Alt+F9','window':'Alt+M'}
+        old={'save':'Alt+F10','window':'Alt+M'}
         self.assertEqual(validate(old),old);self.assertEqual(validate({**old,'mark':''}),old)
         with self.assertRaises(ValueError):validate({**old,'mark':'Alt+F10'})
         hit=threading.Event()

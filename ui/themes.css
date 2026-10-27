@@ -1,4 +1,4 @@
-/* Standard keeps the original palette. All interactive states share these tokens. */
+/* Shared fallback palette. All interactive states share these tokens. */
 :root {
  --sidebar:#141718;--input:#181e1e;--input-line:#34403a;--secondary:#202627;
  --hover:#304743;--pressed:#42635c;--hover-text:#ffffff;
@@ -10,32 +10,6 @@
  --success-line:#627b62;--success-text:#e1eadc;--error:#4b302e;--error-text:#ffe5df;--error-line:#976455;
  --shadow:#0006;
 }
-:root[data-theme="dark"] {
- color-scheme:dark;--bg:#090b10;--sidebar:#0e1118;--panel:#141821;--panel2:#1a202b;
- --line:#303847;--text:#edf2fc;--muted:#a3aec1;--subtle:#9ba9bd;--strong:#e1e9fa;
- --input:#0d121b;--input-line:#384456;--secondary:#202938;
- --hover:#304765;--pressed:#42638e;--hover-text:#ffffff;
- --primary-hover:#b8d3ff;--primary-pressed:#6b9eea;--on-accent:#101d32;
- --hero-start:#18253b;--hero-end:#111a29;--hero-line:#344762;--orb:#233754;
- --audio:#101b28;--track:#2b3c54;--dialog:#141b28;
- --notice:#292718;--notice-line:#655c35;--notice-text:#e0d39b;
- --success:#213b33;--success-line:#527f6c;--success-text:#d2f5e3;
-}
-:root[data-theme="dark"] .clips {--accent:#94bcfa;--accent-rgb:148,188,250}
-:root[data-theme="light"] {
- color-scheme:light;--bg:#f1f4f6;--sidebar:#ffffff;--panel:#ffffff;--panel2:#e9eef2;
- --line:#cbd4dc;--text:#182733;--muted:#526573;--subtle:#526674;--strong:#213c4c;
- --input:#f8fafb;--input-line:#b9c8d1;--secondary:#e5edf1;
- --hover:#c4e0e4;--pressed:#91c4cc;--hover-text:#102f39;
- --primary-hover:#167180;--primary-pressed:#084957;--on-accent:#ffffff;
- --danger:#fff0ed;--danger-line:#d0a197;--danger-text:#9c3325;--danger-hover:#f5c2b7;--danger-pressed:#e79888;
- --hero-start:#e3f2f0;--hero-end:#f8fbfa;--hero-line:#b3d4d1;--orb:#d4eae4;
- --audio:#eef7f2;--track:#cadbd3;--dialog:#ffffff;
- --notice:#fff8e7;--notice-line:#d7bd7e;--notice-text:#66501d;
- --success:#e0f1e6;--success-line:#80a58d;--success-text:#244a32;
- --error:#fff0ec;--error-text:#8c3022;--error-line:#c18476;--shadow:#152a3b22;
-}
-:root[data-theme="light"] .clips {--accent:#116272;--accent-rgb:17,98,114}
 .sidebar{background:var(--sidebar)}
 header,.check{color:var(--text)}
 .brand small,.nav-label,.local-badge,.side-version,footer,#breadcrumb span,.header-right,

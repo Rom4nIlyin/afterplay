@@ -7,7 +7,7 @@ import time
 import uuid
 import process_audio
 
-DEFAULTS = {'enabled': False, 'save_on_exit': True, 'apps': []}
+DEFAULTS = {'enabled': False, 'save_on_exit': False, 'apps': []}
 
 
 def path_key(path):

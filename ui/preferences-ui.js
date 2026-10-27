@@ -1,21 +1,22 @@
 'use strict';
-const themeNames={standard:'Стандартная',dark:'Тёмная',light:'Светлая'};
+const themeNames={obsidian:'Obsidian',glass:'Frosted Glass',aurora:'Aurora',ember:'Ember',mist:'Mist',paper:'Paper'};
 let pendingTheme=null,themeQueue=Promise.resolve();
-function applyTheme(theme){document.documentElement.dataset.theme=themeNames[theme]?theme:'standard'}
+function applyTheme(theme){document.documentElement.dataset.theme=themeNames[theme]?theme:'obsidian'}
 const renderDesktopSettings=window.renderDesktopExtras;
 window.renderDesktopExtras=function(){
- applyTheme(pendingTheme||state.settings.appearance?.theme||'standard');
+ applyTheme(pendingTheme||state.settings.appearance?.theme||'obsidian');
  renderDesktopSettings?.();
  if($('#appVersion'))$('#appVersion').textContent=state.updates?.version||'1.3.1';
  if(tab!=='settings')return;
+ $('.settings-panel').insertAdjacentHTML('beforeend',`<div class="split-line"></div><div class="panel-title">ЗНАКОМСТВО С AFTERPLAY</div><p class="hint">Короткий тур по библиотеке, записи и настройкам.</p><div class="actions">${button('onboarding-open','Пройти обучение','play','secondary')}</div>`);
  const panel=$('.settings-panel'),u=state.updates||{},latest=u.latest,recording=['starting','recording','stopping'].includes(state.replay?.phase)||state.replay?.saving;
  panel.insertAdjacentHTML('beforeend',`<div class="split-line"></div><div class="panel-title">ЗАХВАТ</div><div class="field"><label class="check"><input id="captureBorder" type="checkbox" ${state.replay?.settings?.capture_border?'checked':''} ${recording?'disabled':''}> Показывать жёлтую рамку во время записи</label><small>По умолчанию выключена. Применяется при следующем запуске записи. Для изменения останови запись и дождись экспорта.</small></div>
- <div class="split-line"></div><div class="panel-title">ТЕМА ИНТЕРФЕЙСА</div><div class="field"><label for="interfaceTheme">Оформление</label><select id="interfaceTheme">${Object.entries(themeNames).map(([value,name])=>`<option value="${value}" ${(pendingTheme||state.settings.appearance?.theme||'standard')===value?'selected':''}>${name}</option>`).join('')}</select><small>Тема применяется сразу и сохраняется между запусками.</small></div>
+ <div class="split-line"></div><div class="panel-title">ТЕМА ИНТЕРФЕЙСА</div><div class="field"><label for="interfaceTheme">Оформление</label><select id="interfaceTheme">${Object.entries(themeNames).map(([value,name])=>`<option value="${value}" ${(pendingTheme||state.settings.appearance?.theme||'obsidian')===value?'selected':''}>${name}</option>`).join('')}</select><small>Тема применяется сразу и сохраняется между запусками.</small></div>
  <div class="split-line"></div><div class="panel-title">ЗАПУСК И ЯРЛЫКИ</div><div class="field"><label class="check"><input id="launchAtLogin" type="checkbox" ${state.settings.desktop?.[mode]?.autostart?'checked':''}> Запускать автоматически при включении компьютера</label><small>При входе в Windows AFTERPLAY запускается в трее. Автозапись работает, если включена ниже и приложение добавлено в список.</small></div><div class="actions">${button('shortcut-desktop','Добавить ярлык на рабочий стол','plus','secondary')}${button('shortcut-taskbar','Добавить на панель задач','plus','secondary')}</div><p class="hint">Для панели задач откроется Проводник с ярлыком. Нажми по нему правой кнопкой и выбери «Закрепить на панели задач»; при необходимости — «Показать дополнительные параметры».</p>
  <div class="split-line"></div><div class="panel-title">ОБНОВЛЕНИЕ AFTERPLAY</div><label class="check"><input id="autoUpdateEnabled" type="checkbox" ${state.settings.updates?.auto_enabled?'checked':''}> Включить автообновление</label><p class="hint">По умолчанию выключено. При включении новая версия загружается и устанавливается, когда запись и экспорт остановлены. Кнопка ручной проверки работает всегда.</p><p id="updateVersion">Установлена версия ${esc(u.version||'1.3.1')}${latest?` · на GitHub ${esc(latest.version)}`:''}</p><p class="hint" id="updateHint">${u.busy?'Загрузка обновления…':latest?(latest.available?'Доступна новая версия.':'Новых версий нет.'):'Проверка стабильной версии в GitHub Releases.'}</p><div class="actions" style="margin-top:16px">${button('update-check','Проверить обновления','refresh','secondary',u.busy?'disabled':'')}${latest?.available?button('update-start','Скачать и установить обновление','download','primary',u.busy||recording||!u.supported?'disabled':''):''}</div><p class="hint">Обновление сохраняет записи и настройки. Файлы программы копируются в backups перед заменой. Перед установкой останови запись и дождись экспорта.</p>${u.last_result?`<div class="notice">${esc(u.last_result.message)}</div>`:''}`);
 };
 window.updatePreferences=function(){
- applyTheme(pendingTheme||state.settings.appearance?.theme||'standard');
+ applyTheme(pendingTheme||state.settings.appearance?.theme||'obsidian');
  if($('#appVersion'))$('#appVersion').textContent=state.updates?.version||'1.3.1';
  if($('#captureBorder'))$('#captureBorder').disabled=['starting','recording','stopping'].includes(state.replay?.phase)||!!state.replay?.saving;
 };
@@ -35,8 +36,8 @@ document.addEventListener('change',e=>{
  if(e.target.id!=='interfaceTheme')return;
  const choice=e.target.value;pendingTheme=choice;applyTheme(choice);
  themeQueue=themeQueue.catch(()=>{}).then(async()=>{
-  try{const saved=await api('appearance_config',{theme:choice});state.settings.appearance=saved;if(pendingTheme===choice)pendingTheme=null}
-  catch(error){if(pendingTheme===choice)pendingTheme=null;applyTheme(state.settings.appearance?.theme||'standard');toast(error.message,true)}
+  try{const saved=await api('appearance_config',{theme:choice});state.settings.appearance=saved;if(pendingTheme===choice)pendingTheme=null;await refresh()}
+  catch(error){if(pendingTheme===choice)pendingTheme=null;applyTheme(state.settings.appearance?.theme||'obsidian');toast(error.message,true)}
  });
 });
 window.updateAction=async function(action){

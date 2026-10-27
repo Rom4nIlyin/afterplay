@@ -42,6 +42,17 @@ def taskbar_shortcut(root):
                      stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=0x08000000)
     return {'path':str(link),'pinned':False,'requires_windows_menu':True}
 
+def initialize_autostart(suite,root):
+    settings=suite.cfg.setdefault('desktop',{}).setdefault(suite.app_mode,{})
+    if 'autostart' in settings:return
+    try:
+        result=set_autostart(root,True)
+        settings['autostart']=result['enabled']
+        suite.save_cfg()
+    except Exception as error:
+        suite.log('autostart_setup_failed',error=str(error))
+
+
 def set_autostart(root,enabled,folder=None):
     if not isinstance(enabled,bool):raise ValueError('Ожидался переключатель автозапуска')
     import pythoncom

@@ -1,6 +1,6 @@
 'use strict';
 const saveBinding=()=>state.settings.hotkeys?.save||'Ctrl+Alt+F10';
-const autoDefaults=()=>({enabled:false,save_on_exit:true,apps:[]});
+const autoDefaults=()=>({enabled:false,save_on_exit:false,apps:[]});
 function quickReplay(){
  const r=state.replay||{},active=['starting','recording'].includes(r.phase)||r.pending_recording;
  return `<section class="quick-replay"><div class="quick-state"><span class="status-lamp ${active?'on':''}"></span><div><b id="quickState">${captureStatus(r)}</b><small id="quickDetail">${captureDetail(r)}</small></div></div><div class="quick-actions">${captureControls(r)}</div></section>`;
@@ -30,12 +30,12 @@ action=async function(a,el){
   await saveAuto(cfg);return;
  }
  if(a==='hotkeys-save'){
-  const values={save:$('#saveHotkey').value,auto:$('#autoHotkey').value,window:$('#windowHotkey').value};
+  const values={save:$('#saveHotkey').value,window:$('#windowHotkey').value};
   const result=await api('hotkeys_config',values);state.settings.hotkeys=result;
   await refresh();toast('Горячие клавиши сохранены');return;
  }
  if(a==='hotkeys-reset'){
-  $('#saveHotkey').value='Ctrl+Alt+F10';$('#autoHotkey').value='Ctrl+Alt+F9';$('#windowHotkey').value='Ctrl+Alt+F8';return;
+  $('#saveHotkey').value='Ctrl+Alt+F10';$('#windowHotkey').value='Ctrl+Alt+F8';return;
  }
  return previousAction(a,el);
 };
@@ -50,7 +50,7 @@ function autoSettings(){
  return `<section id="autoSection" class="settings-card wide"><div class="section-top"><div><span class="eyebrow">ПРОГРАММА ПОМНИТ ЗА ТЕБЯ</span><h2>Автозапись игр и приложений</h2></div><span id="autoState" class="pill">${cfg.enabled?'Включена':'Выключена'}</span></div><label class="check switch-row"><input id="autoEnabled" type="checkbox" ${cfg.enabled?'checked':''}> Включать повтор при запуске приложений из списка</label><p class="hint">AFTERPLAY ждёт окно выбранного приложения и записывает только его. Сохраняется буфер последних ${(state.replay?.settings.seconds||300)/60} минут, а не весь сеанс. Нужный момент — по клавише <kbd>${esc(saveBinding())}</kbd>. Если игра уже открыта, запись начнётся после включения этой опции.</p><label class="check"><input id="autoSaveExit" type="checkbox" ${cfg.save_on_exit?'checked':''}> Сохранить последние минуты при закрытии игры или отключении автозаписи</label><div class="auto-add"><div class="field"><label for="autoRunning">Добавить из запущенных приложений</label><div class="field-line"><select id="autoRunning"><option value="">Загрузка списка окон…</option></select>${button('auto-add-running','Добавить','plus')}</div></div>${button('auto-add-file','Выбрать файл .exe','folder','secondary')}</div><div class="auto-list">${cfg.apps.length?cfg.apps.map(app=>`<div class="auto-app"><label class="check"><input data-auto-app="${esc(app.id)}" type="checkbox" ${app.enabled?'checked':''}><span><b>${esc(app.name)}</b><small title="${esc(app.path)}">${esc(app.path)}</small></span></label><button class="icon-button" data-action="auto-remove" data-id="${esc(app.id)}" aria-label="Убрать ${esc(app.name)} из списка" title="Убрать из списка">${icon('close')}</button></div>`).join(''):'<div class="auto-empty">Добавь игру или приложение — например, выбери его окно выше.<br>Само приложение и его файлы при удалении из списка не меняются.</div>'}</div><p class="hint">Распознавание идёт по полному пути .exe. При нескольких открытых приложениях приоритет у первого в списке. Качество и звук берутся из настроек повтора. После ручной остановки приложение пропускается до его следующего запуска.</p><p id="autoError" class="hint error-text">${esc(state.auto_record?.error||'')}</p></section>`;
 }
 function hotkeySettings(){
- return `<section class="settings-card"><span class="eyebrow">БЫСТРЫЕ ДЕЙСТВИЯ</span><h2>Горячие клавиши</h2><div class="field"><label for="saveHotkey">Сохранить последние минуты · повтор</label><input class="hotkey-input" id="saveHotkey" value="${esc(saveBinding())}" autocomplete="off" spellcheck="false" aria-describedby="hotkeyHelp"></div><div class="field"><label for="autoHotkey">Включить / выключить автозапись</label><input class="hotkey-input" id="autoHotkey" value="${esc(state.settings.hotkeys?.auto||'Ctrl+Alt+F9')}" autocomplete="off" spellcheck="false" aria-describedby="hotkeyHelp"></div><div class="field"><label for="windowHotkey">Показать / скрыть окно в трей</label><input class="hotkey-input" id="windowHotkey" value="${esc(state.settings.hotkeys?.window||'Ctrl+Alt+F8')}" autocomplete="off" spellcheck="false" aria-describedby="hotkeyHelp"><small>Повторное нажатие скрывает окно. Запись продолжает работать.</small></div><p id="hotkeyHelp" class="hint">Нажми на поле и введи своё сочетание. Подойдут Ctrl, Alt, Shift с буквой, цифрой или F-клавишей. Можно использовать отдельную F-клавишу, кроме F12. Клавиши работают и в трее.</p><div class="actions">${button('hotkeys-save','Сохранить','check','primary')}${button('hotkeys-reset','По умолчанию','refresh','quiet')}</div><p class="hint error-text">${esc(state.replay?.hotkey_error||'')}</p></section>`;
+ return `<section class="settings-card"><span class="eyebrow">БЫСТРЫЕ ДЕЙСТВИЯ</span><h2>Горячие клавиши</h2><div class="field"><label for="saveHotkey">Сохранить последние минуты · повтор</label><input class="hotkey-input" id="saveHotkey" value="${esc(saveBinding())}" autocomplete="off" spellcheck="false" aria-describedby="hotkeyHelp"></div><div class="field"><label for="windowHotkey">Показать / скрыть окно в трей</label><input class="hotkey-input" id="windowHotkey" value="${esc(state.settings.hotkeys?.window||'Ctrl+Alt+F8')}" autocomplete="off" spellcheck="false" aria-describedby="hotkeyHelp"><small>Повторное нажатие скрывает окно. Запись продолжает работать.</small></div><p id="hotkeyHelp" class="hint">Нажми на поле и введи своё сочетание. Подойдут Ctrl, Alt, Shift с буквой, цифрой или F-клавишей. Можно использовать отдельную F-клавишу, кроме F12. Клавиши работают и в трее.</p><div class="actions">${button('hotkeys-save','Сохранить','check','primary')}${button('hotkeys-reset','По умолчанию','refresh','quiet')}</div><p class="hint error-text">${esc(state.replay?.hotkey_error||'')}</p></section>`;
 }
 const previousDesktopExtras=window.renderDesktopExtras;
 window.renderDesktopExtras=function(){
@@ -60,13 +60,17 @@ window.renderDesktopExtras=function(){
  panel.dataset.afterplay='true';
  const elements=[...panel.children];panel.replaceChildren();
  let card=document.createElement('section');card.className='settings-card';panel.append(card);
+ card.id='libraryFolders';
  const heading=document.createElement('h2');heading.textContent='Библиотека и папки';card.append(heading);
- for(const element of elements){
+ for(const [index,element] of elements.entries()){
   if(element.classList.contains('split-line')){
+   if(elements[index+1]?.classList.contains('panel-title')&&elements[index+1].textContent.trim()==='ПОДКЛЮЧЁННЫЕ ПАПКИ'){card.append(element);continue}
    card=document.createElement('section');card.className='settings-card';panel.append(card);
   }else card.append(element);
  }
  panel.insertAdjacentHTML('afterbegin',autoSettings()+hotkeySettings());
+ $('#launchAtLogin')?.closest('.settings-card')?.setAttribute('id','startupSettings');
+ $('#saveHotkey')?.closest('.settings-card')?.setAttribute('id','hotkeySettings');
  api('replay_applications').then(result=>{
   const select=$('#autoRunning');if(!select)return;
   select.innerHTML='<option value="">Выбери окно игры или приложения</option>'+result.applications.filter(app=>!['afterplay.exe','pythonw.exe'].includes(app.name.toLowerCase())).map(app=>`<option value="${esc(app.path)}" data-name="${esc(app.title||app.name)}">${esc(app.name)} — ${esc(app.title)}</option>`).join('');

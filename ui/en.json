@@ -1003,5 +1003,10 @@
   "Дождись загрузки выбранного профиля": "Wait for the selected profile to finish loading",
   "Сначала сохрани изменения профиля зелёной кнопкой": "Save the profile changes using the green button first",
   "Профиль по умолчанию предназначен для экрана. Для приложения создай отдельный профиль.": "The default profile is for screen capture. Create a separate profile for an application.",
-  "Для этого приложения уже есть профиль. Выбери его для изменения.": "A profile for this application already exists. Select it to make changes."
+  "Для этого приложения уже есть профиль. Выбери его для изменения.": "A profile for this application already exists. Select it to make changes.",
+  "6 тем": "6 themes",
+  "Светлый туман и стальной": "Light mist and steel",
+  "Пройти обучение": "Take the tour",
+  "ЗНАКОМСТВО С AFTERPLAY": "GETTING TO KNOW AFTERPLAY",
+  "Короткий тур по библиотеке, записи и настройкам.": "A short tour of the library, recording and settings."
 }

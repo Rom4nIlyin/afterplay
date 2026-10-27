@@ -74,6 +74,10 @@ class Suite:
             'video_roots': [],
         }
         self.cfg.setdefault('updates', {'auto_enabled': False})
+        self.cfg.setdefault('desktop',{}).setdefault('clips',{}).setdefault('close_action','tray')
+        self.cfg.get('hotkeys',{}).pop('auto',None)
+        from customization import migrate_palettes
+        migrate_palettes(self.cfg)
         self.save_cfg()
         self.update_stop = threading.Event()
         with self.db() as db:
@@ -540,10 +544,15 @@ class Suite:
         if action=='appearance_config':
             appearance=self.cfg.setdefault('appearance',{})
             if 'theme' in arg:
-                from customization import THEMES
+                from customization import THEMES,THEME_PALETTES,THEME_ALIASES
+                arg={**arg,'theme':THEME_ALIASES.get(arg['theme'],arg['theme'])}
                 if arg['theme'] not in THEMES:raise ValueError('Неизвестная тема')
                 appearance['theme']=arg['theme']
                 self.cfg.setdefault('customization',{})['theme']=arg['theme']
+                if arg['theme'] in THEME_PALETTES:
+                    background,accent=THEME_PALETTES[arg['theme']]
+                    self.cfg['customization'].update(background='color',background_color=background,
+                                                     accent=accent,colors_custom=False,panel_opacity=94)
             if 'library_view' in arg:
                 if arg['library_view'] not in {'gallery','list'}:raise ValueError('Неизвестный вид библиотеки')
                 appearance['library_view']=arg['library_view']
@@ -573,6 +582,12 @@ class Suite:
             result=self.updater.launch()
             threading.Timer(.5,self.desktop.exit).start()
             return result
+        if action=='onboarding_config':
+            status=arg.get('status')
+            if status not in {'skipped','completed'}:raise ValueError('Некорректный статус обучения')
+            self.cfg['onboarding']={'version':1,'status':status}
+            self.save_cfg()
+            return self.cfg['onboarding']
         if action=='desktop_config':
             choice=arg.get('close_action')
             if choice not in {'close','tray'}:raise ValueError('Некорректное действие крестика')
@@ -776,7 +791,7 @@ def server_for(suite, token=None, port=0):
             try:
                 if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
-                elif route in {'customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
+                elif route in {'onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
                     p=BASE/'ui'/route
                 elif route.startswith('backgrounds/'):
                     p=safe_child(BASE/'ui',route)
@@ -854,6 +869,10 @@ def main():
     if prepared_components:suite.log('portable_components_prepared',components=prepared_components)
     suite.app_mode=args.mode
     suite.test_control=args.report_url
+    # Only a real installed launch creates the default Windows startup shortcut.
+    if os.name=='nt' and not (args.serve or args.smoke or args.data or args.report_url):
+        from shortcuts import initialize_autostart
+        initialize_autostart(suite,ROOT)
     if os.name=='nt' and not args.serve:
         ctypes.windll.kernel32.FreeConsole()
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('AFTERPLAY.Desktop')
@@ -895,7 +914,7 @@ def main():
                 report['ok']=bool(report.get('ready') and report['controls']['minutes']==[1,3,5,10,15,20,30] and len(report['controls']['audio'])==5 and report['capture']['modes']==['monitor','window'] and report['capture']['fps']==[24,30,60,90,120] and len(report['capture']['quality'])==3 and report['capture']['hasOffset'] and report['capture']['hasResolution'])
                 suite.window.evaluate_js("tab='settings';render()")
                 report['preferences']=suite.window.evaluate_js("({themes:[...document.querySelector('#interfaceTheme').options].map(o=>o.value),autostart:!!document.querySelector('#launchAtLogin'),desktop:!!document.querySelector('[data-action=shortcut-desktop]'),taskbar:!!document.querySelector('[data-action=shortcut-taskbar]'),updates:!!document.querySelector('[data-action=update-check]'),captureBorder:!!document.querySelector('#captureBorder'),captureBorderChecked:document.querySelector('#captureBorder').checked===!!state.replay.settings.capture_border})")
-                report['ok']=bool(report['ok'] and report['preferences']['themes']==['standard','dark','light','obsidian','glass','aurora','ember','paper'] and all(report['preferences'][key] for key in ('autostart','desktop','taskbar','updates','captureBorder','captureBorderChecked')))
+                report['ok']=bool(report['ok'] and report['preferences']['themes']==['obsidian','glass','aurora','ember','mist','paper'] and all(report['preferences'][key] for key in ('autostart','desktop','taskbar','updates','captureBorder','captureBorderChecked')))
                 report['engine']='Microsoft Edge WebView2 / pywebview'
                 atomic_json(suite.data/f'verification-native-{args.mode}.json',report)
             finally:

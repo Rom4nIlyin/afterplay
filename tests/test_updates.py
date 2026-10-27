@@ -35,7 +35,7 @@ class UpdateValidationTests(unittest.TestCase):
         from app import Suite
         with tempfile.TemporaryDirectory() as tmp:
             suite=Suite(tmp)
-            for theme in ('standard','dark','light'):
+            for theme in ('obsidian','glass','aurora','ember','mist','paper'):
                 suite.dispatch('appearance_config',{'theme':theme})
                 self.assertEqual(json.loads(suite.cfg_path.read_text('utf-8'))['appearance']['theme'],theme)
             with self.assertRaises(ValueError):suite.dispatch('appearance_config',{'theme':'other'})

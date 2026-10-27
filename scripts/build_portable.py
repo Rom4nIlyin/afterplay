@@ -113,7 +113,8 @@ foreach ($name in @('AFTERPLAY.exe','Updater.exe','ProcessAudio.dll','ReplayNoti
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--version', default='1.10.0')
+    from runpy import run_path
+    parser.add_argument('--version', default=run_path(str(ROOT/'version.py'))['VERSION'])
     args = parser.parse_args()
     if os.name != 'nt' or sys.version_info[:2] != (3, 13) or struct.calcsize('P') != 8:
         parser.error('Use Windows x64 and 64-bit Python 3.13.')

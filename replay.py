@@ -824,7 +824,7 @@ class Replay:
     def attach_desktop(self):
         from hotkeys import GlobalHotkeys,DEFAULTS,validate
         if os.name!='nt':return
-        self.hotkeys=GlobalHotkeys({'save':self.save_job,'record':self.recording_job,'auto':self.suite.auto.toggle,'window':lambda:self.suite.desktop and self.suite.desktop.toggle(),'mark':self.add_marker},self.suite.log)
+        self.hotkeys=GlobalHotkeys({'save':self.save_job,'record':self.recording_job,'window':lambda:self.suite.desktop and self.suite.desktop.toggle(),'mark':self.add_marker},self.suite.log)
         try:self.hotkeys.configure(validate(self.suite.cfg.get('hotkeys',DEFAULTS)))
         except ValueError as error:self.suite.log('hotkey_registration_error',error=str(error))
         self.hotkey_ok=self.hotkeys.ok;self.hotkey_tid=self.hotkeys.tid

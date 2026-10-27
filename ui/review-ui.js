@@ -216,7 +216,18 @@ openClip=function(id){
    fullscreenUI.update();
   });
   for(const event of ['timeupdate','play','pause','ended','loadedmetadata','seeked','ratechange'])on(player,event,reviewClock);
-  on(speedMenu,'toggle',()=>{if(speedMenu.open)for(const other of controls.querySelectorAll('details'))if(other!==speedMenu)other.open=false});
+  function positionSpeedMenu(){
+   if(!speedMenu.open)return;
+   const menu=speedMenu.getBoundingClientRect(),track=seek.getBoundingClientRect(),video=stage.getBoundingClientRect();
+   const scale=menu.height/Math.max(1,speedMenu.offsetHeight),popover=speedMenu.lastElementChild;
+   const topLimit=Math.max(12,video.top+12),bottomLimit=track.top-14;
+   popover.style.bottom=Math.max(menu.height+10,menu.bottom-bottomLimit)/scale+'px';
+   popover.style.maxHeight=Math.max(96,(bottomLimit-topLimit)/scale)+'px';
+   popover.style.overflowY='auto';
+  }
+  on(speedMenu,'toggle',()=>{if(speedMenu.open){for(const other of controls.querySelectorAll('details'))if(other!==speedMenu)other.open=false;positionSpeedMenu()}});
+  on(window,'resize',positionSpeedMenu);
+  on(document,'fullscreenchange',()=>requestAnimationFrame(positionSpeedMenu));
   on(presets,'click',e=>{if(e.target.closest('[data-rate]'))speedMenu.open=false});
   on(document,'pointerdown',e=>{if(!speedMenu.contains(e.target))speedMenu.open=false});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&speedMenu.open&&!document.fullscreenElement){e.preventDefault();e.stopImmediatePropagation();speedMenu.open=false}},{capture:true,signal:abort.signal});

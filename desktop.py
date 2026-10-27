@@ -66,6 +66,8 @@ class Desktop:
             try:
                 native=self.suite.window.native
                 def visibility_changed(sender,event):
+                    if str(native.WindowState)=='Minimized' and self.suite.cfg.get('desktop',{}).get(self.mode,{}).get('close_action','tray')=='tray':
+                        native.Hide()
                     hidden=not native.Visible or str(native.WindowState)=='Minimized'
                     threading.Thread(target=lambda:self.suite.window.evaluate_js('window.customNativeHidden='+str(hidden).lower()+';window.customUpdatePause?.()'),daemon=True).start()
                 self._visibility_callback=visibility_changed
@@ -92,7 +94,7 @@ class Desktop:
 
     def closing(self):
         settings=self.suite.cfg.get('desktop',{}).get(self.mode,{})
-        if not self.exiting and settings.get('close_action','close')=='tray':
+        if not self.exiting and settings.get('close_action','tray')=='tray':
             self.suite.window.hide()
             return False
         return True

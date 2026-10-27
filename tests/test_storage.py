@@ -45,9 +45,9 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(storage.buffer_dir(suite),folder.resolve()/'.afterplay-buffer')
     def test_library_view_persists_without_changing_theme(self):
         with tempfile.TemporaryDirectory() as temp:
-            suite=Suite(temp);suite.dispatch('appearance_config',{'theme':'dark'})
+            suite=Suite(temp);suite.dispatch('appearance_config',{'theme':'obsidian'})
             suite.dispatch('appearance_config',{'library_view':'list'})
-            self.assertEqual(Suite(temp).cfg['appearance'],{'theme':'dark','library_view':'list'})
+            self.assertEqual(Suite(temp).cfg['appearance'],{'theme':'obsidian','library_view':'list'})
             with self.assertRaises(ValueError):suite.dispatch('appearance_config',{'library_view':'unknown'})
 
 class PlatformTests(unittest.TestCase):

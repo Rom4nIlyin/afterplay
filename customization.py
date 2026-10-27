@@ -16,7 +16,34 @@ import uuid
 import wave
 import zipfile
 
-THEMES=('standard','dark','light','obsidian','glass','aurora','ember','paper')
+THEMES=('obsidian','glass','aurora','ember','mist','paper')
+THEME_PALETTES={'obsidian':('#090b0f','#9ccfc9'),'glass':('#1d2536','#c5bdff'),
+                'aurora':('#0a1721','#76dccb'),'ember':('#19110f','#e6ac79'),
+                'mist':('#e9eef3','#4b6c89'),'paper':('#f0eade','#875d40')}
+THEME_ALIASES={'standard':'aurora','dark':'obsidian','light':'mist','neon':'obsidian',
+               'cyberpunk':'mist','lagoon':'aurora','sunset':'paper'}
+LEGACY_PALETTES={
+    'standard':(('#121818','#8fc9c4'),),'dark':(('#0e1421','#94bcfa'),),
+    'light':(('#edf3f5','#116272'),),
+    'neon':(('#211047','#c4ff42'),('#141b26','#9db8d2')),
+    'cyberpunk':(('#361343','#ffe449'),('#e9eef3','#4b6c89')),
+    'lagoon':(('#063d59','#35f2ce'),('#18221f','#a6c4b0')),
+    'sunset':(('#54203f','#ffb15e'),('#efe8dd','#947355')),
+}
+
+def migrate_theme(cfg):
+    old=cfg.get('theme');theme=THEME_ALIASES.get(old)
+    if not theme:return
+    cfg['theme']=theme
+    for i,key in enumerate(('background_color','accent')):
+        if any(cfg.get(key)==palette[i] for palette in LEGACY_PALETTES.get(old,())):
+            cfg[key]=THEME_PALETTES[theme][i]
+
+def migrate_palettes(settings):
+    for cfg in [settings.get('appearance',{}),settings.get('customization',{}),
+                *settings.get('appearance_presets',{}).values()]:
+        migrate_theme(cfg)
+
 EVENTS=('mark','saving','success','error')
 DEFAULTS={
     'theme':'obsidian','accent':'#9ccfc9','background':'scene','scene':'smoke','asset':'',
@@ -46,6 +73,8 @@ def current(suite):
 def validate(patch):
     if not isinstance(patch,dict):raise ValueError('Ожидались настройки оформления')
     if set(patch)-set(DEFAULTS):raise ValueError('Неизвестная настройка оформления')
+    patch=copy.deepcopy(patch)
+    migrate_theme(patch)
     enums={'theme':THEMES,'background':('none','color','scene','asset'),
            'scene':('smoke','aurora','ember','video'),'fit':('cover','contain','fill'),
            'card_ratio':('16/9','4/3','1/1'),'hover_mode':('play','scrub'),

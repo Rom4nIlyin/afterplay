@@ -56,7 +56,7 @@ window.replayPage=function(){
 window.renderDesktopExtras=function(){
  if(tab!=='settings')return;
  const panel=$('.settings-panel');if(!panel||$('#closeAction'))return;
- const choice=state.settings.desktop?.[mode]?.close_action||'close';
+ const choice=state.settings.desktop?.[mode]?.close_action||'tray';
  panel.insertAdjacentHTML('beforeend',`<div class="split-line"></div><div class="panel-title">ОКНО И ЗНАЧОК В ТРЕЕ</div><div class="field"><label>При нажатии на крестик</label><select id="closeAction"><option value="close" ${choice==='close'?'selected':''}>Полностью закрыть программу</option><option value="tray" ${choice==='tray'?'selected':''}>Свернуть программу в трей</option></select><small>${mode==='clips'?'При сворачивании в трей запись продолжается. При полном закрытии останавливается.':'Значок в трее позволяет снова открыть окно.'}</small></div><div class="actions">${button('desktop-save','Сохранить поведение','check','primary')}${button('desktop-exit','Выйти полностью','close','quiet')}</div>`);
 };
 window.updateReplay=function(){
