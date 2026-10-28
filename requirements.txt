@@ -7,3 +7,4 @@ Send2Trash==2.1.0
 pywin32==312
 windows-capture==2.0.1
 av==19.0.2
+truststore==0.10.5

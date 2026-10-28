@@ -10,6 +10,147 @@ using System.Windows.Forms;
 [assembly:System.Reflection.AssemblyFileVersion("1.10.0.0")]
 
 namespace Afterplay {
+    // A native title bar remains usable above browser dialogs and video editors.
+    public sealed class WindowChrome : NativeWindow {
+        [DllImport("user32.dll",EntryPoint="GetWindowLongW")] static extern int GetWindowLong(IntPtr hwnd,int index);
+        [DllImport("user32.dll",EntryPoint="SetWindowLongW")] static extern int SetWindowLong(IntPtr hwnd,int index,int value);
+        [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd,IntPtr after,int x,int y,int width,int height,uint flags);
+        [DllImport("user32.dll")] static extern bool ReleaseCapture();
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr hwnd,int msg,IntPtr wp,IntPtr lp);
+        [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd,uint flags);
+        [DllImport("user32.dll",CharSet=CharSet.Auto)] static extern bool GetMonitorInfo(IntPtr monitor,ref MonitorInfo info);
+        [StructLayout(LayoutKind.Sequential)] struct Rect { public int Left,Top,Right,Bottom; }
+        [StructLayout(LayoutKind.Sequential)] struct Point { public int X,Y; }
+        [StructLayout(LayoutKind.Sequential)] struct MinMax { public Point Reserved,MaxSize,MaxPosition,MinTrack,MaxTrack; }
+        [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Auto)] struct MonitorInfo { public int Size;public Rect Monitor,Work;public uint Flags; }
+        const int Frame=0x00C00000|0x00040000|0x00080000|0x00020000|0x00010000;
+        readonly Form host;
+        readonly ChromeBar bar;
+        bool fullscreen,layoutBusy;
+        WindowChrome(Form form) {
+            host=form;AssignHandle(form.Handle);
+            bar=new ChromeBar(form,this);bar.Dock=DockStyle.Top;host.Controls.Add(bar);bar.SendToBack();
+            host.Resize+=delegate { LayoutFrame();bar.Invalidate(); };
+            host.Activated+=delegate { bar.Active=true;bar.Invalidate(); };
+            host.Deactivate+=delegate { bar.Active=false;bar.Invalidate(); };
+            Rectangle initial=host.Bounds;ApplyFrame();host.Bounds=initial;LayoutFrame();
+        }
+        public static WindowChrome Attach(Form form) { return new WindowChrome(form); }
+        void ApplyFrame() {
+            int style=GetWindowLong(host.Handle,-16);
+            SetWindowLong(host.Handle,-16,fullscreen?style&~Frame:style|Frame);
+            SetWindowPos(host.Handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0004|0x0020|0x0010);
+        }
+        void LayoutFrame() {
+            if(layoutBusy)return;layoutBusy=true;
+            try {
+                int edge=fullscreen||host.WindowState==FormWindowState.Maximized?0:Math.Max(4,(int)(5*host.DeviceDpi/96f));
+                host.Padding=new Padding(edge);bar.Height=(int)(34*host.DeviceDpi/96f);bar.Visible=!fullscreen;
+            } finally { layoutBusy=false; }
+        }
+        public void SetFullscreen(bool value) { fullscreen=value;ApplyFrame();LayoutFrame(); }
+        public void Configure(string background,string panel,string text,string muted,string accent,string status) {
+            bar.Configure(background,panel,text,muted,accent,status);host.BackColor=ColorTranslator.FromHtml(background);
+        }
+        public void BeginMove(int edge) {
+            if(fullscreen)return;
+            ReleaseCapture();Point p=new Point { X=Cursor.Position.X,Y=Cursor.Position.Y };
+            long packed=((long)p.X&0xffffL)|(((long)p.Y&0xffffL)<<16);
+            SendMessage(host.Handle,0x00A1,new IntPtr(edge),new IntPtr(packed));
+        }
+        protected override void WndProc(ref Message message) {
+            if(message.Msg==0x0083 && !fullscreen) {
+                if((GetWindowLong(host.Handle,-16)&0x01000000)!=0) {
+                    var area=new MonitorInfo();area.Size=Marshal.SizeOf(typeof(MonitorInfo));
+                    if(GetMonitorInfo(MonitorFromWindow(host.Handle,2),ref area))Marshal.StructureToPtr(area.Work,message.LParam,false);
+                }
+                message.Result=IntPtr.Zero;return;
+            }
+            base.WndProc(ref message);
+            if(message.Msg==0x0084 && !fullscreen && host.WindowState==FormWindowState.Normal) {
+                long packed=message.LParam.ToInt64();var p=host.PointToClient(new System.Drawing.Point((short)(packed&0xffff),(short)((packed>>16)&0xffff)));
+                int edge=host.Padding.Left,w=host.ClientSize.Width,h=host.ClientSize.Height;
+                int hit=p.Y<edge?(p.X<edge?13:p.X>=w-edge?14:12):p.Y>=h-edge?(p.X<edge?16:p.X>=w-edge?17:15):p.X<edge?10:p.X>=w-edge?11:1;
+                message.Result=new IntPtr(hit);
+            }
+            if(message.Msg==0x0024 && !fullscreen) {
+                var monitor=new MonitorInfo();monitor.Size=Marshal.SizeOf(typeof(MonitorInfo));
+                if(GetMonitorInfo(MonitorFromWindow(host.Handle,2),ref monitor)) {
+                    var bounds=(MinMax)Marshal.PtrToStructure(message.LParam,typeof(MinMax));
+                    bounds.MaxPosition.X=monitor.Work.Left-monitor.Monitor.Left;bounds.MaxPosition.Y=monitor.Work.Top-monitor.Monitor.Top;
+                    bounds.MaxSize.X=monitor.Work.Right-monitor.Work.Left;bounds.MaxSize.Y=monitor.Work.Bottom-monitor.Work.Top;
+                    Marshal.StructureToPtr(bounds,message.LParam,false);
+                }
+            }
+        }
+    }
+    internal sealed class ChromeBar : Panel {
+        readonly Form host;readonly WindowChrome chrome;readonly ChromeButton minimize,maximize,close;
+        readonly Font titleFont=new Font("Segoe UI",10,FontStyle.Bold,GraphicsUnit.Pixel);
+        readonly Font statusFont=new Font("Segoe UI",10,FontStyle.Regular,GraphicsUnit.Pixel);
+        Color background=Color.FromArgb(13,20,21),panel=Color.FromArgb(21,30,32),ink=Color.FromArgb(236,244,242),muted=Color.FromArgb(143,166,160),accent=Color.FromArgb(139,245,200);
+        string status="";public bool Active=true;
+        public ChromeBar(Form form,WindowChrome owner) {
+            host=form;chrome=owner;DoubleBuffered=true;TabStop=false;Name="AfterplayWindowBar";
+            minimize=new ChromeButton(this,0);maximize=new ChromeButton(this,1);close=new ChromeButton(this,2);
+            Controls.AddRange(new Control[]{minimize,maximize,close});
+            minimize.Click+=delegate { host.WindowState=FormWindowState.Minimized; };
+            maximize.Click+=delegate { ToggleMaximize(); };close.Click+=delegate { host.Close(); };
+            Resize+=delegate { LayoutButtons(); };
+            MouseDown+=delegate(object sender,MouseEventArgs e) { if(e.Button==MouseButtons.Left && e.Clicks==1)chrome.BeginMove(2); };
+            MouseDoubleClick+=delegate(object sender,MouseEventArgs e) { if(e.Button==MouseButtons.Left)ToggleMaximize(); };
+            AccessibleName="AFTERPLAY";
+        }
+        public void ToggleMaximize() { host.WindowState=host.WindowState==FormWindowState.Maximized?FormWindowState.Normal:FormWindowState.Maximized; }
+        void LayoutButtons() {
+            int width=(int)(44*DeviceDpi/96f);
+            minimize.Bounds=new Rectangle(Width-width*3,0,width,Height);maximize.Bounds=new Rectangle(Width-width*2,0,width,Height);close.Bounds=new Rectangle(Width-width,0,width,Height);
+            minimize.Invalidate();maximize.Invalidate();close.Invalidate();
+        }
+        public void Configure(string bg,string surface,string text,string secondary,string highlight,string detail) {
+            background=ColorTranslator.FromHtml(bg);panel=ColorTranslator.FromHtml(surface);ink=ColorTranslator.FromHtml(text);muted=ColorTranslator.FromHtml(secondary);accent=ColorTranslator.FromHtml(highlight);status=detail;
+            BackColor=background;Invalidate(true);
+        }
+        protected override void OnPaint(PaintEventArgs e) {
+            float scale=DeviceDpi/96f;var g=e.Graphics;g.ScaleTransform(scale,scale);float width=Width/scale,height=Height/scale;
+            using(var fill=new System.Drawing.Drawing2D.LinearGradientBrush(new PointF(0,0),new PointF(width,height),panel,background))g.FillRectangle(fill,0,0,width,height);
+            using(var line=new Pen(Color.FromArgb(48,accent)))g.DrawLine(line,0,height-1,width,height-1);
+            g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using(var brush=new SolidBrush(Active?accent:muted)) {
+                g.FillPolygon(brush,new PointF[]{new PointF(15,11),new PointF(21,7),new PointF(27,11),new PointF(27,18),new PointF(21,22),new PointF(15,18)});
+            }
+            using(var cut=new SolidBrush(background))g.FillPolygon(cut,new PointF[]{new PointF(19,11),new PointF(25,15),new PointF(19,19)});
+            using(var brush=new SolidBrush(Active?ink:muted))g.DrawString("AFTERPLAY",titleFont,brush,36,9);
+            if(!String.IsNullOrEmpty(status)) {
+                using(var brush=new SolidBrush(Color.FromArgb(240,133,129)))g.FillEllipse(brush,width-304,14,5,5);
+                using(var brush=new SolidBrush(muted))g.DrawString(status,statusFont,brush,new RectangleF(width-291,9,145,18));
+            }
+            LayoutButtons();
+        }
+        internal sealed class ChromeButton : Control {
+            readonly ChromeBar bar;readonly int kind;bool hover;
+            public ChromeButton(ChromeBar parent,int type) {
+                bar=parent;kind=type;DoubleBuffered=true;TabStop=true;Cursor=Cursors.Default;
+                Name=type==0?"WindowMinimize":type==1?"WindowMaximize":"WindowClose";
+                AccessibleRole=AccessibleRole.PushButton;AccessibleName=type==0?"Свернуть":type==1?"Развернуть или восстановить":"Закрыть";
+                MouseEnter+=delegate { hover=true;Invalidate(); };MouseLeave+=delegate { hover=false;Invalidate(); };
+                SetStyle(ControlStyles.Selectable,true);
+            }
+            protected override void OnKeyDown(KeyEventArgs e) { base.OnKeyDown(e);if(e.KeyCode==Keys.Enter||e.KeyCode==Keys.Space){e.Handled=true;OnClick(EventArgs.Empty);} }
+            protected override void OnPaint(PaintEventArgs e) {
+                var g=e.Graphics;g.Clear(bar.background);float s=DeviceDpi/96f;g.ScaleTransform(s,s);float x=Width/s/2,y=Height/s/2;
+                if(hover)using(var fill=new SolidBrush(kind==2?Color.FromArgb(190,56,70):Color.FromArgb(24,bar.accent)))g.FillRectangle(fill,0,0,Width/s,Height/s);
+                using(var pen=new Pen(hover&&kind==2?Color.White:bar.Active?bar.ink:bar.muted,1.1f)) {
+                    if(kind==0)g.DrawLine(pen,x-5,y+2,x+5,y+2);
+                    else if(kind==2){g.DrawLine(pen,x-4,y-4,x+4,y+4);g.DrawLine(pen,x+4,y-4,x-4,y+4);}
+                    else if(bar.host.WindowState==FormWindowState.Maximized){g.DrawRectangle(pen,x-2,y-5,8,8);using(var b=new SolidBrush(bar.background))g.FillRectangle(b,x-5,y-2,8,8);g.DrawRectangle(pen,x-5,y-2,8,8);}
+                    else g.DrawRectangle(pen,x-4,y-4,8,8);
+                }
+                if(Focused)using(var pen=new Pen(bar.accent))g.DrawRectangle(pen,4,4,Width/s-9,Height/s-9);
+            }
+        }
+        protected override void Dispose(bool disposing) { if(disposing){titleFont.Dispose();statusFont.Dispose();}base.Dispose(disposing); }
+    }
     // A local WinForms message filter, active only inside this application's form.
     // It does not register a system mouse hook or observe other applications.
     public sealed class DesktopNavigation : IMessageFilter {

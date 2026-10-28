@@ -106,8 +106,14 @@
   }catch(error){dialog.querySelector('.tour-error').textContent=error.message}
   finally{busy=false;dialog.querySelectorAll('button').forEach(b=>b.disabled=false)}
  }
+ async function offer(){
+  if(offered||!state.replay||state.settings.onboarding?.status||$('#dialog').open)return;
+  offered=true;
+  try{const result=await api('onboarding_offer');state.settings.onboarding=result.onboarding;if(result.show)open()}
+  catch(error){offered=false;console.warn('Onboarding offer:',error.message)}
+ }
  const previous=render;
- render=function(){previous();if(dialog?.open)schedulePosition();else if(!offered&&!state.settings.onboarding?.status&&!$('#dialog').open)setTimeout(()=>{if(!offered&&!state.settings.onboarding?.status&&!$('#dialog').open)open()},200)};
+ render=function(){previous();if(dialog?.open)schedulePosition();else if(!offered&&state.replay&&!state.settings.onboarding?.status&&!$('#dialog').open)setTimeout(offer,200)};
  const oldAction=action;
  action=async function(name,el){if(name==='onboarding-open'){open();return}return oldAction(name,el)};
  window.addEventListener('resize',schedulePosition);

@@ -65,12 +65,7 @@ class Desktop:
         def attach():
             try:
                 native=self.suite.window.native
-                def visibility_changed(sender,event):
-                    if str(native.WindowState)=='Minimized' and self.suite.cfg.get('desktop',{}).get(self.mode,{}).get('close_action','tray')=='tray':
-                        native.Hide()
-                    hidden=not native.Visible or str(native.WindowState)=='Minimized'
-                    threading.Thread(target=lambda:self.suite.window.evaluate_js('window.customNativeHidden='+str(hidden).lower()+';window.customUpdatePause?.()'),daemon=True).start()
-                self._visibility_callback=visibility_changed
+                self._visibility_callback=self._visibility_changed
                 native.VisibleChanged+=self._visibility_callback
                 native.Resize+=self._visibility_callback
             except Exception as error:self.suite.log('visibility_attach_failed',error=str(error))
@@ -79,7 +74,9 @@ class Desktop:
                 core=native.webview.CoreWebView2
                 def fullscreen_changed(sender,event):
                     desired=bool(sender.ContainsFullScreenElement)
-                    if desired!=bool(native.is_fullscreen):native.toggle_fullscreen()
+                    if desired!=bool(native.is_fullscreen):
+                        native.toggle_fullscreen()
+                        if self.suite.chrome and self.suite.chrome.native:self.suite.chrome.native.SetFullscreen(desired)
                 self._fullscreen_callback=fullscreen_changed
                 core.ContainsFullScreenElementChanged+=self._fullscreen_callback
             except Exception as error:self.suite.log('fullscreen_attach_failed',error=str(error))
@@ -91,6 +88,13 @@ class Desktop:
                 self._navigation_filter=DesktopNavigation.Attach(self.suite.window.native,self._navigate_callback)
             except Exception as error:self.suite.log('navigation_attach_failed',error=str(error))
         self.suite.window.native.BeginInvoke(Action(attach))
+
+    def _visibility_changed(self,*_):
+        # Minimize keeps the taskbar button. Only the configured close action
+        # and explicit tray commands hide the native window.
+        native=self.suite.window.native
+        hidden=not native.Visible or str(native.WindowState)=='Minimized'
+        threading.Thread(target=lambda:self.suite.window.evaluate_js('window.customNativeHidden='+str(hidden).lower()+';window.customUpdatePause?.()'),daemon=True).start()
 
     def closing(self):
         settings=self.suite.cfg.get('desktop',{}).get(self.mode,{})

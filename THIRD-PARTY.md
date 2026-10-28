@@ -1,5 +1,9 @@
 # Bundled components
 
+Truststore 0.10.5 (MIT): https://github.com/sethmlarson/truststore
+Uses Windows CryptoAPI certificate validation for HTTPS updates; its license
+is retained in app/runtime/Lib/site-packages/truststore-0.10.5.dist-info/licenses/.
+
 Python 3.13.0 x64 embeddable distribution (Python Software Foundation):
 https://www.python.org/ftp/python/3.13.0/python-3.13.0-embed-amd64.zip
 License: app/runtime/LICENSE.txt.

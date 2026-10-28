@@ -5,6 +5,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import ssl
 import stat
 import subprocess
 import tempfile
@@ -41,7 +42,13 @@ class GitHubRedirect(urllib.request.HTTPRedirectHandler):
 
 def open_url(url):
     req=urllib.request.Request(allowed_url(url),headers={'User-Agent':f'AFTERPLAY/{VERSION}', 'Accept':'application/vnd.github+json'})
-    return urllib.request.build_opener(GitHubRedirect()).open(req,timeout=30)
+    # Windows CryptoAPI can build/fetch intermediate certificate chains that
+    # the embedded Python/OpenSSL runtime cannot obtain by itself.
+    try:
+        import truststore
+        context=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except ImportError:context=ssl.create_default_context()
+    return urllib.request.build_opener(GitHubRedirect(),urllib.request.HTTPSHandler(context=context)).open(req,timeout=30)
 
 def digest(path):
     with Path(path).open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
@@ -146,7 +153,10 @@ class AppUpdater:
                 self.latest=release_info(json.loads(raw))
             self.error='';return self.state()
         except Exception as error:
-            self.error='Не удалось проверить GitHub. Проверьте интернет и попробуйте ещё раз. '+str(error)
+            reason=getattr(error,'reason',error)
+            if isinstance(reason,ssl.SSLCertVerificationError):
+                self.error='Windows не смогла проверить сертификат GitHub. Проверьте дату и время, обновления Windows и HTTPS-фильтрацию антивируса или прокси. '+str(reason)
+            else:self.error='Не удалось проверить GitHub. Проверьте интернет и попробуйте ещё раз. '+str(error)
             raise ValueError(self.error) from error
 
     def prepare(self,job):

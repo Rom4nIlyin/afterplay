@@ -123,5 +123,7 @@ def open_capture(pid,exclude=False):
     clr.AddReference(str(Path(__file__).parent/'ProcessAudio.dll'))
     from AfterplayAudio import ProcessCapture
     capture=ProcessCapture()
-    capture.Start(pid,exclude)
+    try:capture.Start(pid,exclude)
+    except Exception:
+        capture.Dispose();raise
     return capture

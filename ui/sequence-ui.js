@@ -89,10 +89,10 @@ function sequenceSelect(id,{play=false,time=null,keepPane=false,capture=true}={}
  if(player.readyState>=1)begin();else player.addEventListener('loadedmetadata',begin,{once:true,signal:sequenceEditor.abort.signal});
  if(!reuse||previous!==id||!capture)sequenceRender();else sequencePaintCursor();
 }
-function sequenceSeek(time,play=false){
+function sequenceSeek(time,play=false,capture=true){
  clearInterval(sequenceGapTimer);sequenceGapTimer=null;const previousGap=$('.sequence-gap');
  const project=sequenceProject();sequenceCursor=Math.max(0,Math.min(time,Seq.total(project)));const row=Seq.at(project,sequenceCursor)||(sequenceCursor>=Seq.total(project)?project.segments.at(-1):null);
- if(row){sequenceSelect(row.uid,{play,time:sequenceCursor,keepPane:true});previousGap?.remove();return}
+ if(row){sequenceSelect(row.uid,{play,time:sequenceCursor,keepPane:true,capture});previousGap?.remove();return}
  previousGap?.remove();
  $('#player')?.pause();sequenceRender();
  const next=project.segments.find(r=>r.at>sequenceCursor);if(!next){sequenceStop();return}
@@ -162,10 +162,9 @@ function sequenceAttach(){
  sequenceEditor?.abort.abort();$('#dialog').dataset.sequence='true';const current=sequenceEditor={abort:new AbortController()};const on=(node,event,fn)=>node.addEventListener(event,fn,{signal:current.abort.signal});
  const nav=reviewState.aside.querySelector('.review-tabs');nav.insertAdjacentHTML('afterbegin','<button type="button" role="tab" data-review-pane="assembly" aria-controls="review-panel-assembly" aria-selected="false" tabindex="-1">Сборка</button>');
  const panel=reviewPanel('assembly','Сборка монтажа');panel.id='sequencePanel';panel.hidden=true;
- panel.innerHTML=`<h3>Монтаж из фрагментов</h3><div class="field"><label for="sequenceTitle">Название монтажа</label><input id="sequenceTitle"></div><div class="field"><label for="sequenceAddSource">Добавить запись</label><select id="sequenceAddSource">${state.clips.filter(c=>!c.name.toLowerCase().endsWith('.gif')).map(c=>`<option value="${c.id}" ${c.id===selected.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="actions">${button('sequence-add-source','Добавить целиком','plus','secondary')}${button('sequence-add-range','Добавить выделение','plus','primary')}</div><p class="hint">Нарежь исходник на вкладке «Обрезка» и добавь несколько выделений. На дорожке перетаскивай фрагменты и их края.</p><h3 id="sequenceSelected"></h3><div class="time-inputs"><label>Начало в исходнике<input id="sequenceSourceStart"></label><label>Конец в исходнике<input id="sequenceSourceEnd"></label></div><div class="field"><label for="sequenceAt">Позиция в монтаже</label><input id="sequenceAt"><small>Для свободного времени включи переключатель выше.</small></div><div class="actions">${button('sequence-range-save','Применить границы','check','secondary')}${button('sequence-up','Раньше','arrow','quiet')}${button('sequence-down','Позже','arrow','quiet')}</div><div class="actions">${button('sequence-duplicate','Дублировать','plus','secondary')}${button('sequence-remove','Удалить фрагмент','trash','quiet')}</div><p class="hint">Звук, таймер и нажатия выбранного фрагмента настраиваются в соседних вкладках.</p><div class="field"><label for="sequenceFormat">Формат монтажа</label><select id="sequenceFormat"><option value="original">MP4 · исходные пропорции</option><option value="vertical">MP4 · вертикально 9:16</option><option value="gif">GIF · 2–15 секунд</option></select></div><div class="field"><label for="sequenceResolution">Размер</label><select id="sequenceResolution"><option value="source">Как у первой записи</option><option value="1080p">До 1080p</option><option value="720p">До 720p</option></select></div>${button('sequence-export','Экспортировать весь монтаж','download','primary')}`;
+ panel.innerHTML=`<h3>Монтаж из фрагментов</h3><div class="field"><label for="sequenceTitle">Название монтажа</label><input id="sequenceTitle"></div><div class="field"><label for="sequenceAddSource">Добавить запись</label><select id="sequenceAddSource">${state.clips.filter(c=>!c.name.toLowerCase().endsWith('.gif')).map(c=>`<option value="${c.id}" ${c.id===selected.id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div><div class="actions">${button('sequence-add-source','Добавить целиком','plus','secondary')}${button('sequence-add-range','Добавить выделение','plus','primary')}</div><p class="hint">Нарежь исходник на вкладке «Обрезка» и добавь несколько выделений. На дорожке перетаскивай фрагменты и их края.</p><h3 id="sequenceSelected"></h3><div class="time-inputs"><label>Начало в исходнике<input id="sequenceSourceStart"></label><label>Конец в исходнике<input id="sequenceSourceEnd"></label></div><div class="field"><label for="sequenceAt">Позиция в монтаже</label><input id="sequenceAt"><small>Для свободного времени включи переключатель выше.</small></div><div class="actions">${button('sequence-range-save','Применить границы','check','secondary')}${button('sequence-up','Раньше','arrow','quiet')}${button('sequence-down','Позже','arrow','quiet')}</div><div class="actions">${button('sequence-duplicate','Дублировать','plus','secondary')}${button('sequence-remove','Удалить фрагмент','trash','quiet')}</div><p class="hint">Звук, таймер и нажатия выбранного фрагмента настраиваются в соседних вкладках.</p><div class="field"><label for="sequenceFormat">Формат монтажа</label><select id="sequenceFormat"><option value="original">MP4 · исходные пропорции</option><option value="vertical">MP4 · вертикально 9:16</option><option value="gif">GIF · 2–15 секунд</option></select></div><div class="field"><label for="sequenceResolution">Размер</label><select id="sequenceResolution"><option value="source">Как у первой записи</option><option value="1080p">До 1080p</option><option value="720p">До 720p</option></select></div>`;
  reviewState.aside.append(panel);
  const placement=document.createElement('label');placement.className='check sequence-placement';placement.title='Размещать фрагменты по времени. При выключении они соединяются без пауз.';placement.innerHTML='<input id="sequenceFree" type="checkbox"> Свободное размещение';$('#sequenceAt').closest('.field').before(placement);
- const projectExport=document.createElement('button');projectExport.className='primary sequence-project-export';projectExport.dataset.action='sequence-export';projectExport.textContent='Экспортировать монтаж';$('.review-export-footer').append(projectExport);
  const board=document.createElement('section');board.className='sequence-board';board.id='sequenceBoard';
  board.hidden=!reviewState.editing;
  board.innerHTML=`<div class="sequence-toolbar"><b>Монтаж</b><div class="sequence-tools"><button id="sequenceUndo" data-action="sequence-undo" title="Отменить изменение монтажа" aria-label="Отменить изменение монтажа">↶</button><button id="sequenceRedo" data-action="sequence-redo" title="Повторить изменение монтажа" aria-label="Повторить изменение монтажа">↷</button>${button('sequence-split','Разрезать','film','quiet','title="Разрезать · S"')}<span class="sequence-tool-divider"></span><button data-action="sequence-fit" title="Весь монтаж на экране" aria-label="Весь монтаж на экране">↔</button><button data-action="sequence-zoom-out" title="Уменьшить дорожку" aria-label="Уменьшить дорожку">−</button><button data-action="sequence-zoom-in" title="Увеличить дорожку" aria-label="Увеличить дорожку">+</button></div></div><div class="sequence-scroll" id="sequenceScroll" title="Клик — перейти к моменту · линейка — перемотка · колесо — прокрутка · Ctrl + колесо — масштаб · средняя кнопка — перемещение дорожки"><div class="sequence-rail" id="sequenceRail"><div id="sequenceRuler" class="sequence-ruler"></div><div id="sequenceBlocks" class="sequence-blocks"></div><div id="sequenceCursor" class="sequence-cursor" role="slider" tabindex="0" aria-label="Позиция в монтаже" aria-valuemin="0"><span class="sequence-cursor-grip"></span></div></div></div><p id="sequenceEmpty" class="hint">Выбери отрезок исходника и нажми «+ Выделение».</p>`;
@@ -174,7 +173,7 @@ function sequenceAttach(){
  const sourceAdd=document.createElement('button');sourceAdd.type='button';sourceAdd.className='quiet';sourceAdd.dataset.action='sequence-add-range';sourceAdd.textContent='+ В монтаж';$('.review-timeline .trim-heading')?.append(sourceAdd);
  on(player,'timeupdate',()=>{
   const row=sequenceRow();if(!row||selected?.id!==row.id)return;
-  if(sequenceLoading||sequenceOpening||sequenceNavigation?.type==='scrub'||$('.sequence-gap'))return;
+  if(sequenceLoading||sequenceOpening||sequenceNavigation||$('.sequence-gap'))return;
   sequenceCursor=Math.max(row.at,Math.min(row.at+Seq.length(row),row.at+player.currentTime-row.start));sequencePaintCursor();
   if(sequencePlaying&&player.currentTime>=row.end-.025){const next=montageDraft.segments[montageDraft.segments.indexOf(row)+1];if(next)sequenceSeek(row.at+Seq.length(row)+.00001,true);else sequenceStop()}
  });
@@ -252,7 +251,8 @@ function sequenceEndNavigation(cancel=false){
  if(nav.type==='clip'){
   if(cancel){montageDraft=nav.project;clearTimeout(sequenceMotionTimer);const board=$('#sequenceBoard');if(board)delete board.dataset.reordering;sequenceRender();return}
   if(nav.moved)sequenceRemember();
-  sequenceSelect(nav.uid,{time:nav.moved?Seq.find(montageDraft,nav.uid).at:nav.time,keepPane:true,capture:false});
+  if(nav.moved)sequenceSeek(nav.cursor,false,false);
+  else sequenceSelect(nav.uid,{time:nav.time,keepPane:true,capture:false});
   const board=$('#sequenceBoard');clearTimeout(sequenceMotionTimer);sequenceMotionTimer=setTimeout(()=>{if(board)delete board.dataset.reordering},220);
  }
  sequencePaintCursor();
@@ -266,8 +266,7 @@ function sequencePointerDown(event){
  if(pan)scroll.classList.add('panning');
  else if(block){
   sequenceCapture();sequenceRemember();const row=Seq.find(sequenceProject(),block.dataset.sequencePart);
-  Object.assign(sequenceNavigation,{uid:row.uid,id:row.id,at:row.at,start:row.start,end:row.end,edge:event.target.dataset.sequenceEdge||null,project:Seq.clone(montageDraft),moved:false,time:SeqView.time(event.clientX,rect.left,scroll.scrollLeft,sequenceZoom,sequenceDuration())});sequenceDrag=sequenceNavigation;
-  sequenceSelect(row.uid,{time:sequenceNavigation.time,keepPane:true,capture:false});
+  Object.assign(sequenceNavigation,{uid:row.uid,id:row.id,at:row.at,start:row.start,end:row.end,edge:event.target.dataset.sequenceEdge||null,project:Seq.clone(montageDraft),moved:false,cursor:sequenceCursor,time:SeqView.time(event.clientX,rect.left,scroll.scrollLeft,sequenceZoom,sequenceDuration())});sequenceDrag=sequenceNavigation;
  }else sequenceSeek(SeqView.time(event.clientX,rect.left,scroll.scrollLeft,sequenceZoom,sequenceDuration()));
  $('#sequenceCursor')?.focus({preventScroll:true});sequenceNavFrame=requestAnimationFrame(sequenceNavigationTick);
 }
@@ -297,6 +296,7 @@ reviewSetMode=function(editing,pane){
   if(row){sequenceId=row.uid;sequenceCursor=row.at;sequenceRestore()}
  }
  beforeSequenceMode(editing,pane);sequenceLayout();sequencePaintCursor();
+ const exportButton=reviewState?.aside.querySelector('[data-action=export]');if(exportButton&&sequenceActive())exportButton.innerHTML=icon('download')+(reviewState.pane==='export'?'Сохранить монтаж':'К экспорту');
 };
 const beforeSequenceModal=modal;
 modal=function(...args){if(sequenceEditor){if(!sequenceOpening){sequenceEndNavigation(true);sequenceCapture();sequenceStop()}sequenceEditor.abort.abort();sequenceEditor=null}return beforeSequenceModal(...args)};
@@ -309,7 +309,7 @@ action=async function(name,el){
   sequenceStop();if(name==='frame-prev'&&time<=row.start+step*.5||name==='frame-next'&&time>=row.end-step*1.5){sequenceSeek(sequenceCursor+(name==='frame-prev'?-step:step));return}
  }
  if(name==='montage-create'){sequenceCapture();return beforeSequenceAction(name,el)}
- if(name==='montage-export')name='sequence-export';
+ if(name==='montage-export'||name==='export'&&sequenceActive()&&reviewState.pane==='export')name='sequence-export';
  if(!name.startsWith('sequence-'))return beforeSequenceAction(name,el);
  const project=sequenceProject(),row=sequenceRow();
  if(name==='sequence-play'){sequencePlay();return}

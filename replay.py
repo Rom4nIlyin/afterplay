@@ -120,7 +120,7 @@ class Replay:
         self.last_saved=None;self.hotkey_ok=False;self.hotkey_thread=None;self.hotkey_tid=None
         self.session_marks=[];self.active_profile=''
         self._extra_audio_captures=[];self._extra_audio_readers=[]
-        self._microphone=None;self.audio_titles=None
+        self._microphone=None;self.audio_titles=None;self._optional_audio=[]
         self.tray=None;self.auto_owned=False;self.hotkeys=None
         self.settings={**DEFAULTS,**suite.cfg.get('replay',{})}
         if 'audio_mode' not in suite.cfg.get('replay',{}) and self.settings['audio']=='none':
@@ -224,10 +224,10 @@ class Replay:
         if cfg['capture_mode']=='window' and not cfg['window_path']:raise ValueError('Выберите окно для записи')
         if 'chat_pid' in args:
             pid=int(args['chat_pid'])
+            cfg['chat_pid']=0
             if pid:
                 chat=next((a for a in process_audio.audio_applications() if a['pid']==pid),None)
-                if not chat:raise ValueError('Приложение чата закрыто. Обновите список')
-                cfg.update(chat_pid=pid,chat_path=chat['path'])
+                if chat:cfg.update(chat_pid=pid,chat_path=chat['path'])
         if 'chat_path' in args:
             import ntpath
             path=str(args['chat_path'])
@@ -354,44 +354,7 @@ class Replay:
                 if not window and len(candidates)==1:window=candidates[0]
                 if not window:raise ValueError('Выбранное окно недоступно. Запустите приложение и обновите список.')
                 if window['minimized']:raise ValueError('Разверните окно перед включением записи')
-            audio=None
-            mode=self.settings['audio_mode']
-            if mode=='system':
-                devices=audio_devices()
-                audio=next((d for d in devices if str(d['id'])==self.settings['audio']),None)
-                if self.settings['audio']=='default':audio=next((d for d in devices if d['default']),None)
-                if not audio:raise ValueError('Устройство системного звука недоступно. Выбери его заново.')
-            elif mode in {'game','exclude','multitrack'}:
-                target=window if window and self.settings['audio_follow_window'] and mode in {'game','multitrack'} else process_audio.resolve_target(self.settings)
-                audio={'name':('Только ' if mode=='game' else 'Всё кроме ')+target['name'],
-                       'pid':target['pid'],'rate':48000,'channels':2,'process':True,'exclude':mode=='exclude'}
-                if mode=='multitrack':
-                    chat=process_audio.resolve_chat(self.settings)
-                    if chat['pid']==target['pid'] or chat['path'].casefold()==target['path'].casefold():raise ValueError('Для игры и чата выберите разные приложения')
-                    audio['name']='Игра + '+chat['name']+' · 3 дорожки'
-                    audio['sources']=[{**audio,'name':'Игра','queue':queue.Queue(maxsize=256)},
-                                      {'pid':chat['pid'],'process':True,'exclude':False,'name':'Discord / чат','queue':queue.Queue(maxsize=256)}]
-            if self.settings.get('microphone_enabled'):
-                import microphone
-                devices=microphone.devices();chosen=None
-                if self.settings['microphone_device']=='default':chosen=next((d for d in devices if d['default']),None)
-                else:
-                    chosen=next((d for d in devices if d['name']==self.settings.get('microphone_name')),None)
-                    if not chosen and not self.settings.get('microphone_name'):chosen=next((d for d in devices if d['id']==self.settings['microphone_device']),None)
-                if not chosen:raise ValueError('Микрофон недоступен. Выберите устройство заново или отключите микрофон.')
-                mic={'microphone':True,'device':chosen,'name':'Микрофон','queue':queue.Queue(maxsize=256)}
-                if audio:
-                    if not audio.get('sources'):
-                        original=audio
-                        if original['rate']!=48000 or original['channels']!=2:
-                            # Loopback is converted to the same format as microphone/process audio.
-                            original['resample']=True
-                        audio={'rate':48000,'channels':2,'name':original['name'],'output_name':original['name'],
-                               'sources':[{**original,'name':'Игра' if mode=='game' else 'Звук устройства','queue':queue.Queue(maxsize=256)}]}
-                    audio['sources'].append(mic)
-                    audio['titles']=['Общий звук',*(s['name'] for s in audio['sources'])]
-                else:audio={'rate':48000,'channels':2,'name':'Микрофон','sources':[mic],'titles':['Микрофон']}
-                audio['name']+=' + микрофон' if mode!='none' else ''
+            audio=self._audio_device(window)
             self.audio_titles=audio.get('titles') or (['Общий звук','Игра','Discord / чат'] if audio.get('sources') else ['Общий звук']) if audio else []
             self.audio_name=audio['name'] if audio else 'Без звука'
             check=subprocess.run([self.suite.ff(),'-v','error','-f','lavfi','-i','color=s=640x360:r=30',
@@ -469,9 +432,47 @@ class Replay:
             self.continuous=False;self.replay_enabled=False;self.phase='error';self.error=str(e)
             raise
 
+    def _audio_device(self,window=None):
+        audio=None
+        mode=self.settings['audio_mode']
+        if mode=='system':
+            devices=audio_devices()
+            audio=next((d for d in devices if str(d['id'])==self.settings['audio']),None)
+            if self.settings['audio']=='default':audio=next((d for d in devices if d['default']),None)
+            if not audio:raise ValueError('Устройство системного звука недоступно. Выбери его заново.')
+        elif mode in {'game','exclude','multitrack'}:
+            target=window if window and self.settings['audio_follow_window'] and mode in {'game','multitrack'} else process_audio.resolve_target(self.settings)
+            audio={'name':('Только ' if mode=='game' else 'Всё кроме ')+target['name'],
+                   'pid':target['pid'],'rate':48000,'channels':2,'process':True,'exclude':mode=='exclude'}
+            if mode=='multitrack':
+                try:chat=process_audio.resolve_chat(self.settings)
+                except ValueError:chat={'pid':0,'path':'','name':'Discord / чат'}
+                if chat['pid']==target['pid'] or chat['path'].casefold()==target['path'].casefold():raise ValueError('Для игры и чата выберите разные приложения')
+                audio['name']='Игра + '+chat['name']+' · 3 дорожки'
+                audio['sources']=[{**audio,'name':'Игра','queue':queue.Queue(maxsize=256)},
+                                  {'pid':chat['pid'],'game_pid':target['pid'],'process':True,'optional':'chat','exclude':False,'name':'Discord / чат','queue':queue.Queue(maxsize=256)}]
+        if self.settings.get('microphone_enabled'):
+            import microphone
+            mic={'microphone':True,'optional':'microphone','name':'Микрофон','queue':queue.Queue(maxsize=256)}
+            if audio:
+                if not audio.get('sources'):
+                    original=audio
+                    if original['rate']!=48000 or original['channels']!=2:
+                        # Loopback is converted to the same format as microphone/process audio.
+                        original['resample']=True
+                    audio={'rate':48000,'channels':2,'name':original['name'],'output_name':original['name'],
+                           'sources':[{**original,'name':'Игра' if mode=='game' else 'Звук устройства','queue':queue.Queue(maxsize=256)}]}
+                audio['sources'].append(mic)
+                audio['titles']=['Общий звук',*(s['name'] for s in audio['sources'])]
+            else:audio={'rate':48000,'channels':2,'name':'Микрофон','sources':[mic],'titles':['Микрофон']}
+            audio['name']+=' + микрофон' if mode!='none' else ''
+        return audio
+
     def _open_audio(self,device):
+        self._optional_audio=[s for s in device.get('sources',[]) if s.get('optional')]
         if device.get('sources'):
             for source in device['sources']:
+                if source.get('optional'):continue
                 if source.get('microphone'):
                     import microphone
                     self._microphone=microphone.Capture(source['device'],source['queue'],self.settings['microphone_gain'])
@@ -483,6 +484,7 @@ class Replay:
                 self._extra_audio_captures.append(capture)
                 reader=threading.Thread(target=self._process_audio_reader,args=(capture,source['queue']),daemon=True)
                 self._extra_audio_readers.append(reader);reader.start()
+            self._refresh_optional_audio()
             return
         if device.get('process'):
             capture=process_audio.open_capture(device['pid'],device['exclude'])
@@ -491,6 +493,54 @@ class Replay:
             self._process_reader.start()
             return
         self._open_loopback(device,self._audio_queue)
+
+    def _close_optional_audio(self,source):
+        stop=source.get('_stop')
+        if stop:stop.set()
+        reader=source.pop('_reader',None)
+        if reader and reader is not threading.current_thread():reader.join(timeout=2)
+        capture=source.pop('_capture',None)
+        if capture:
+            try:
+                if source['optional']=='microphone':capture.close()
+                else:capture.Dispose()
+            except Exception:pass
+        source.pop('_stop',None)
+
+    def _refresh_optional_audio(self):
+        """Keep fixed, clocked tracks silent until their selected source exists."""
+        import microphone
+        for source in self._optional_audio:
+            if self.stop_event.is_set():return
+            try:
+                capture=source.get('_capture')
+                if source['optional']=='microphone':
+                    devices=microphone.devices();name=self.settings.get('microphone_name')
+                    if self.settings['microphone_device']=='default':chosen=next((d for d in devices if d['default']),None)
+                    else:chosen=next((d for d in devices if d['name']==name),None) if name else next((d for d in devices if d['id']==self.settings['microphone_device']),None)
+                    if capture and (not chosen or chosen!=source.get('device') or not capture.is_active()):
+                        self._close_optional_audio(source);capture=None
+                    if capture or not chosen:continue
+                    source['device']=chosen
+                    source['_capture']=microphone.Capture(chosen,source['queue'],self.settings['microphone_gain'])
+                else:
+                    if capture and (source.get('_error') or not process_audio.is_alive(source['pid'])):
+                        self._close_optional_audio(source);capture=None
+                    if capture:continue
+                    target=process_audio.resolve_chat(self.settings)
+                    # Never duplicate the game's audio in the chat track.
+                    if target['pid']==source.get('game_pid'):continue
+                    source['pid']=target['pid'];source['_error']='';source['_stop']=threading.Event()
+                    capture=process_audio.open_capture(target['pid'],False);source['_capture']=capture
+                    reader=threading.Thread(target=self._process_audio_reader,args=(capture,source['queue'],source),daemon=True)
+                    source['_reader']=reader;reader.start()
+                source.pop('_warning',None)
+                self.suite.log('audio_source_connected',source=source['name'])
+            except Exception as error:
+                # Optional inputs never interrupt video or the game's sound.
+                message=str(error)
+                if source.get('_warning')!=message:
+                    self.suite.log('audio_source_waiting',source=source['name'],error=message);source['_warning']=message
 
     def _open_loopback(self,device,destination,output_rate=None):
         import pyaudiowpatch as pa
@@ -525,10 +575,11 @@ class Replay:
         self._audio_stream=self._audio_manager.open(format=pa.paFloat32,channels=device['channels'],rate=device['rate'],
                          input=True,input_device_index=device['id'],frames_per_buffer=1024,stream_callback=callback)
 
-    def _process_audio_reader(self,capture,destination=None):
+    def _process_audio_reader(self,capture,destination=None,source=None):
         destination=self._audio_queue if destination is None else destination
+        source_stop=source.get('_stop') if source is not None else None
         try:
-            while not self.stop_event.is_set():
+            while not self.stop_event.is_set() and not (source_stop and source_stop.is_set()):
                 if capture.Error:raise RuntimeError(str(capture.Error))
                 block=capture.ReadPacket()
                 if block is None:self.stop_event.wait(.005);continue
@@ -547,7 +598,9 @@ class Replay:
                     except queue.Empty:pass
                     try:destination.put_nowait(packet)
                     except queue.Full:pass
-        except Exception as e:self.audio_error=str(e)
+        except Exception as e:
+            if source is not None:source['_error']=str(e)
+            else:self.audio_error=str(e)
 
     def _progress_reader(self,proc):
         for line in iter(proc.stdout.readline,b''):
@@ -560,8 +613,11 @@ class Replay:
                     except ValueError:pass
 
     def _maintain(self,audio):
-        last_device_check=0
+        last_device_check=0;last_optional_check=0
         while not self.stop_event.wait(.5):
+            if time.monotonic()-last_optional_check>2:
+                last_optional_check=time.monotonic()
+                with self.lock:self._refresh_optional_audio()
             if getattr(self,'window_hwnd',None) and ctypes.windll.user32.IsIconic(wintypes.HWND(self.window_hwnd)):
                 self.error='Окно свёрнуто. Разверните его и включите повтор заново.'
                 self.stop();self.phase='error';break
@@ -601,15 +657,15 @@ class Replay:
                 if audio.get('process') and not process_audio.is_alive(audio['pid']):
                     self.error='Выбранная игра или приложение закрыто. Запусти его и включи повтор заново.'
                     self.stop();self.phase='error';break
-                if any(s.get('process') and not process_audio.is_alive(s['pid']) for s in audio.get('sources',[])):
+                if any(s.get('process') and not s.get('optional') and not process_audio.is_alive(s['pid']) for s in audio.get('sources',[])):
                     if self.continuous:
                         self.stop();break
                     self.stop(preserve=True)
                     try:
                         saved=self.save({'progress':0},allow_stopped=True)
-                        self.error='Приложение чата закрыто. Доступный повтор сохранён.'
-                        if self.suite.desktop:self.suite.desktop.notify('Чат закрылся · повтор сохранён',Path(saved['path']).name)
-                    except Exception as error:self.error='Приложение чата закрыто: '+str(error)
+                        self.error='Игра закрыта. Доступный повтор сохранён.'
+                        if self.suite.desktop:self.suite.desktop.notify('Игра закрыта · повтор сохранён',Path(saved['path']).name)
+                    except Exception as error:self.error='Игра закрыта: '+str(error)
                     self.phase='error';break
                 try:
                     if self.settings['audio_mode']=='system' and self.settings['audio']=='default':
@@ -656,6 +712,8 @@ class Replay:
         capture=getattr(self,'_process_capture',None)
         if capture:
             capture.Dispose();self._process_capture=None
+        for source in self._optional_audio:self._close_optional_audio(source)
+        self._optional_audio=[]
         for reader in self._extra_audio_readers:
             if reader is not threading.current_thread():reader.join(timeout=2)
         for capture in self._extra_audio_captures:capture.Dispose()

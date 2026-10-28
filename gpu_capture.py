@@ -129,6 +129,7 @@ class AudioMux:
                     audio.mux(mux)
                 self.late_audio_frames=audio.late_frames
                 self.stop_event.wait(.005)
+            audio.finish(mux,max(0,round((time.perf_counter()-self.epoch)*rate)))
         except Exception as error:
             if not self.stop_event.is_set():self.error=str(error)
         finally:

@@ -111,6 +111,7 @@ class Suite:
         self.export_controls = {}
         self.children = set()
         self.window = None
+        self.chrome = None
         self.cfg_path = self.data / 'settings.json'
         self._saved_cfg = {}
         self.cfg = json.loads(self.cfg_path.read_text('utf-8')) if self.cfg_path.exists() else {
@@ -727,12 +728,34 @@ class Suite:
             self.cfg['pet']={key:cfg[key] for key in ('enabled','sound')}
             self.save_cfg()
             return self.cfg['pet']
+        if action=='onboarding_offer':
+            # Claim the first offer on disk before displaying it, including if
+            # the user quits without explicitly skipping or finishing the tour.
+            with self.lock:
+                current=json.loads(self.cfg_path.read_text('utf-8')).get('onboarding',{})
+                if current.get('status'):return {'show':False,'onboarding':current}
+                self.cfg['onboarding']={'version':1,'status':'offered'}
+                self.save_cfg()
+                return {'show':True,'onboarding':self.cfg['onboarding']}
+        if action=='editor_layout_config':
+            height=arg.get('timeline_height')
+            if type(height) not in (int,float) or not 110<=height<=1200:raise ValueError('Некорректная высота дорожки')
+            self.cfg['editor_layout']={'timeline_height':round(height)}
+            self.save_cfg()
+            return self.cfg['editor_layout']
         if action=='onboarding_config':
             status=arg.get('status')
             if status not in {'skipped','completed'}:raise ValueError('Некорректный статус обучения')
             self.cfg['onboarding']={'version':1,'status':status}
             self.save_cfg()
             return self.cfg['onboarding']
+        if action=='window_state':
+            return self.chrome.state() if self.chrome else {'native':False,'styled':False,'maximized':False}
+        if action=='window_chrome_config':
+            return self.chrome.configure(arg.get('colors')) if self.chrome else {'native':False,'styled':False,'maximized':False}
+        if action=='window_control':
+            if not self.chrome:raise ValueError('Управление окном доступно в AFTERPLAY')
+            return self.chrome.control(arg.get('command'),arg.get('edge'))
         if action=='desktop_config':
             choice=arg.get('close_action')
             if choice not in {'close','tray'}:raise ValueError('Некорректное действие крестика')
@@ -953,9 +976,9 @@ def server_for(suite, token=None, port=0):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
-                if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
+                if route in {'','window-chrome.js','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
-                elif route in {'sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
+                elif route in {'scrollbars.css','sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
                     p=BASE/'ui'/route
                 elif route.startswith('backgrounds/'):
                     p=safe_child(BASE/'ui',route)
@@ -1064,7 +1087,10 @@ def main():
         import webview
         threading.Thread(target=server.serve_forever,daemon=True).start()
         suite.window=webview.create_window('AFTERPLAY',url,
-                                          width=1600,height=1000,min_size=(1050,700),background_color='#101314',hidden=args.smoke or args.autostart)
+                                          width=1600,height=1000,min_size=(1050,700),background_color='#101314',hidden=args.smoke or args.autostart,
+                                          frameless=True,easy_drag=False,shadow=True)
+        from window_chrome import WindowChrome
+        suite.chrome=WindowChrome(suite)
         if suite.replay and not args.smoke:suite.replay.attach_desktop()
         if not args.smoke:
             from desktop import Desktop
@@ -1094,6 +1120,7 @@ def main():
                 suite.window.destroy()
         try:
             def ready():
+                suite.chrome.attach()
                 if args.smoke:smoke()
                 else:
                     if suite.desktop:suite.desktop.attach_navigation()

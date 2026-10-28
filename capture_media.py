@@ -205,6 +205,8 @@ class MediaMux:
                     next_video+=1/self.fps
                     if next_video<now-1/self.fps:next_video=now+1/self.fps
                 self.stop_event.wait(.002)
+            if timeline and last_pts>=0:
+                timeline.finish(mux,round((last_pts/1000000+1/self.fps)*rate))
         except (OSError,ValueError) as error:
             if not self.stop_event.is_set():self.error=str(error)
         except Exception as error:

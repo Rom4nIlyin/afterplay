@@ -53,6 +53,10 @@ class Capture:
         except Exception:
             self.close();raise
 
+    def is_active(self):
+        try:return not self.closed and not self.error and self.stream is not None and self.stream.is_active()
+        except Exception:return False
+
     def close(self):
         self.closed=True
         if self.stream:

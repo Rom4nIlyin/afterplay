@@ -27,7 +27,7 @@ vm.createContext(context);const source=fs.readFileSync(require.resolve('../ui/se
 vm.runInContext(source.slice(source.indexOf('function sequenceRender(){'),source.indexOf('function sequenceAttach(){')),context);
 context.sequenceRender();assert.equal(context.sequenceLeft,922,'hidden replacement must keep horizontal viewport');
 scroll.clientWidth=857;context.sequenceRender();assert.equal(scroll.scrollLeft,922,'viewport returns when new source becomes visible');
-let stops=0;Object.assign(context,{sequenceOpening:true,sequenceEditor:null,sequenceStop:()=>stops++,beforeSequenceMode:()=>{},sequenceLayout:()=>{}});
+let stops=0;Object.assign(context,{reviewState:null,sequenceOpening:true,sequenceEditor:null,sequenceStop:()=>stops++,beforeSequenceMode:()=>{},sequenceLayout:()=>{}});
 vm.runInContext(source.slice(source.indexOf('reviewSetMode=function(editing,pane){'),source.indexOf('const beforeSequenceModal=modal;')),context);
 context.reviewSetMode(false);assert.equal(stops,0,'temporary viewer creation during source transition must not stop the project');
 context.sequenceOpening=false;context.reviewSetMode(false);assert.equal(stops,1,'explicitly leaving edit mode stops project playback');

@@ -79,3 +79,17 @@ class StartupTests(unittest.TestCase):
                 suite.dispatch('onboarding_config',{'status':status})
                 self.assertEqual(Suite(d).cfg['onboarding']['status'],status)
             with self.assertRaises(ValueError):suite.dispatch('onboarding_config',{'status':'other'})
+    def test_onboarding_is_offered_once_even_when_quit_before_skip(self):
+        with tempfile.TemporaryDirectory() as d:
+            first=Suite(d);other=Suite(d)
+            self.assertTrue(first.dispatch('onboarding_offer',{})['show'])
+            self.assertFalse(other.dispatch('onboarding_offer',{})['show'])
+            self.assertFalse(Suite(d).dispatch('onboarding_offer',{})['show'])
+            first.dispatch('onboarding_config',{'status':'completed'})
+            self.assertFalse(Suite(d).dispatch('onboarding_offer',{})['show'])
+    def test_editor_height_survives_reopen_and_rejects_invalid_values(self):
+        with tempfile.TemporaryDirectory() as d:
+            suite=Suite(d);suite.dispatch('editor_layout_config',{'timeline_height':300})
+            self.assertEqual(Suite(d).cfg['editor_layout']['timeline_height'],300)
+            for value in (True,float('nan'),float('inf'),0,1300):
+                with self.assertRaises(ValueError):suite.dispatch('editor_layout_config',{'timeline_height':value})

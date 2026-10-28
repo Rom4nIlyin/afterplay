@@ -90,6 +90,7 @@ function reviewSetMode(editing,pane=null){
   requestAnimationFrame(()=>{if(reviewState!==current)return;updateTrimVisuals();scheduleWave()});
  }
  reviewClock();
+ current.layoutTimeline?.();
  reviewFitViewer();
 }
 function reviewFitViewer(){
@@ -116,6 +117,35 @@ function reviewPanel(name,label){
  return panel;
 }
 function reviewMove(parent,element){if(element)parent.append(element)}
+function reviewTimelineHeight(wanted,available){return Math.max(110,Math.min(1200,wanted,available-210))}
+function reviewInstallSplitter(current,viewer,timeline,on){
+ const divider=document.createElement('div');divider.className='review-divider';divider.tabIndex=0;
+ divider.setAttribute('role','separator');divider.setAttribute('aria-orientation','horizontal');divider.setAttribute('aria-label','Высота дорожки');
+ divider.title='Перетащи вверх или вниз · стрелки для точной настройки · двойной щелчок для сброса';
+ viewer.insertBefore(divider,timeline);
+ let wanted=Number(state.settings.editor_layout?.timeline_height)||220,drag=null;
+ function layout(){
+  divider.hidden=!current.editing;
+  if(!current.editing){viewer.style.removeProperty('grid-template-rows');return}
+  const height=reviewTimelineHeight(wanted,viewer.clientHeight);
+  viewer.style.gridTemplateRows=`minmax(60px,1fr) 20px 44px 10px ${height}px`;
+  divider.setAttribute('aria-valuemin','110');divider.setAttribute('aria-valuemax',Math.max(110,viewer.clientHeight-210));divider.setAttribute('aria-valuenow',height);
+  updateTrimVisuals();
+ }
+ async function save(){
+  wanted=reviewTimelineHeight(wanted,viewer.clientHeight);
+  state.settings.editor_layout={timeline_height:wanted};
+  try{state.settings.editor_layout=await api('editor_layout_config',state.settings.editor_layout)}catch(error){toast(error.message,true)}
+ }
+ current.layoutTimeline=layout;
+ on(divider,'pointerdown',event=>{if(event.button!==0)return;event.preventDefault();drag={pointer:event.pointerId,y:event.clientY,height:reviewTimelineHeight(wanted,viewer.clientHeight)};divider.setPointerCapture(event.pointerId)});
+ on(divider,'pointermove',event=>{if(!drag||event.pointerId!==drag.pointer)return;wanted=reviewTimelineHeight(drag.height+drag.y-event.clientY,viewer.clientHeight);layout()});
+ on(divider,'pointerup',event=>{if(!drag||event.pointerId!==drag.pointer)return;drag=null;divider.releasePointerCapture(event.pointerId);save()});
+ on(divider,'pointercancel',()=>{drag=null});on(divider,'lostpointercapture',()=>{drag=null});
+ on(divider,'dblclick',()=>{wanted=220;layout();save()});
+ on(divider,'keydown',event=>{if(!['ArrowUp','ArrowDown','Home'].includes(event.key))return;event.preventDefault();wanted=event.key==='Home'?220:wanted+(event.key==='ArrowUp'?20:-20);layout();save()});
+ current.observer=new ResizeObserver(layout);current.observer.observe(viewer);layout();
+}
 const beforeReviewOpen=openClip;
 openClip=function(id){
  beforeReviewOpen(id);
@@ -186,6 +216,7 @@ openClip=function(id){
   const exportButton=editor.querySelector('[data-action="export"]');exportButton.innerHTML=icon('download')+'Сохранить клип';footer.append(exportButton);aside.append(footer);
   frameControls.remove();
   reviewMove(viewer,trim);
+  reviewInstallSplitter(current,viewer,trim,on);
   const setVolume=value=>{player.volume=value;if(studioEditor?.audio)studioEditor.audio.volume=value;$('#reviewMute').innerHTML=reviewIcon(value>0?'volume':'mute');$('#reviewMute').title=value>0?'Выключить звук':'Включить звук';$('#reviewMute').setAttribute('aria-label',$('#reviewMute').title)};
   on($('#reviewPlay'),'click',async()=>{if(player.paused){try{await player.play()}catch(error){toast(error.message,true)}}else player.pause()});
   on(player,'click',e=>{e.preventDefault();e.stopPropagation();if(document.fullscreenElement===stage)stage.focus({preventScroll:true});$('#reviewPlay').click()});

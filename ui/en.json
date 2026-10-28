@@ -1138,5 +1138,10 @@
   "Воспроизвести монтаж": "Play project",
   "Размещать фрагменты по времени. При выключении они соединяются без пауз.": "Place segments at specific times. Disable to join them without gaps.",
   "Клик — перейти к моменту · линейка — перемотка · колесо — прокрутка · Ctrl + колесо — масштаб · средняя кнопка — перемещение дорожки": "Click to seek · drag ruler to scrub · wheel to scroll · Ctrl + wheel to zoom · middle drag to pan",
-  "Для свободного времени включи переключатель выше.": "Enable free placement above to set a timeline position."
+  "Для свободного времени включи переключатель выше.": "Enable free placement above to set a timeline position.",
+  "Сохранить монтаж": "Save project",
+  "Высота дорожки": "Timeline height",
+  "Перетащи вверх или вниз · стрелки для точной настройки · двойной щелчок для сброса": "Drag up or down · arrow keys to adjust · double-click to reset",
+  "Некорректная высота дорожки": "Invalid timeline height",
+  "Windows не смогла проверить сертификат GitHub. Проверьте дату и время, обновления Windows и HTTPS-фильтрацию антивируса или прокси.": "Windows could not verify GitHub’s certificate. Check the date and time, Windows updates, and HTTPS filtering in your antivirus or proxy."
 }

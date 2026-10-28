@@ -50,6 +50,12 @@ class AudioPackets:
             packet.pts=packet.dts=pos;packet.duration=frames;packet.time_base=stream.time_base
             container.mux(packet)
 
+    def finish(self,container,end):
+        # Live capture intentionally holds audio back for WASAPI packets. Drain
+        # that lookahead before closing so a manual recording keeps its tail.
+        self.drain()
+        while self.cursor<end:self.mux(container,min(1024,end-self.cursor))
+
 
 def export_audio(info,args):
     """Return FFmpeg audio filters/maps plus expected output count and titles."""
