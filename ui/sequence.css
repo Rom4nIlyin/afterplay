@@ -1,0 +1,59 @@
+/* Card selection and Add remain distinct controls. */
+body .cinema-card .cinema-check{left:52px;top:12px;pointer-events:none}
+body .cinema-list-row .cinema-check{left:47px;top:8px}
+/* Give the editor the available window and retain the quick seek bar. */
+.review-dialog[data-editing=true],body.onyx-cinema .studio-refined[data-editing=true]{width:calc(100vw - 16px);height:calc(100vh - 16px);max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);border-radius:10px}
+.review-dialog[data-editing=true][data-sequence=true] .review-viewer,
+body.onyx-cinema .studio-refined[data-editing=true][data-sequence=true] .review-viewer{grid-template-rows:minmax(80px,1fr) 20px 44px 148px;row-gap:5px}
+.review-dialog[data-editing=true][data-sequence=true] .review-timeline{max-height:148px;min-height:0;overflow:auto}
+.sequence-board{min-width:0;min-height:0;border:1px solid var(--line);border-radius:9px;background:var(--panel,#10131b);padding:7px 9px;display:grid;grid-template-rows:28px minmax(0,1fr);gap:4px;overflow:hidden}
+.sequence-board[hidden]{display:none!important}
+.sequence-toolbar{display:flex;align-items:center;gap:12px;min-width:0}
+.sequence-toolbar>b{font-size:11px;font-weight:600;color:var(--muted)}
+.sequence-tools{display:flex;gap:4px;align-items:center;margin-left:auto}
+.sequence-tools button{font-size:11px;min-height:26px;height:26px;padding:4px 7px;box-shadow:none;border:1px solid transparent;background:transparent;color:var(--muted)}
+.sequence-tools button:hover{background:var(--hover);color:var(--text);border-color:var(--line)}
+.sequence-tools button:disabled{opacity:.3}.sequence-tools button svg{width:12px;height:12px}
+.sequence-tool-divider{height:16px;width:1px;background:var(--line);margin:0 4px}
+.sequence-scroll{overflow-x:auto;overflow-y:hidden;min-width:0;min-height:0;touch-action:none;overscroll-behavior:contain;border-radius:5px;background:#080c1360;scrollbar-width:thin;scrollbar-color:#657284 #10161e;cursor:crosshair}
+.sequence-scroll::-webkit-scrollbar{height:12px}
+.sequence-scroll::-webkit-scrollbar-track{background:#10161e;border-radius:6px}
+.sequence-scroll::-webkit-scrollbar-thumb{background:#657284;border:3px solid #10161e;border-radius:6px}
+.sequence-scroll::-webkit-scrollbar-thumb:hover{background:#91a0b4}
+.sequence-scroll.panning,.sequence-scroll.panning *{cursor:grabbing!important}
+.sequence-rail{position:relative;height:80px;min-width:100%;user-select:none}
+.sequence-ruler{position:relative;height:24px;border-bottom:1px solid #ffffff15;cursor:crosshair}
+.sequence-ruler>span{position:absolute;top:5px;padding-left:5px;font-size:10px;font-variant-numeric:tabular-nums;color:var(--muted);border-left:1px solid #ffffff30;white-space:nowrap;pointer-events:none}
+.sequence-blocks{position:relative;height:56px}
+.sequence-block{position:absolute;top:4px;height:49px;min-width:8px;border:1px solid #8588bd70;border-radius:5px;background:#282e42;overflow:hidden;cursor:grab;touch-action:none;box-sizing:border-box;outline-offset:1px}
+.sequence-block.active{border:2px solid var(--accent,#a58bff);box-shadow:0 0 0 1px var(--accent,#a58bff)}
+.sequence-block>img{position:absolute;width:85px;height:100%;object-fit:cover;opacity:.32;pointer-events:none}
+.sequence-block-label,.sequence-block>small{position:relative;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:5px 9px;font-size:10px;color:#f0f2f9;text-shadow:0 1px 3px black;pointer-events:none}
+.sequence-block>small{font-size:9px;padding-top:1px;color:#d0d5e2}
+.sequence-edge{position:absolute;top:0;bottom:0;width:7px;background:#c8bcff35;cursor:ew-resize;z-index:3}
+.sequence-edge.left{left:0}.sequence-edge.right{right:0}
+.sequence-cursor{position:absolute;top:0;bottom:0;width:12px;margin-left:-5px;cursor:ew-resize;z-index:5;outline:none}
+.sequence-cursor:after{content:'';position:absolute;left:5px;top:8px;bottom:0;width:2px;background:#f3d27d;pointer-events:none}
+.sequence-cursor-grip{position:absolute;left:0;top:0;width:12px;height:12px;border-radius:2px 2px 5px 5px;background:#f3d27d;box-shadow:0 1px 4px #0007}
+.sequence-cursor:focus-visible .sequence-cursor-grip{outline:2px solid var(--accent);outline-offset:2px}
+.sequence-gap{position:absolute;inset:0;background:black;display:grid;place-items:center;color:#9ca6b7;font-size:12px;z-index:20}
+.sequence-frame-hold{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#030506;z-index:9;pointer-events:none}
+.sequence-board #sequenceEmpty{margin:0;font-size:11px;grid-column:1;grid-row:2;pointer-events:none;align-self:center;justify-self:center}
+#sequencePanel .time-inputs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#sequencePanel .time-inputs label{min-width:0;font-size:10px}
+#sequencePanel .time-inputs input{width:100%;font-size:11px!important;font-variant-numeric:tabular-nums}
+#sequencePanel .sequence-placement{font-size:11px;margin:14px 0}
+#sequenceSelected{font-size:12px;overflow-wrap:anywhere;margin-top:16px!important}
+#sequencePanel>.actions{gap:6px}#sequencePanel button{font-size:11px!important;padding:7px 8px!important}#sequencePanel .hint{font-size:11px}
+.sequence-project-export{margin-top:7px;width:100%;justify-content:center}
+@media(max-width:1150px){.sequence-board{padding:6px}.sequence-tools{gap:2px}.sequence-tools button{padding:4px 5px}}
+.sequence-ruler{overflow:hidden}
+/* Keyed clip elements let neighbours slide while the held clip follows the mouse. */
+.sequence-block{z-index:2;transition:transform .14s ease,box-shadow .14s ease}
+.sequence-board[data-reordering=true] .sequence-block{transition:left .16s cubic-bezier(.2,.8,.2,1),width .12s ease,transform .14s ease,box-shadow .14s ease}
+.sequence-block.is-dragging{z-index:4;transform:translateY(-3px);box-shadow:0 7px 15px #0009,0 0 0 1px var(--accent);cursor:grabbing;opacity:.95;transition:transform .12s ease,box-shadow .12s ease}
+.sequence-board[data-reordering=true] .sequence-block.is-dragging{transition:transform .12s ease,box-shadow .12s ease}
+.sequence-block.is-trimming{transition:none!important}
+.sequence-drop-slot{position:absolute;top:28px;height:49px;box-sizing:border-box;border:1px dashed var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:5px;pointer-events:none;z-index:1}
+.sequence-drop-slot[hidden]{display:none}
+@media(prefers-reduced-motion:reduce){.sequence-block{transition:none!important}}

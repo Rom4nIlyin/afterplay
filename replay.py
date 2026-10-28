@@ -131,6 +131,30 @@ class Replay:
         self.native_gpu=False;self.backend_note=''
         self.duplicate_frames=0;self.dropped_frames=0
         self._audio_queue=queue.Queue(maxsize=64)
+        self.input_track=None;self.input_recorder=None;self.input_error=''
+
+    def configure_inputs(self,enabled):
+        if type(enabled) is not bool:raise ValueError('Ожидался переключатель записи нажатий')
+        with self.lock:
+            if self.phase in {'starting','stopping'}:raise ValueError('Дождись запуска или остановки записи')
+            if enabled and self.phase=='recording' and self.input_recorder is None:
+                self._start_inputs()
+            elif not enabled and self.input_recorder is not None:
+                self.input_recorder.close();self.input_recorder=None
+            self.suite.cfg['input_recording']={'enabled':enabled};self.suite.save_cfg()
+        return self.state()
+
+    def toggle_inputs(self):
+        return self.configure_inputs(not self.suite.cfg.get('input_recording',{}).get('enabled',False))
+
+    def _start_inputs(self):
+        from input_capture import RawInputRecorder
+        if self.input_track is None:return
+        self.input_recorder=RawInputRecorder(self.input_track,getattr(self,'window_hwnd',None),self.settings.get('window_path',''))
+        self.input_error=''
+
+    def _attach_inputs(self,target,start,duration):
+        return self.input_track.attach(target,start,duration) if self.input_track else None
 
     def devices(self):
         import microphone
@@ -230,6 +254,9 @@ class Replay:
                 rows=closed_segments(self.session);end=rows[-1]['end'] if rows else 0
             else:end=0
             cutoff=0 if self.continuous else max(self.interval_start,end-self.settings['seconds'],0)
+            if not self.continuous and any(self.suite.cfg.get('hotkeys',{}).get(k) for k in ('clip_1','clip_2','clip_3')):
+                from quick_clips import retention
+                cutoff=max(0,end-retention(self))
             values=[value for value in self.session_marks if cutoff-1e-6<=value<=end+1e-6] if self.session else []
             if values!=self.session_marks:
                 self.session_marks=values
@@ -257,6 +284,9 @@ class Replay:
                     'continuous':self.continuous,'pending_recording':bool(self.continuous and self.session),
                     'replay_enabled':self.replay_enabled,'recording_seconds':round(max(0,end-self.recording_start),1) if self.continuous else 0,
                     'marker_count':len(self.session_marks),'active_profile':self.active_profile,
+                    'input_recording':{'enabled':bool(self.suite.cfg.get('input_recording',{}).get('enabled',False)),
+                                       'active':bool(self.input_recorder and self.input_recorder.thread.is_alive()),
+                                       'error':self.input_error or (self.input_recorder.error if self.input_recorder else '')},
                     'last_saved':self.last_saved,'disk_bytes':sum(r['path'].stat().st_size for r in rows if r['path'].exists())}
 
     def add_marker(self):
@@ -308,7 +338,8 @@ class Replay:
             self.native_gpu=False;self.backend_note='';self.muxer=None;self.mux_thread=None
         try:
             bitrate=self.settings['mbps'] if self.settings['quality_mode']=='cbr' else self.settings['max_mbps']
-            reserve_seconds=60 if self.continuous else self.settings['seconds']
+            from quick_clips import retention
+            reserve_seconds=60 if self.continuous else retention(self)
             needed=max(2*1024**3,int(bitrate*1000000/8*(reserve_seconds+10)*3.2)+512*1024**2)
             if shutil.disk_usage(self.root).free<needed:
                 raise ValueError(f'Для буфера и сохранения нужно минимум {needed/1024**3:.1f} ГБ свободного места')
@@ -405,6 +436,9 @@ class Replay:
             self.output_size=video_quality.output_size(self.settings,monitor['width'],monitor['height'])
             self.audio_epoch=time.perf_counter();self.video_epoch=time.time()
             self.capture_epoch=self.audio_epoch if self.native_gpu else self.video_source.first[0]
+            from input_capture import InputTrack
+            if self.input_track:self.input_track.close()
+            self.input_track=InputTrack(self.session,self.capture_epoch)
             self._audio_rate=audio['rate'] if audio else 0
             if audio:self._open_audio(audio)
             log=self.suite.data/'logs'/f'replay-{self.session.name}.log'
@@ -422,6 +456,10 @@ class Replay:
             threading.Thread(target=self._progress_reader,args=(self.proc,),daemon=True).start()
             self.started=time.monotonic()
             self.phase='recording'
+            if self.suite.cfg.get('input_recording',{}).get('enabled',False):
+                try:self._start_inputs()
+                except Exception as error:
+                    self.input_error=str(error);self.suite.log('input_capture_error',error=str(error))
             self.suite.log('replay_start',monitor=monitor,system_audio=self.audio_name,microphone=self.settings.get('microphone_enabled',False),
                            encoder=self.encoder,output_size=self.output_size,gpu_capture=self.native_gpu,backend_note=self.backend_note,settings=self.settings)
             threading.Thread(target=self._maintain,args=(audio,),daemon=True).start()
@@ -551,7 +589,8 @@ class Replay:
                 self._prune_markers()
                 rows=closed_segments(self.session)
                 if rows and not self.saving and not self.continuous:
-                    threshold=rows[-1]['end']-self.settings['seconds']-6
+                    from quick_clips import retention
+                    threshold=rows[-1]['end']-retention(self)-6
                     for row in rows:
                         if row['end']<threshold:row['path'].unlink(missing_ok=True)
             if shutil.disk_usage(self.root).free<512*1024**2:
@@ -595,6 +634,9 @@ class Replay:
             if self.phase=='stopping':return self.state()
             if self.phase=='off' and self.proc is None:return self.state()
             self.phase='stopping';self.replay_enabled=False;self.stop_event.set();proc=self.proc
+        if self.input_recorder:
+            self.input_recorder.close();self.input_recorder=None
+        if self.input_track:self.input_track.close()
         source=getattr(self,'video_source',None)
         if source:
             source.stop();self.video_source=None
@@ -695,7 +737,9 @@ class Replay:
             return self.suite.job('Сохранение записи',lambda job:self.suite.auto.manual('stop_recording',job))
         return self.suite.job('Включение записи',lambda job:self.suite.auto.manual('start_recording'))
 
-    def save(self,job,allow_stopped=False,*,full_recording=False):
+    def save(self,job,allow_stopped=False,*,full_recording=False,clip_seconds=None):
+        if clip_seconds is not None and (type(clip_seconds) is not int or not 5<=clip_seconds<=1800):
+            raise ValueError('Длительность быстрого клипа: от 5 до 1800 секунд')
         from audio_tracks import TITLES
         audio_titles=self.audio_titles if self.audio_titles is not None else (list(TITLES) if self.settings['audio_mode']=='multitrack' else ['Общий звук'] if self.settings['audio_mode']!='none' else [])
         with self.lock:
@@ -721,9 +765,9 @@ class Replay:
                 time.sleep(.1)
             if self.phase=='recording' and (not rows or rows[-1]['end']<cutoff-.1):
                 raise ValueError('Захват отстаёт от текущего времени. Повтор не сохранён: проверьте нагрузку и журнал записи.')
-            is_gif=not full_recording and self.settings.get('save_format')=='gif'
-            seconds=cutoff if full_recording else self.settings.get('gif_seconds',5) if is_gif else self.settings['seconds']
-            selected,skip,duration=select_segments(rows,cutoff,seconds,self.recording_start if full_recording else self.interval_start,minimum=.001 if full_recording else .5)
+            is_gif=not full_recording and clip_seconds is None and self.settings.get('save_format')=='gif'
+            seconds=cutoff if full_recording else clip_seconds if clip_seconds is not None else self.settings.get('gif_seconds',5) if is_gif else self.settings['seconds']
+            selected,skip,duration=select_segments(rows,cutoff,seconds,self.recording_start if full_recording else 0 if clip_seconds is not None else self.interval_start,minimum=.001 if full_recording else .5)
             if is_gif:
                 import gif_media
                 gif_media.validate_duration(duration)
@@ -741,6 +785,7 @@ class Replay:
                 self.suite.index_video(target)
                 import live_markers
                 self.last_saved['marks']=live_markers.attach(self.suite,target,mark_snapshot,selected[0]['start']+skip,duration)
+                self._attach_inputs(target,selected[0]['start']+skip,duration)
                 self.suite.log('replay_save',**self.last_saved)
                 with self.lock:self.interval_start=cutoff;self._prune_markers()
                 succeeded=True
@@ -790,9 +835,10 @@ class Replay:
             self.suite.index_video(target)
             import live_markers
             self.last_saved['marks']=live_markers.attach(self.suite,target,mark_snapshot,selected[0]['start']+skip,duration)
+            self._attach_inputs(target,selected[0]['start']+skip,duration)
             self.suite.log('replay_save',**self.last_saved)
             with self.lock:
-                if not full_recording:self.interval_start=cutoff;self._prune_markers()
+                if not full_recording and clip_seconds is None:self.interval_start=cutoff;self._prune_markers()
             succeeded=True
             return self.last_saved
         finally:
@@ -803,7 +849,7 @@ class Replay:
                 self.saving=False
                 if self.phase!='recording' and (succeeded or not self.continuous):self._cleanup_session(session);self.session=None
 
-    def save_job(self):
+    def save_job(self,clip_seconds=None):
         if self.phase!='recording':raise ValueError('Сначала включи повтор или обычную запись')
         def notice(title,message,kind):
             try:
@@ -812,7 +858,7 @@ class Replay:
         def save_with_notice(job):
             notice('Сохраняю повтор…','AFTERPLAY · подготовка видео','saving')
             try:
-                result=self.save(job)
+                result=self.save(job,clip_seconds=clip_seconds)
             except Exception as e:
                 notice('Не удалось сохранить повтор',str(e),'error')
                 raise
@@ -825,7 +871,10 @@ class Replay:
     def attach_desktop(self):
         from hotkeys import GlobalHotkeys,DEFAULTS,validate
         if os.name!='nt':return
-        self.hotkeys=GlobalHotkeys({'save':self.save_job,'record':self.recording_job,'window':lambda:self.suite.desktop and self.suite.desktop.toggle(),'mark':self.add_marker},self.suite.log)
+        from quick_clips import ACTIONS,durations
+        callbacks={'save':self.save_job,'record':self.recording_job,'window':lambda:self.suite.desktop and self.suite.desktop.toggle(),'mark':self.add_marker,'inputs':self.toggle_inputs}
+        callbacks.update({key:lambda i=i:self.save_job(durations(self.suite.cfg.get('quick_clips'))[i]) for i,key in enumerate(ACTIONS)})
+        self.hotkeys=GlobalHotkeys(callbacks,self.suite.log)
         try:self.hotkeys.configure(validate(self.suite.cfg.get('hotkeys',DEFAULTS)))
         except ValueError as error:self.suite.log('hotkey_registration_error',error=str(error))
         self.hotkey_ok=self.hotkeys.ok;self.hotkey_tid=self.hotkeys.tid

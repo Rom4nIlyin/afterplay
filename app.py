@@ -428,12 +428,27 @@ class Suite:
         timer = arg.get('timer', False)
         if not isinstance(timer, bool):
             raise ValueError('Ожидался переключатель таймера')
+        import input_capture,input_overlay
+        show_inputs=arg.get('show_inputs',False)
+        if type(show_inputs) is not bool:raise ValueError('Ожидался переключатель нажатий')
+        input_data=input_capture.read(src) if show_inputs else None
+        if show_inputs and input_data is None:raise ValueError('В этой записи нет дорожки нажатий')
+        overlay_cfg=input_overlay.settings(arg.get('input_overlay'))
         if arg.get('format') == 'gif':
             import gif_media
             gif_media.validate_duration(end-start)
             name = re.sub(r'[^\w .-]', '_', str(arg.get('name') or src.stem))[:90].strip(' .') or 'clip'
             dest = self.recordings_dir()/f'{name}-{uuid.uuid4().hex[:8]}.gif'
-            result = gif_media.encode(self, src, dest, start, end-start, job, int(arg.get('gif_width',720)), timer=timer, control=control)
+            width=int(arg.get('gif_width',720));ass=None;extra=''
+            try:
+                if show_inputs:
+                    ass=self.data/'logs'/('input-'+uuid.uuid4().hex+'.ass')
+                    ow=min(width,info['width']);oh=max(2,round(info['height']*ow/info['width']/2)*2)
+                    extra=input_overlay.render_ass(ass,input_data,start,end-start,ow,oh,overlay_cfg)
+                result = gif_media.encode(self, src, dest, start, end-start, job, width, timer=timer,control=control,extra_filter=extra)
+            finally:
+                if ass:ass.unlink(missing_ok=True)
+            if not show_inputs:input_capture.copy_trim(src,dest,start,result['duration'])
             self.index_video(dest)
             self.log('gif_export', source=str(src), start=start, end=end, **result)
             return result
@@ -446,6 +461,11 @@ class Suite:
         if timer:
             from timer_overlay import video_filter
             vf += ',' + video_filter(self.cfg.get('customization'),info.get('fps',60),self.cfg.get('language','ru'))
+        ass=None
+        if show_inputs:
+            ass=self.data/'logs'/('input-'+uuid.uuid4().hex+'.ass')
+            ow,oh=(720,1280) if vertical else (info['width']//2*2,info['height']//2*2)
+            vf+=',setpts=PTS-STARTPTS,'+input_overlay.render_ass(ass,input_data,start,end-start,ow,oh,overlay_cfg)
         from audio_tracks import export_audio
         audio_filters,audio_maps,expected_audio,titles=export_audio(info,arg)
         cmd = [self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-i', src,
@@ -483,6 +503,7 @@ class Suite:
                 raise ValueError('Размер вертикального видео не прошёл проверку')
             if control:control.commit()
             os.replace(partial, dest)
+            if not show_inputs:input_capture.copy_trim(src,dest,start,result['duration'])
             self.index_video(dest)
             self.log('export', source=str(src), output=str(dest), start=start, end=end, **result)
             return {'path': str(dest), **result, 'bytes':dest.stat().st_size}
@@ -496,6 +517,7 @@ class Suite:
                     self.children.discard(proc)
                 if control:control.release(proc)
             partial.unlink(missing_ok=True)
+            if ass:ass.unlink(missing_ok=True)
 
     def recordings_dir(self):
         return storage.recording_dir(self)
@@ -573,6 +595,34 @@ class Suite:
             if self.cfg_path.exists():
                 self.cfg = json.loads(self.cfg_path.read_text('utf-8'))
                 self._saved_cfg = json.loads(json.dumps(self.cfg))
+        if action=='inputs_config':
+            if not self.replay:raise ValueError('Запись нажатий доступна в окне AFTERPLAY')
+            return self.replay.configure_inputs(arg.get('enabled'))
+        if action=='clip_inputs':
+            import input_overlay
+            return input_overlay.metadata(self,str(arg['id']))
+        if action=='clip_inputs_config':
+            import input_overlay
+            return input_overlay.configure(self,str(arg['id']),arg.get('settings'))
+        if action=='montage_export':
+            import montage
+            # Validate source paths and trims before creating a background job.
+            montage.segments(self,arg.get('segments'))
+            return self.job('Сборка подборки',lambda job:montage.export(self,arg,job),cancellable=True)
+        if action=='montage_project':
+            path=self.data/'projects/montage.json'
+            return {'project':json.loads(path.read_text('utf-8')) if path.is_file() else None}
+        if action=='montage_project_save':
+            project=arg.get('project')
+            if not isinstance(project,dict) or not isinstance(project.get('segments'),list) or len(project['segments'])>50:raise ValueError('Некорректный проект монтажа')
+            import math
+            for row in project['segments']:
+                if not isinstance(row,dict):raise ValueError('Некорректный фрагмент')
+                clip=self.clip(row.get('id'))
+                start,end,at=row.get('start'),row.get('end'),row.get('at',0)
+                if any(type(t) not in (int,float) or not math.isfinite(t) for t in (start,end,at)) or not 0<=start<end<=clip['duration']+.05 or not 0<=at<=86400:raise ValueError('Проверь границы фрагмента')
+            with self.lock:atomic_json(self.data/'projects/montage.json',project)
+            return {'ok':True}
         if action.startswith('customize_'):
             import customization
             return customization.dispatch(self,action,arg)
@@ -620,10 +670,12 @@ class Suite:
             return self.cfg['updates']
         if action=='hotkeys_config':
             from hotkeys import validate
+            from quick_clips import durations
             values=validate(arg)
+            clips=durations(arg.get('quick_clips',self.cfg.get('quick_clips')))
             if not self.replay.hotkeys:raise ValueError('Настройка клавиш доступна в окне AFTERPLAY')
             self.replay.hotkeys.configure(values)
-            self.cfg['hotkeys']=values;self.save_cfg()
+            self.cfg['hotkeys']=values;self.cfg['quick_clips']=clips;self.save_cfg()
             return values
         if action=='appearance_config':
             appearance=self.cfg.setdefault('appearance',{})
@@ -696,6 +748,8 @@ class Suite:
             op=arg.get('op','info')
             if op=='boot_info':
                 return self.window.evaluate_js("({href:location.href,ready:document.readyState,render:typeof render,state:typeof state,errors:window.afterplayErrors||[],customErrors:window.customErrors||[],scripts:[...document.scripts].map(s=>s.src),resources:performance.getEntriesByType('resource').map(r=>({name:r.name.split('/').at(-1),status:r.responseStatus,duration:r.duration,bytes:r.decodedBodySize}))})")
+            if op=='moments_info':
+                return self.window.evaluate_js("({errors:window.afterplayErrors||[],selection:[...montageSelection],quick:quickClipValues(),quickFields:[0,1,2].map(i=>!!$('#quickClipKey'+i)),inputTab:!!$('[data-review-pane=inputs]'),inputAvailable:!!$('#previewInputs'),overlayVisible:!!inputEditor?.preview&&!inputEditor.preview.node.hidden,overlayKeys:inputEditor?.preview?.node.querySelectorAll('.pressed').length||0,montage:montageDraft,rows:document.querySelectorAll('[data-montage-row]').length,overflow:$('#dialog').open?$('#dialog').scrollWidth>$('#dialog').clientWidth:document.documentElement.scrollWidth>innerWidth,dialog:$('#dialog').open?$('#dialog').innerText.slice(0,5000):null})")
             if op=='ui_tab':
                 choice=arg.get('tab','library')
                 if choice not in {'library','settings','replay','favorites','exports','customize'}:raise ValueError('Неизвестный экран')
@@ -760,7 +814,9 @@ class Suite:
             if op=='show':self.desktop.show();return {'ok':True}
             if op=='hotkey':
                 if not self.replay or not (self.replay.hotkeys and self.replay.hotkeys.ok):raise ValueError('Горячая клавиша не зарегистрирована')
-                identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a=='save')
+                binding=arg.get('action','save')
+                if binding not in {'save','clip_1','clip_2','clip_3','inputs'}:raise ValueError('Unsupported shortcut')
+                identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a==binding)
                 ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
                 return {'ok':True}
             if op=='marker_hotkey':
@@ -771,7 +827,7 @@ class Suite:
                 return self.window.evaluate_js('({layout:window.reviewDebug?.(),errors:window.afterplayErrors||[]})')
             if op=='review_mode':
                 pane=arg.get('pane','trim')
-                if pane not in {'trim','sound','export','notes'}:raise ValueError('Unsupported pane')
+                if pane not in {'trim','sound','export','notes','inputs'}:raise ValueError('Unsupported pane')
                 self.window.evaluate_js('reviewSetMode('+json.dumps(bool(arg.get('editing')))+','+json.dumps(pane)+')')
                 return {'ok':True}
             if op=='studio_info':
@@ -808,7 +864,7 @@ class Suite:
             if action=='replay_config':return self.auto.manual('configure',arg)
             if action=='replay_start':return self.job('Включение повтора',lambda j:self.auto.manual('start_replay'))
             if action=='replay_stop':return self.job('Остановка повтора',lambda j:self.auto.manual('stop_replay'))
-            if action=='replay_save':return self.replay.save_job()
+            if action=='replay_save':return self.replay.save_job(arg.get('seconds'))
         if action == 'browse': return self.browse(arg.get('purpose'))
         if action == 'settings':
             if 'remove_video_root' in arg:
@@ -899,7 +955,7 @@ def server_for(suite, token=None, port=0):
             try:
                 if route in {'','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
-                elif route in {'pet-ui.js','pet.css','pets/rysya.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
+                elif route in {'sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
                     p=BASE/'ui'/route
                 elif route.startswith('backgrounds/'):
                     p=safe_child(BASE/'ui',route)

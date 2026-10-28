@@ -13,7 +13,7 @@ def validate_duration(value):
     return value
 
 
-def encode(suite, source, target, start, duration, job, width=720, timer=False, control=None):
+def encode(suite, source, target, start, duration, job, width=720, timer=False, control=None,extra_filter=''):
     if control:control.check()
     duration = validate_duration(duration)
     if width not in (480, 720, 960):
@@ -31,6 +31,7 @@ def encode(suite, source, target, start, duration, job, width=720, timer=False, 
         import av
         with av.open(str(source)) as media:source_fps=float(media.streams.video[0].average_rate or 60)
         overlay = video_filter(suite.cfg.get('customization'),source_fps,suite.cfg.get('language','ru')) + ','
+    if extra_filter:overlay+=extra_filter+','
     graph = (f"[0:v]setpts=PTS-STARTPTS,trim=start={trim_start:.6f}:duration={duration:.6f},setpts=PTS-STARTPTS,"
              f"fps=15,scale=w='min({width},iw)':h=-2:flags=lanczos,setsar=1,{overlay}split[a][b];"
              '[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a[v]')

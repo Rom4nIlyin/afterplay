@@ -1,0 +1,14 @@
+'use strict';
+const assert=require('node:assert/strict');
+const InputTimeline=require('../ui/input-timeline.js');
+const events=[[0,'K87',true],[.5,'M1',true],[1,'M1',false],[2,'K87',false]];
+const track=new InputTimeline(events);
+assert.deepEqual([...track.at(.75)].sort(),['K87','M1']);
+assert.deepEqual([...track.at(2)],[]);
+assert.deepEqual([...track.at(.1)],['K87']);
+assert.deepEqual([...track.at(-1)],[]);
+const many=Array.from({length:3000},(_,i)=>[i/100,'K65',i%2===0]);
+const long=new InputTimeline(many);
+for(const index of [0,254,255,256,257,1024,2999,150,2998])assert.equal(long.at(index/100).has('K65'),index%2===0);
+assert.equal(long.at(100).size,0);
+console.log('Input timeline: arbitrary seeks, exact boundaries and checkpoints passed');

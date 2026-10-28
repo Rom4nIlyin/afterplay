@@ -43,7 +43,7 @@ def parse(value):
 
 def validate(settings):
     result = {k: parse(settings.get(k, v))[0] for k, v in DEFAULTS.items()}
-    for optional in ('mark','record'):
+    for optional in ('mark','record','clip_1','clip_2','clip_3','inputs'):
         if settings.get(optional):result[optional]=parse(settings[optional])[0]
     if len(set(result.values())) != len(result):
         raise ValueError('Для каждого действия нужна отдельная комбинация')

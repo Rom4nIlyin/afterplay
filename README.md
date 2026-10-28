@@ -23,7 +23,9 @@
 | **Запись** | Экран или окно, H.264, NVIDIA NVENC при наличии поддержки и CPU-путь, профили и необязательный автозапуск по приложению. |
 | **Звук** | Устройство, выбранный процесс, исключение приложения, отдельные игра / чат и необязательная дорожка микрофона. |
 | **Видеотека** | Поиск, теги, избранное, заметки, обложка из кадра и живые превью по наведению. |
-| **Монтаж** | Точные кадры, дорожка миниатюр, звуковая волна, выбор аудиодорожек и экспорт MP4 / GIF. |
+| **Монтаж** | Общий таймлайн до 50 фрагментов: нарезка, порядок, свободное размещение, история и экспорт MP4 / GIF. |
+| **Нажатия** | Необязательная запись клавиатуры и мыши без оверлея в игре; включаемый слой в монтаже и экспорте. |
+| **Быстрые клипы** | Три дополнительные клавиши с собственной длительностью от 5 секунд до 30 минут. |
 | **Твой стиль** | Onyx Cinema с пятью палитрами и иллюстрациями; классические темы, фоны, звуки и переносимые наборы оформления. |
 
 При первом открытии короткое обучение показывает вкладки и основные настройки. Его можно пропустить или повторить через **Настройки → Пройти обучение**. Для новой установки включены автозапуск с Windows в трее и сворачивание в трей; существующие настройки сохраняются.
@@ -52,7 +54,7 @@
 
 ## От большого повтора к нужному клипу
 
-Открой запись, нажми **Монтаж**, перетащи границы или укажи точное время. Выбери звуковые дорожки, добавь таймер при необходимости и сохрани результат. Исходная запись остаётся на месте.
+Открой запись или выбери несколько карточек кнопкой **+**, затем нажми **Монтаж** / **Собрать подборку**. Добавляй несколько нарезок одного видео, меняй порядок перетаскиванием, обрезай края, разрезай и размещай фрагменты на общей дорожке. Колесо прокручивает дорожку, Ctrl + колесо меняет масштаб; верхняя полоса быстро перематывает весь проект. Черновик сохраняется автоматически. Выбери звук, таймер и отображение нажатий для каждого фрагмента, затем экспортируй монтаж. Исходные записи остаются на месте.
 
 **F** переключает полный экран, **пробел** и клик по видео — воспроизведение и паузу. Полноэкранные кнопки, перемотка и курсор скрываются через 1,5 секунды бездействия; движение мыши возвращает управление.
 
@@ -62,7 +64,7 @@
 
 ## Быстрый старт
 
-1. Скачай **`AFTERPLAY-1.12.0-Portable-Win64.zip`** со [страницы релиза](https://github.com/Rom4nIlyin/afterplay/releases/latest) и распакуй архив целиком.
+1. Скачай **`AFTERPLAY-1.13.3-Portable-Win64.zip`** со [страницы релиза](https://github.com/Rom4nIlyin/afterplay/releases/latest) и распакуй архив целиком.
 2. Запусти **`AFTERPLAY.exe`**. Python и FFmpeg входят в комплект; при необходимости программа предложит установить WebView2.
 3. На странице **Запись и повтор** выбери профиль, источник и звук. Изменения профиля сохрани зелёной кнопкой.
 4. Включи обычную запись, повтор или оба режима. Прежняя горячая клавиша сохраняет последние X минут; обычная запись сохраняется целиком при отключении. Для неё можно назначить отдельное сочетание.
@@ -119,6 +121,6 @@ AFTERPLAY Portable/
 
 ## English
 
-**AFTERPLAY is a portable video recorder, instant replay buffer, video library and clip editor for Windows.** Record a complete session or keep the last 1–30 minutes; both modes can run together. Your replay hotkey saves the last X minutes without stopping manual recording. Trim precisely and export MP4 or GIF. F toggles fullscreen; Space and a click on the video toggle playback. Fullscreen controls hide after 1.5 seconds of inactivity. Customize six distinct themes, image/GIF/video backgrounds, reusable appearance presets, sound cues and notifications. Optional microphone audio is saved as a separate track.
+**AFTERPLAY is a portable video recorder, instant replay buffer, video library and clip editor for Windows.** Record a complete session or keep the last 1–30 minutes; both modes can run together. Your replay hotkey saves the last X minutes without stopping manual recording. Build a montage with up to 50 segments: split, trim, reorder, duplicate, place freely, undo and export MP4 or GIF. Three optional hotkeys save clips of independent lengths. Optional keyboard and mouse recording stays invisible during gameplay; show or hide the input layer when editing or exporting. F toggles fullscreen; Space and a click on the video toggle playback. Fullscreen controls hide after 1.5 seconds of inactivity. Customize six distinct themes, image/GIF/video backgrounds, reusable appearance presets, sound cues and notifications. Optional microphone audio is saved as a separate track.
 
 [Download for Windows](https://github.com/Rom4nIlyin/afterplay/releases/latest) → extract the entire archive → run **AFTERPLAY.exe**. Switch to English in **Settings → Interface language**. User recordings and settings stay on your computer; an account is not required for capture or editing.

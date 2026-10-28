@@ -1,0 +1,17 @@
+'use strict';
+const assert=require('node:assert/strict'),M=require('../ui/sequence-model.js');
+const p=M.normalize({segments:[{id:'a',start:10,end:20,audio:{audio_mode:'none'},show_inputs:true},{id:'b',start:1,end:4}]});
+assert.equal(M.total(p),13);
+const first=p.segments[0].uid,right=M.split(p,first,4);
+assert.deepEqual(p.segments.map(r=>[r.id,r.start,r.end,r.at]),[['a',10,14,0],['a',14,20,4],['b',1,4,10]]);
+assert.equal(right.show_inputs,true);assert.equal(right.audio.audio_mode,'none');
+M.reorder(p,right.uid,0);assert.deepEqual(p.segments.map(r=>r.start),[14,10,1]);assert.equal(M.total(p),13);
+const copy=M.duplicate(p,first);assert.equal(M.total(p),17);assert.notEqual(copy.uid,first);
+M.trim(p,copy.uid,11,13);assert.equal(M.total(p),15);
+M.remove(p,copy.uid);assert.equal(M.total(p),13);
+p.free=true;M.move(p,first,25);assert.equal(M.find(p,first).at,25);assert.equal(M.at(p,23),null);
+const before=M.clone(p);M.trim(p,first,10,12);assert.equal(M.find(p,first).at,25);
+assert.throws(()=>M.split(p,first,24));assert.throws(()=>M.trim(p,first,NaN,20));
+const restored=M.normalize(JSON.parse(JSON.stringify(before)));assert.deepEqual(restored,before);
+const repeated=M.normalize({segments:[{id:'a',uid:'same',start:0,end:1},{id:'a',uid:'same',start:2,end:3}]});assert.notEqual(repeated.segments[0].uid,repeated.segments[1].uid);
+console.log('Sequence: multiple cuts, reorder, copy, trims, gaps and restore passed');

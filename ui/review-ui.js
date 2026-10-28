@@ -290,6 +290,7 @@ window.reviewDebug=()=>reviewState?{
  sidebarHidden:reviewState.aside.hidden,timelineHidden:reviewState.timeline?.hidden??true,
  dialogScroll:$('#dialog').scrollHeight-$('#dialog').clientHeight,
  horizontalOverflow:$('#dialog').scrollWidth>$('#dialog').clientWidth,
+ sourceSwitch:{...window.afterplaySourceSwap,holdingFrame:!!document.querySelector('.sequence-frame-hold')},
  video:reviewState.player?{width:reviewState.player.clientWidth,height:reviewState.player.clientHeight,nativeControls:reviewState.player.controls}:null,
  missing:['clipTags','clipNote','clipFavorite',...(reviewState.gif?[]:['clipIn','clipOut','clipName','clipFormat','playbackSpeed','previewTimer','exportTimer','exportAudioMode','previewAudioTrack','framePosition','trimTrack','audioWaveform'])].filter(id=>!document.getElementById(id))
 }:null;

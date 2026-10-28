@@ -13,8 +13,8 @@
   const animation=element.animate(frames,{duration:motion()==='full'?230:150,easing:'cubic-bezier(.2,.8,.2,1)'});
   activeAnimations.add(animation);animation.finished.then(()=>activeAnimations.delete(animation),()=>activeAnimations.delete(animation));
  }
- function cancelMotion(){for(const animation of activeAnimations)animation.cancel();activeAnimations.clear()}
- document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelMotion()});reduced.addEventListener('change',cancelMotion);
+ function cancelMotion(element=null){for(const animation of activeAnimations)if(!element||animation.effect?.target===element){animation.cancel();activeAnimations.delete(animation)}}
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelMotion()});reduced.addEventListener('change',()=>cancelMotion());
  const oldApply=customApply;customApply=function(){oldApply();document.body.dataset.studioMotion=motion();if(motion()==='off')cancelMotion()};
  function snapshot(){return trimState?{start:trimState.start,end:trimState.end}:null}
  const same=(a,b)=>a&&b&&Math.abs(a.start-b.start)<.00001&&Math.abs(a.end-b.end)<.00001;
@@ -51,18 +51,20 @@
    const strip=document.createElement('div');strip.id='studioHistory';strip.innerHTML=`<button data-action="studio-undo" title="${t('Отменить обрезку · Ctrl+Z','Undo trim · Ctrl+Z')}" aria-label="${t('Отменить обрезку','Undo trim')}">${icon('refresh')}</button><button data-action="studio-redo" title="${t('Вернуть обрезку · Ctrl+Shift+Z','Redo trim · Ctrl+Shift+Z')}" aria-label="${t('Вернуть обрезку','Redo trim')}">${icon('refresh')}</button><span>${t('I — начало · O — конец','I — in · O — out')}</span>`;
    $('.review-timeline .trim-heading')?.prepend(strip);
   }
-  const tabs={trim:['Обрезка','Trim','film'],sound:['Звук','Audio','volume'],export:['Экспорт','Export','download'],notes:['Заметки','Notes','tag']};
+  const tabs={assembly:['Сборка','Assembly','film'],trim:['Обрезка','Trim','film'],sound:['Звук','Audio','volume'],export:['Экспорт','Export','download'],notes:['Заметки','Notes','tag'],inputs:['Нажатия','Inputs','settings']};
   for(const button of document.querySelectorAll('[data-review-pane]')){const data=tabs[button.dataset.reviewPane];button.innerHTML=icon(data[2])+`<span>${t(data[0],data[1])}</span>`}
   updateHistory();updateDirty();
  }
  const oldOpen=openClip;openClip=function(id){
+  const alreadyOpen=$('#dialog').open&&!!reviewState;
+  if(alreadyOpen)cancelMotion($('#dialog'));
   clearTimeout(searchTimer);history=null;notesBaseline=null;oldOpen(id);if(!reviewState)return;
   if(trimState&&selected?.id===trimState.id)history={id:trimState.id,items:[snapshot()],at:0};notesBaseline=notes();decorateEditor();
-  animate($('#dialog'),[{opacity:0,transform:'translateY(8px) scale(.99)'},{opacity:1,transform:'none'}]);
+  if(!alreadyOpen)animate($('#dialog'),[{opacity:0,transform:'translateY(8px) scale(.99)'},{opacity:1,transform:'none'}]);
  };
  const oldMode=reviewSetMode;reviewSetMode=function(...args){
   const oldPane=reviewState?.pane,wasEditing=reviewState?.editing;oldMode(...args);decorateEditor();
-  if(reviewState?.editing&&(oldPane!==reviewState.pane||!wasEditing))animate($(`[data-review-panel="${reviewState.pane}"]`),[{opacity:.2,transform:'translateX(6px)'},{opacity:1,transform:'none'}]);
+  if(!window.afterplaySwitchingSource&&reviewState?.editing&&(oldPane!==reviewState.pane||!wasEditing))animate($(`[data-review-panel="${reviewState.pane}"]`),[{opacity:.2,transform:'translateX(6px)'},{opacity:1,transform:'none'}]);
  };
  $('#dialog').addEventListener('close',()=>{history=null;notesBaseline=null;$('#dialog').classList.remove('studio-refined')});
  document.addEventListener('input',event=>{if(event.target.matches('#clipTags,#clipNote,#clipFavorite'))updateDirty()});
