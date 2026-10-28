@@ -1017,5 +1017,11 @@
   "Левый клик — испугать: Рыся выгнет спину и распушит хвост. Правый клик — погладить. С клавиатуры: Tab до Рыси, Enter — погладить.": "Left-click to startle: Rysya arches his back and puffs his tail. Right-click to pet. Keyboard: Tab to Rysya, then Enter to pet.",
   "Во время просмотра видео и обучения Рыся прячется. Вернётся, когда закроешь окно.": "Rysya hides during video playback and the tour, and returns when you close them.",
   "Рыся · ЛКМ — испугать · ПКМ — погладить": "Rysya · left-click to startle · right-click to pet",
-  "Рыся. Левый клик — испугать, правый клик или Enter — погладить.": "Rysya. Left-click to startle, right-click or Enter to pet."
+  "Рыся. Левый клик — испугать, правый клик или Enter — погладить.": "Rysya. Left-click to startle, right-click or Enter to pet.",
+  "Экспорт отменён": "Export cancelled",
+  "Отмена экспорта…": "Cancelling export…",
+  "Завершение экспорта…": "Finishing export…",
+  "Эту операцию нельзя отменить": "This operation cannot be cancelled",
+  "Задача не найдена": "Task not found",
+  "Отменить экспорт клипа": "Cancel clip export"
 }

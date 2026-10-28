@@ -1,0 +1,100 @@
+/* Quiet depth and precise editing, without decorative dashboards. */
+body.onyx-cinema{--studio-ease:cubic-bezier(.2,.8,.2,1)}
+body.onyx-cinema .workspace{background:radial-gradient(ellipse at 60% -20%,rgba(var(--accent-rgb),.07),transparent 62%),var(--cinema-background)}
+body.onyx-cinema .workspace>header{position:sticky;top:0;background:color-mix(in srgb,var(--cinema-background) 93%,transparent)!important;box-shadow:0 5px 22px #0000000a;z-index:12}
+body.onyx-cinema #studioCommandButton{width:34px;height:36px;padding:8px;margin:0;border-color:transparent;background:transparent!important;color:var(--cinema-muted)}
+body.onyx-cinema .header-right{gap:5px}
+body.onyx-cinema .cinema-search{transition:border-color .18s,box-shadow .18s}
+body.onyx-cinema #nav .nav-button{transition:background .18s,color .18s;--cursor-glow:none}
+body.onyx-cinema #nav .nav-button::after{display:none}
+body.onyx-cinema .cinema-card .thumb{box-shadow:0 2px 12px #00000018;transition:box-shadow .2s,border-color .2s}
+body.onyx-cinema .cinema-card.is-selected .thumb{box-shadow:0 0 0 1px rgba(var(--accent-rgb),.14),0 4px 20px rgba(var(--accent-rgb),.08)}
+body.onyx-cinema button.primary:active{transform:translateY(1px);filter:brightness(.97)}
+body.onyx-cinema .cinema-inspector{top:72px}
+body.onyx-cinema .cinema-palette-card,body.onyx-cinema .cinema-art-choice{transition:border-color .18s,box-shadow .18s,transform .18s}
+body.onyx-cinema .cinema-palette-card:hover{transform:translateY(-2px)}
+body.onyx-cinema .cinema-design-heading h2{font-size:26px;font-weight:600}
+body.onyx-cinema .cinema-design-save{display:none}
+body.onyx-cinema[data-studio-appearance=true] .custom-save-bar{position:sticky;bottom:14px;border-radius:12px;background:color-mix(in srgb,var(--cinema-panel) 94%,transparent);backdrop-filter:blur(18px);box-shadow:0 12px 40px #0004;padding:15px 18px;margin-top:24px;border-color:var(--input-line);z-index:4}
+body.onyx-cinema .studio-classic-background>*{display:none}
+body.onyx-cinema .studio-classic-background:before{content:'Цвет фона нового дизайна настраивается выше. Изображения и видео общего фона доступны в классическом интерфейсе.';font-size:13px;line-height:1.65;color:var(--cinema-muted)}
+html[lang=en] body.onyx-cinema .studio-classic-background:before{content:'Adjust the new design’s background color above. Full-window image and video backgrounds are available in Classic.'}
+#studioMotion{margin-top:20px;max-width:260px}
+#studioMotion .field{margin:0}
+body.onyx-cinema .studio-refined{width:min(1760px,96vw);height:94vh;border-radius:16px;border-color:color-mix(in srgb,var(--cinema-accent) 19%,var(--line));box-shadow:0 28px 120px #0009;--custom-panel-alpha:100%}
+body.onyx-cinema .studio-refined::backdrop{background:#050710b8;backdrop-filter:blur(12px)}
+body.onyx-cinema .studio-refined .dialog-head{min-height:68px;padding:15px 22px;background:linear-gradient(120deg,color-mix(in srgb,var(--cinema-panel) 92%,var(--cinema-background)),var(--cinema-background));border-color:var(--line)}
+body.onyx-cinema .studio-refined .dialog-head h2{font-size:14px;font-weight:500;letter-spacing:0;margin:0}
+body.onyx-cinema .studio-refined .review-head-actions button{min-height:37px;font-size:12px;padding:8px 14px;gap:8px}
+body.onyx-cinema .studio-refined[data-editing=true] .review-workspace{grid-template-columns:minmax(0,1fr) clamp(310px,24vw,390px)}
+body.onyx-cinema .studio-refined .review-viewer{padding:17px 20px 14px;row-gap:8px;grid-template-rows:minmax(100px,1fr) 20px 48px}
+body.onyx-cinema .studio-refined .playback-stage{border-radius:10px;overflow:hidden;background:#05070b;box-shadow:0 0 0 1px #ffffff09}
+body.onyx-cinema .studio-refined .review-sidebar{background:linear-gradient(155deg,var(--cinema-panel),color-mix(in srgb,var(--cinema-panel) 75%,var(--cinema-background)));border-color:var(--line)}
+body.onyx-cinema .studio-refined .review-tabs{padding:10px 10px 0;gap:5px;border-color:var(--line)}
+body.onyx-cinema .studio-refined .review-tabs button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:45px;padding:10px 6px 12px;border-radius:7px 7px 0 0;color:var(--cinema-muted);background:transparent!important;font-size:12px}
+body.onyx-cinema .studio-refined .review-tabs svg{width:16px;height:16px}
+body.onyx-cinema .studio-refined .review-tabs button[aria-selected=true]{color:var(--cinema-accent);background:linear-gradient(0deg,rgba(var(--accent-rgb),.09),transparent)!important;border-bottom-color:var(--cinema-accent)}
+body.onyx-cinema .studio-refined .review-tool-panel{padding:23px;scrollbar-gutter:stable}
+body.onyx-cinema .studio-refined .review-tool-panel h3{font-size:17px;font-weight:600;margin-bottom:9px}
+body.onyx-cinema .studio-refined .review-panel-lead{font-size:12px!important;line-height:1.65;margin-bottom:22px}
+body.onyx-cinema .studio-refined .review-tool-panel label{font-size:12px}
+body.onyx-cinema .studio-refined .review-tool-panel input:not([type=checkbox]):not([type=range]),body.onyx-cinema .studio-refined .review-tool-panel textarea{background:color-mix(in srgb,var(--cinema-background) 65%,var(--cinema-panel));border-color:var(--input-line);border-radius:8px;color:var(--cinema-text);font-size:13px}
+body.onyx-cinema .studio-refined .time-inputs{gap:12px;margin-bottom:16px}
+body.onyx-cinema .studio-refined .time-inputs input{height:41px;font-family:Consolas,monospace;font-size:12px!important;font-variant-numeric:tabular-nums}
+body.onyx-cinema .studio-refined .review-here{gap:10px;margin-bottom:20px}
+body.onyx-cinema .studio-refined .review-here button{padding:9px 8px;min-height:37px;font-size:11px}
+body.onyx-cinema .studio-refined .review-exact-time{padding:12px 0;margin-bottom:16px;font-size:11px}
+body.onyx-cinema .studio-refined .review-bookmarks{margin-top:24px;padding-top:20px}
+body.onyx-cinema .studio-refined .review-bookmarks-head h3{font-size:14px;margin:0}
+body.onyx-cinema .studio-refined .review-bookmarks .mark{min-height:29px;padding:6px 8px;font-size:11px;border-radius:6px}
+body.onyx-cinema .studio-refined .review-timeline{padding-top:14px;margin-top:5px;border-color:var(--line)}
+body.onyx-cinema .studio-refined .trim-heading{min-height:35px;margin-bottom:12px;gap:12px}
+body.onyx-cinema .studio-refined .trim-heading>b{display:none}
+body.onyx-cinema .studio-refined .trim-track{height:79px;background:var(--cinema-background);border-radius:7px;margin:0 9px}
+body.onyx-cinema .studio-refined .trim-filmstrip{opacity:.87}
+body.onyx-cinema .studio-refined .trim-selection{background:rgba(var(--accent-rgb),.07);border-color:var(--cinema-accent)}
+body.onyx-cinema .studio-refined .trim-handle{width:13px;border-radius:4px;background:var(--cinema-accent)!important;border:0!important}
+body.onyx-cinema .studio-refined .trim-playhead{width:2px;box-shadow:0 0 0 1px #0003}
+body.onyx-cinema .studio-refined .trim-playhead:before{width:8px;height:10px;border-radius:2px;left:-3px;top:-4px;background:#fff;border:0}
+body.onyx-cinema .studio-refined .trim-view-labels{font-size:10px;margin:7px 9px;color:var(--cinema-muted)}
+body.onyx-cinema .studio-refined .studio-wave{background:color-mix(in srgb,var(--cinema-background) 72%,var(--cinema-panel));border:1px solid var(--line);border-radius:7px;margin:9px 9px 0;overflow:hidden}
+body.onyx-cinema .studio-refined #audioWaveform{height:62px;color:color-mix(in srgb,var(--cinema-accent) 60%,var(--cinema-muted))}
+body.onyx-cinema .studio-refined .review-transport{gap:9px;padding:2px 0}
+body.onyx-cinema .studio-refined .review-play{background:var(--cinema-accent);color:var(--cinema-on-accent);width:38px;height:38px;border-radius:9px}
+body.onyx-cinema .studio-refined .review-icon-button{width:34px;height:34px;border-radius:8px;box-shadow:none;color:var(--cinema-muted);background:transparent}
+body.onyx-cinema .studio-refined .review-icon-button:hover{background:rgba(var(--accent-rgb),.1);color:var(--cinema-text)}
+body.onyx-cinema .studio-refined .review-clock{font-family:Consolas,monospace;font-size:12px;gap:9px;margin-left:4px}
+body.onyx-cinema .studio-refined .review-speed-menu>summary{border-color:var(--line);box-shadow:none;background:var(--cinema-background);font-size:12px}
+body.onyx-cinema .studio-refined .review-export-footer{padding:17px 20px 20px;border-top-color:var(--line);background:color-mix(in srgb,var(--cinema-background) 45%,var(--cinema-panel))}
+body.onyx-cinema .studio-refined .review-export-footer button{width:100%;height:44px;border-radius:9px;font-size:13px}
+body.onyx-cinema .studio-refined .studio-audio-track{grid-template-columns:minmax(0,1fr) 45px;gap:11px;padding:15px 0;border-color:var(--line)}
+body.onyx-cinema .studio-refined .studio-audio-track label{grid-column:1/-1;font-size:12px;white-space:normal}
+body.onyx-cinema .studio-refined .studio-audio-track input[type=range]{width:100%}
+#studioHistory{display:flex;align-items:center;gap:5px;min-width:0}
+body.onyx-cinema #studioHistory button{display:grid;place-items:center;width:29px;height:29px;min-height:29px;padding:6px;border-radius:7px;background:transparent;border:1px solid var(--line);color:var(--cinema-muted);cursor:pointer}
+#studioHistory button svg{width:15px;height:15px}
+#studioHistory button[data-action=studio-redo] svg{transform:scaleX(-1)}
+#studioHistory span{font-size:10px;color:var(--cinema-muted);margin-left:8px;white-space:nowrap}
+#studioDirty{font-size:10px;color:var(--cinema-accent);background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.18);border-radius:5px;padding:4px 7px;white-space:nowrap}
+body.onyx-cinema #studioCommands{width:min(580px,90vw);max-height:min(610px,82vh);padding:0;margin:12vh auto auto;border-radius:15px;background:var(--cinema-panel);border:1px solid color-mix(in srgb,var(--cinema-accent) 25%,var(--line));box-shadow:0 20px 100px #0008;overflow:hidden}
+#studioCommands::backdrop,#studioUnsaved::backdrop{background:#0407119c;backdrop-filter:blur(8px)}
+.studio-command-search{display:flex;align-items:center;gap:13px;padding:18px 20px;border-bottom:1px solid var(--line)}
+.studio-command-search>svg{width:21px;height:21px;color:var(--cinema-accent)}
+.studio-command-search input{flex:1;width:100%;min-width:0;background:transparent!important;color:var(--cinema-text);border:0!important;box-shadow:none!important;outline:0;font-size:15px;padding:5px 0;min-height:30px}
+.studio-command-search kbd,#studioCommands footer{font-size:10px;color:var(--cinema-muted)}
+#studioCommandList{padding:8px;max-height:420px;overflow:auto}
+body.onyx-cinema #studioCommandList button{width:100%;display:flex;align-items:center;justify-content:space-between;padding:13px 14px;background:transparent;border:0;border-radius:8px;color:var(--cinema-text);font-size:13px;text-align:left;cursor:pointer}
+body.onyx-cinema #studioCommandList button[aria-selected=true]{background:rgba(var(--accent-rgb),.1);color:var(--cinema-accent)}
+#studioCommandList button kbd{font-size:11px;color:var(--cinema-muted)}
+#studioCommandList>p{padding:20px 14px;font-size:13px}
+#studioCommands footer{display:flex;padding:11px 20px;justify-content:space-between;border-top:1px solid var(--line);background:var(--cinema-background)}
+body.onyx-cinema #studioUnsaved{width:min(540px,90vw);height:auto;padding:26px;background:var(--cinema-panel);border-radius:14px;border-color:var(--input-line)}
+#studioUnsaved h2{font-size:23px;margin:0 0 12px}
+#studioUnsaved p{font-size:13px;line-height:1.7;margin:0 0 24px}
+#studioUnsaved .actions{justify-content:flex-end;gap:9px}
+#studioUnsaved .studio-guard-error{color:#ffb3be;font-size:12px;margin:12px 0 0}
+body.onyx-cinema[data-studio-motion=off] *,body.onyx-cinema[data-studio-motion=off] *:before,body.onyx-cinema[data-studio-motion=off] *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+@media(max-width:1250px){body.onyx-cinema .studio-refined[data-editing=true] .review-workspace{grid-template-columns:minmax(0,1fr) 310px}body.onyx-cinema .studio-refined .review-viewer{padding:12px 14px}body.onyx-cinema .studio-refined .review-tool-panel{padding:19px}#studioHistory span{display:none}.review-tabs button svg{display:none}}
+@media(max-width:1000px){body.onyx-cinema .studio-refined .review-tabs button{font-size:11px}body.onyx-cinema .studio-refined .trim-track{height:58px}body.onyx-cinema .studio-refined #audioWaveform{height:46px}body.onyx-cinema .studio-refined .review-volume input{width:43px}#studioDirty{max-width:90px;overflow:hidden;text-overflow:ellipsis}}
+@media(max-width:800px){body.onyx-cinema .studio-refined[data-editing=true] .review-workspace{grid-template-columns:minmax(0,1fr) 275px}body.onyx-cinema .studio-refined .review-tool-panel{padding:15px}body.onyx-cinema .studio-refined .review-tabs{padding-left:6px;padding-right:6px}body.onyx-cinema .studio-refined .review-clock{font-size:10px}body.onyx-cinema .studio-refined .review-viewer{padding:10px}body.onyx-cinema .studio-refined .review-transport{gap:4px}body.onyx-cinema .studio-refined .review-transport .review-volume{display:none}.studio-refined .dialog-head h2{font-size:12px!important}}
+@media(prefers-reduced-motion:reduce){body.onyx-cinema *,body.onyx-cinema *:before,body.onyx-cinema *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

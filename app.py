@@ -18,6 +18,7 @@ import traceback
 import uuid
 import io
 import storage
+from export_control import ExportControl, ExportCancelled
 from portable_paths import install_root
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -107,6 +108,7 @@ class Suite:
         self.lock = threading.RLock()
         self.filmstrip_lock = threading.Lock()
         self.jobs = {}
+        self.export_controls = {}
         self.children = set()
         self.window = None
         self.cfg_path = self.data / 'settings.json'
@@ -179,24 +181,51 @@ class Suite:
             with open(self.data / 'journal.jsonl', 'a', encoding='utf-8') as f:
                 f.write(json.dumps({'at': time.strftime('%Y-%m-%d %H:%M:%S'), 'event': event, **detail}, ensure_ascii=False) + '\n')
 
-    def job(self, label, fn):
+    def job(self, label, fn, cancellable=False):
         jid = uuid.uuid4().hex
         self.jobs[jid] = {'id': jid, 'label': label, 'status': 'running', 'progress': 0, 'message': 'Подготовка…'}
+        control = ExportControl(self.jobs[jid]) if cancellable else None
+        if control:
+            with self.lock:
+                self.export_controls[jid] = control
         def worker():
             try:
+                if control:control.check()
                 result = fn(self.jobs[jid])
                 self.jobs[jid].update(status='done', progress=100, result=result, message='Готово')
                 if label=='Экспорт видео':
                     import customization
                     customization.sound(self,'success')
+            except ExportCancelled:
+                self.jobs[jid].update(status='cancelled', cancellable=False, message='Экспорт отменён')
+                self.log('export_cancelled', job_id=jid)
             except Exception as e:
-                self.jobs[jid].update(status='error', message=str(e))
-                self.log('error', job=label, error=str(e), trace=traceback.format_exc())
-                if label=='Экспорт видео':
-                    import customization
-                    customization.sound(self,'error')
+                if control and control.cancelled.is_set():
+                    self.jobs[jid].update(status='cancelled', cancellable=False, message='Экспорт отменён')
+                    self.log('export_cancelled', job_id=jid)
+                else:
+                    self.jobs[jid].update(status='error', cancellable=False, message=str(e))
+                    self.log('error', job=label, error=str(e), trace=traceback.format_exc())
+                    if label=='Экспорт видео':
+                        import customization
+                        customization.sound(self,'error')
+            finally:
+                if control:
+                    with self.lock:
+                        self.export_controls.pop(jid, None)
         threading.Thread(target=worker, daemon=True).start()
         return {'job': jid}
+
+    def cancel_export(self, identifier):
+        with self.lock:
+            job = self.jobs.get(str(identifier))
+            control = self.export_controls.get(str(identifier))
+        if not job:raise ValueError('Задача не найдена')
+        if job['status'] != 'running':
+            return {'accepted':False, 'status':job['status']}
+        if control is None:raise ValueError('Эту операцию нельзя отменить')
+        accepted = control.cancel()
+        return {'accepted':accepted, 'status':job['status']}
 
 
 
@@ -385,9 +414,12 @@ class Suite:
         return {'ok': True}
 
     def export(self, arg, job):
+        control = self.export_controls.get(job.get('id'))
+        if control:control.check()
         c = self.clip(arg['id'])
         src = Path(c['path'])
         info = self.probe(src)
+        if control:control.check()
         start, end = float(arg['start']), float(arg['end'])
         if not 0 <= start < end <= info['duration']+0.05:
             raise ValueError('Проверь начало и конец отрезка')
@@ -401,7 +433,7 @@ class Suite:
             gif_media.validate_duration(end-start)
             name = re.sub(r'[^\w .-]', '_', str(arg.get('name') or src.stem))[:90].strip(' .') or 'clip'
             dest = self.recordings_dir()/f'{name}-{uuid.uuid4().hex[:8]}.gif'
-            result = gif_media.encode(self, src, dest, start, end-start, job, int(arg.get('gif_width',720)), timer=timer)
+            result = gif_media.encode(self, src, dest, start, end-start, job, int(arg.get('gif_width',720)), timer=timer, control=control)
             self.index_video(dest)
             self.log('gif_export', source=str(src), start=start, end=end, **result)
             return result
@@ -422,12 +454,15 @@ class Suite:
                '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', '-y', partial]
         for index,title in enumerate(titles):cmd[-2:-2]=[f'-metadata:s:a:{index}','title='+title,f'-metadata:s:a:{index}','handler_name='+title,f'-disposition:a:{index}','default' if index==0 else '0']
         log_path = self.data/'logs'/f'export-{uuid.uuid4().hex[:12]}.log'
+        proc = None
         try:
             with open(log_path,'wb') as err:
-                proc = subprocess.Popen([str(x) for x in cmd], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err, creationflags=NO_WINDOW)
+                spawn = control.start if control else subprocess.Popen
+                proc = spawn([str(x) for x in cmd], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err, creationflags=NO_WINDOW)
                 with self.lock:
                     self.children.add(proc)
                 for line in iter(proc.stdout.readline, b''):
+                    if control:control.check()
                     if line.startswith(b'out_time_us='):
                         try:
                             elapsed = int(line.strip().split(b'=')[1])/1000000
@@ -435,24 +470,32 @@ class Suite:
                         except ValueError:
                             pass
                 proc.wait()
-                with self.lock:
-                    self.children.discard(proc)
+            if control:control.check()
             if proc.returncode or not partial.is_file() or partial.stat().st_size < 1000:
                 raise ValueError('FFmpeg не завершил экспорт. Подробности в data/logs.')
             result = self.probe(partial)
+            if control:control.check()
             if abs(result['duration']-(end-start)) > max(.6, (end-start)*.02):
                 raise ValueError('Длительность экспорта не прошла проверку')
             if result['audio']!=expected_audio:
                 raise ValueError('Экспорт потерял аудиодорожку')
             if vertical and (result['width'],result['height']) != (720,1280):
                 raise ValueError('Размер вертикального видео не прошёл проверку')
+            if control:control.commit()
             os.replace(partial, dest)
             self.index_video(dest)
             self.log('export', source=str(src), output=str(dest), start=start, end=end, **result)
             return {'path': str(dest), **result, 'bytes':dest.stat().st_size}
-        except Exception:
+        finally:
+            if proc:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+                if proc.stdout:proc.stdout.close()
+                with self.lock:
+                    self.children.discard(proc)
+                if control:control.release(proc)
             partial.unlink(missing_ok=True)
-            raise
 
     def recordings_dir(self):
         return storage.recording_dir(self)
@@ -792,7 +835,8 @@ class Suite:
         if action=='clip_delete':return self.recycle_video(arg)
         if action=='exports':
             return [{**row,'at':time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(row['mtime']))} for row in storage.exports(self)[:200]]
-        if action=='export': return self.job('Экспорт видео',lambda j:self.export(arg,j))
+        if action=='export': return self.job('Экспорт видео',lambda j:self.export(arg,j),cancellable=True)
+        if action=='job_cancel': return self.cancel_export(arg.get('id'))
         if action=='open':
             target = arg.get('target')
             if target=='exports': p=self.recordings_dir()
@@ -984,8 +1028,10 @@ def main():
                 report['capture']=suite.window.evaluate_js("({modes:[...document.querySelector('#replayCaptureMode').options].map(o=>o.value),fps:[...document.querySelector('#replayFPS').options].map(o=>Number(o.value)),quality:[...document.querySelector('#replayQuality').options].map(o=>o.value),hasOffset:!!document.querySelector('#replayOffset'),hasResolution:!!document.querySelector('#replayHeight')})")
                 report['ok']=bool(report.get('ready') and report['controls']['minutes']==[1,3,5,10,15,20,30] and len(report['controls']['audio'])==5 and report['capture']['modes']==['monitor','window'] and report['capture']['fps']==[24,30,60,90,120] and len(report['capture']['quality'])==3 and report['capture']['hasOffset'] and report['capture']['hasResolution'])
                 suite.window.evaluate_js("tab='settings';render()")
-                report['preferences']=suite.window.evaluate_js("({themes:[...document.querySelector('#interfaceTheme').options].map(o=>o.value),autostart:!!document.querySelector('#launchAtLogin'),desktop:!!document.querySelector('[data-action=shortcut-desktop]'),taskbar:!!document.querySelector('[data-action=shortcut-taskbar]'),updates:!!document.querySelector('[data-action=update-check]'),captureBorder:!!document.querySelector('#captureBorder'),captureBorderChecked:document.querySelector('#captureBorder').checked===!!state.replay.settings.capture_border})")
-                report['ok']=bool(report['ok'] and report['preferences']['themes']==['obsidian','glass','aurora','ember','mist','paper'] and all(report['preferences'][key] for key in ('autostart','desktop','taskbar','updates','captureBorder','captureBorderChecked')))
+                report['preferences']=suite.window.evaluate_js("({cinema:document.body.classList.contains('onyx-cinema'),profile:!!document.querySelector('#cinemaProfile b')?.textContent,themes:[...(document.querySelector('#interfaceTheme')?.options||[])].map(o=>o.value),autostart:!!document.querySelector('#launchAtLogin'),desktop:!!document.querySelector('[data-action=shortcut-desktop]'),taskbar:!!document.querySelector('[data-action=shortcut-taskbar]'),updates:!!document.querySelector('[data-action=update-check]'),captureBorder:!!document.querySelector('#captureBorder'),captureBorderChecked:document.querySelector('#captureBorder').checked===!!state.replay.settings.capture_border})")
+                preferences=report['preferences']
+                design_ok=(preferences['profile'] and not preferences['themes']) if preferences['cinema'] else preferences['themes']==['obsidian','glass','aurora','ember','mist','paper']
+                report['ok']=bool(report['ok'] and design_ok and all(preferences[key] for key in ('autostart','desktop','taskbar','updates','captureBorder','captureBorderChecked')))
                 report['engine']='Microsoft Edge WebView2 / pywebview'
                 atomic_json(suite.data/f'verification-native-{args.mode}.json',report)
             finally:

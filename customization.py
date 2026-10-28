@@ -46,6 +46,10 @@ def migrate_palettes(settings):
 
 EVENTS=('mark','saving','success','error')
 DEFAULTS={
+    'cinema_layout':True,'cinema_motion':'subtle',
+    'cinema_palette':'cinema','cinema_sidebar':'banner',
+    'cinema_accent':'#a58bff','cinema_background':'#0d1018','cinema_panel':'#151a26',
+    'cinema_text':'#f3f1fc','cinema_muted':'#b0b4c8',
     'theme':'obsidian','accent':'#9ccfc9','background':'scene','scene':'smoke','asset':'',
     'background_color':'#090c10','dim':62,'blur':0,'saturation':85,'fit':'cover','speed':1,
     'pause_recording':True,'pause_export':True,'motion':True,'glow':True,'animation':'calm',
@@ -75,7 +79,8 @@ def validate(patch):
     if set(patch)-set(DEFAULTS):raise ValueError('Неизвестная настройка оформления')
     patch=copy.deepcopy(patch)
     migrate_theme(patch)
-    enums={'theme':THEMES,'background':('none','color','scene','asset'),
+    enums={'cinema_motion':('full','subtle','off'),'cinema_palette':('cinema','onyx','ocean','ember','rose','custom'),
+           'cinema_sidebar':('banner','ranger','citadel','ember','none'),'theme':THEMES,'background':('none','color','scene','asset'),
            'scene':('smoke','aurora','ember','video'),'fit':('cover','contain','fill'),
            'card_ratio':('16/9','4/3','1/1'),'hover_mode':('play','scrub'),
            'animation':('off','calm','normal'),'notice_position':('top-right','top-left','bottom-right','bottom-left'),
@@ -92,7 +97,7 @@ def validate(patch):
             low,high=ranges[key]
             if type(value) not in (int,float) or not math.isfinite(value) or not low<=value<=high:raise ValueError('Значение вне диапазона: '+key)
         if type(DEFAULTS[key]) is bool and type(value) is not bool:raise ValueError('Нужен переключатель: '+key)
-        if key in ('accent','background_color','timer_color','panel_color','text_color','muted_color') and not re.fullmatch(r'#[0-9a-fA-F]{6}',str(value)):raise ValueError('Нужен цвет #RRGGBB')
+        if key in ('accent','background_color','timer_color','panel_color','text_color','muted_color','cinema_accent','cinema_background','cinema_panel','cinema_text','cinema_muted') and not re.fullmatch(r'#[0-9a-fA-F]{6}',str(value)):raise ValueError('Нужен цвет #RRGGBB')
         if key=='asset' and value and not re.fullmatch(r'[a-f0-9]{64}\.(mp4|webm|png|jpg|jpeg|gif|wav)',str(value)):raise ValueError('Неизвестный фон')
         if key=='nav_order' and (not isinstance(value,list) or len(value)!=6 or set(value)!=set(DEFAULTS['nav_order'])):raise ValueError('Некорректный порядок разделов')
         if key=='nav_hidden' and (not isinstance(value,list) or not set(value)<=set(DEFAULTS['nav_order'])-{'settings'}):raise ValueError('Настройки должны оставаться доступными')

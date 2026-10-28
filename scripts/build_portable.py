@@ -15,7 +15,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('app.py', 'app_update.py', 'version.py', 'Updater.cs', 'shortcuts.py', 'replay.py', 'capture_media.py', 'gpu_capture.py', 'video_quality.py', 'desktop.py', 'storage.py', 'auto_record.py', 'hotkeys.py', 'gif_media.py', 'timer_overlay.py', 'single_instance.py', 'process_audio.py', 'runtime_trust.py', 'ProcessAudio.cs',
+FILES = ('app.py', 'export_control.py', 'app_update.py', 'version.py', 'Updater.cs', 'shortcuts.py', 'replay.py', 'capture_media.py', 'gpu_capture.py', 'video_quality.py', 'desktop.py', 'storage.py', 'auto_record.py', 'hotkeys.py', 'gif_media.py', 'timer_overlay.py', 'single_instance.py', 'process_audio.py', 'runtime_trust.py', 'ProcessAudio.cs',
          'Launcher.cs', 'RuntimeExit.cs', 'app.manifest', 'ReplayNotification.cs', 'Install-Shortcuts.ps1', 'Update-Existing.ps1', 'README.md',
          'LICENSE', 'THIRD-PARTY.md', 'FFmpeg-COPYING.GPLv3.txt', 'CHANGELOG.md',
          'portable_paths.py','capture_profiles.py','live_markers.py','audio_tracks.py','editor_media.py','customization.py','microphone.py','localization.py')

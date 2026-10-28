@@ -13,7 +13,8 @@ def validate_duration(value):
     return value
 
 
-def encode(suite, source, target, start, duration, job, width=720, timer=False):
+def encode(suite, source, target, start, duration, job, width=720, timer=False, control=None):
+    if control:control.check()
     duration = validate_duration(duration)
     if width not in (480, 720, 960):
         raise ValueError('Ширина GIF: 480, 720 или 960 пикселей')
@@ -41,11 +42,13 @@ def encode(suite, source, target, start, duration, job, width=720, timer=False):
     proc = None
     try:
         with log.open('wb') as errors:
-            proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            spawn = control.start if control else subprocess.Popen
+            proc = spawn(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                     stderr=errors, creationflags=0x08000000 if os.name == 'nt' else 0)
             with suite.lock:
                 suite.children.add(proc)
             for line in iter(proc.stdout.readline, b''):
+                if control:control.check()
                 if line.startswith(b'out_time_us='):
                     try:
                         elapsed = int(line.strip().split(b'=')[1])/1000000
@@ -53,12 +56,15 @@ def encode(suite, source, target, start, duration, job, width=720, timer=False):
                     except ValueError:
                         pass
             proc.wait()
+        if control:control.check()
         if proc.returncode or not partial.is_file() or partial.stat().st_size < 1000:
             raise ValueError('Не удалось создать GIF. Подробности в data/logs. '+log.read_text('utf-8',errors='replace')[-700:])
         info = suite.probe(partial)
+        if control:control.check()
         if abs(info['duration']-duration) > .15 or info['audio'] or info['width'] > width:
             suite.log('gif_validation_failed', expected_duration=duration, expected_width=width, actual=info)
             raise ValueError(f"GIF не прошла проверку: ожидалось {duration:.3f} с, получено {info['duration']:.3f} с; {info['width']} px")
+        if control:control.commit()
         os.replace(partial, target)
         return {'path': str(target), 'format': 'gif', 'bytes': target.stat().st_size, **info}
     finally:
@@ -70,4 +76,5 @@ def encode(suite, source, target, start, duration, job, width=720, timer=False):
                 proc.wait()
             if proc.stdout:
                 proc.stdout.close()
+            if control:control.release(proc)
         partial.unlink(missing_ok=True)
