@@ -8,7 +8,7 @@ import video_quality
 FIELDS = {'seconds','fps','mbps','monitor','audio','audio_mode','capture_mode',
           'quality_mode','cq','max_mbps','height','preset','encoder','audio_bitrate',
           'audio_offset_ms','audio_follow_window','cursor','capture_border',
-          'capture_backend','save_format','gif_seconds','chat_path','microphone_enabled','microphone_device','microphone_name','microphone_gain'}
+          'capture_backend','save_format','gif_seconds','chat_path','microphone_enabled','microphone_device','microphone_name','microphone_gain','microphone_voice_cleanup'}
 DEFAULT_PROFILE='screen:default'
 
 
@@ -105,7 +105,7 @@ def validated(values):
     if combined.get('save_format','mp4') not in {'mp4','gif'}:raise ValueError('Неизвестный формат')
     from gif_media import validate_duration
     validate_duration(combined.get('gif_seconds',5))
-    for name in ('cursor','capture_border','audio_follow_window','microphone_enabled'):
+    for name in ('cursor','capture_border','audio_follow_window','microphone_enabled','microphone_voice_cleanup'):
         if not isinstance(combined[name],bool):raise ValueError('Ожидался переключатель: '+name)
     if type(combined['microphone_gain']) not in (int,float) or not 0<=combined['microphone_gain']<=100:raise ValueError('Громкость микрофона: 0–100%')
     for name in ('monitor','audio','chat_path','microphone_device','microphone_name'):

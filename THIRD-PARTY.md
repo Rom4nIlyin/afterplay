@@ -1,5 +1,10 @@
 # Bundled components
 
+Speech denoising model: somnolent-hogwash (RNNoise), Gregor Richards.
+Unmodified model is bundled at app/models/speech.rnnn and runs locally via PyAV.
+Pinned source, SHA-256 and the author's rights statement: app/models/README.md.
+https://github.com/GregorR/rnnoise-models/tree/3eee541a283fd3b8f81b85b1748e3b9ccbefa04d
+
 Truststore 0.10.5 (MIT): https://github.com/sethmlarson/truststore
 Uses Windows CryptoAPI certificate validation for HTTPS updates; its license
 is retained in app/runtime/Lib/site-packages/truststore-0.10.5.dist-info/licenses/.

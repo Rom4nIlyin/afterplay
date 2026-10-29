@@ -1158,5 +1158,9 @@
   "Неизвестный способ удаления": "Unknown deletion method",
   "Windows не удалила видеофайл": "Windows did not delete the video file",
   "Недопустимое имя файла Windows": "Invalid Windows filename",
-  "Файл с таким именем уже существует: ": "A file with this name already exists: "
+  "Файл с таким именем уже существует: ": "A file with this name already exists: ",
+  "Чистый и ровный голос": "Clean, even voice",
+  "Подавляет фоновый шум, выравнивает громкость речи и защищает от перегруза. Работает на компьютере без интернета. Обработка применяется к новым записям.": "Suppresses background noise, levels speech volume and prevents clipping. Runs locally without internet. Processing applies to new recordings.",
+  "Нужен переключатель очистки голоса": "Expected a voice cleanup toggle",
+  "Модель очистки голоса отсутствует или повреждена. Переустановите обновление AFTERPLAY.": "The voice cleanup model is missing or damaged. Reinstall the AFTERPLAY update."
 }

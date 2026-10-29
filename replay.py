@@ -26,7 +26,7 @@ MINUTES = (1,3,5,10,15,20,30)
 DEFAULTS = {'seconds':300, 'fps':60, 'mbps':20, 'monitor':'primary', 'audio':'default',
             'save_format':'mp4', 'gif_seconds':5, 'audio_mode':'system', 'game_pid':0, 'game_path':'',
             'chat_path':'','chat_pid':0,'microphone_enabled':False,'microphone_device':'default',
-            'microphone_name':'','microphone_gain':100,**video_quality.DEFAULTS}
+            'microphone_name':'','microphone_gain':100,'microphone_voice_cleanup':True,**video_quality.DEFAULTS}
 
 def monitors():
     class Info(ctypes.Structure):
@@ -173,6 +173,9 @@ class Replay:
         if 'microphone_enabled' in args:
             if type(args['microphone_enabled']) is not bool:raise ValueError('Нужен переключатель микрофона')
             cfg['microphone_enabled']=args['microphone_enabled']
+        if 'microphone_voice_cleanup' in args:
+            if type(args['microphone_voice_cleanup']) is not bool:raise ValueError('Нужен переключатель очистки голоса')
+            cfg['microphone_voice_cleanup']=args['microphone_voice_cleanup']
         if 'microphone_gain' in args:
             if type(args['microphone_gain']) not in (int,float) or not 0<=args['microphone_gain']<=100:raise ValueError('Громкость микрофона: 0–100%')
             cfg['microphone_gain']=args['microphone_gain']
@@ -475,7 +478,7 @@ class Replay:
                 if source.get('optional'):continue
                 if source.get('microphone'):
                     import microphone
-                    self._microphone=microphone.Capture(source['device'],source['queue'],self.settings['microphone_gain'])
+                    self._microphone=microphone.Capture(source['device'],source['queue'],self.settings['microphone_gain'],self.settings['microphone_voice_cleanup'])
                     continue
                 if not source.get('process'):
                     self._open_loopback(source,source['queue'],output_rate=48000)
@@ -522,7 +525,7 @@ class Replay:
                         self._close_optional_audio(source);capture=None
                     if capture or not chosen:continue
                     source['device']=chosen
-                    source['_capture']=microphone.Capture(chosen,source['queue'],self.settings['microphone_gain'])
+                    source['_capture']=microphone.Capture(chosen,source['queue'],self.settings['microphone_gain'],self.settings['microphone_voice_cleanup'])
                 else:
                     if capture and (source.get('_error') or not process_audio.is_alive(source['pid'])):
                         self._close_optional_audio(source);capture=None
@@ -689,7 +692,14 @@ class Replay:
         with self.lock:
             if self.phase=='stopping':return self.state()
             if self.phase=='off' and self.proc is None:return self.state()
-            self.phase='stopping';self.replay_enabled=False;self.stop_event.set();proc=self.proc
+            self.phase='stopping';self.replay_enabled=False
+            # Drain speech DSP while the mux can still receive its lookahead.
+            # The watcher uses this lock too, so it cannot reopen the input.
+            for source in self._optional_audio:
+                if source.get('optional')=='microphone':self._close_optional_audio(source)
+            if self._microphone:
+                self._microphone.close();self._microphone=None
+            self.stop_event.set();proc=self.proc
         if self.input_recorder:
             self.input_recorder.close();self.input_recorder=None
         if self.input_track:self.input_track.close()
