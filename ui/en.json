@@ -1143,5 +1143,20 @@
   "Высота дорожки": "Timeline height",
   "Перетащи вверх или вниз · стрелки для точной настройки · двойной щелчок для сброса": "Drag up or down · arrow keys to adjust · double-click to reset",
   "Некорректная высота дорожки": "Invalid timeline height",
-  "Windows не смогла проверить сертификат GitHub. Проверьте дату и время, обновления Windows и HTTPS-фильтрацию антивируса или прокси.": "Windows could not verify GitHub’s certificate. Check the date and time, Windows updates, and HTTPS filtering in your antivirus or proxy."
+  "Windows не смогла проверить сертификат GitHub. Проверьте дату и время, обновления Windows и HTTPS-фильтрацию антивируса или прокси.": "Windows could not verify GitHub’s certificate. Check the date and time, Windows updates, and HTTPS filtering in your antivirus or proxy.",
+  "Открыть GitHub AFTERPLAY": "Open AFTERPLAY on GitHub",
+  "Выделить ссылку для копирования": "Select the link to copy",
+  "Скопировать ссылку": "Copy link",
+  "Ссылка скопирована": "Link copied",
+  "Не удалось скопировать. Выдели поле и нажми Ctrl+C.": "Could not copy. Select the field and press Ctrl+C.",
+  "Ссылка на репозиторий AFTERPLAY": "AFTERPLAY repository link",
+  "Удалить видео?": "Delete video?",
+  "Удалить навсегда": "Delete permanently",
+  "В корзину: файл можно восстановить из корзины Windows.": "Recycle Bin: the file can be restored from the Windows Recycle Bin.",
+  "Удалить навсегда: видео будет удалено с компьютера, минуя корзину. Это действие нельзя отменить в AFTERPLAY.": "Delete permanently: the video will be removed from the computer, bypassing the Recycle Bin. This cannot be undone in AFTERPLAY.",
+  "Видео удалено с компьютера безвозвратно": "Video permanently deleted from the computer",
+  "Неизвестный способ удаления": "Unknown deletion method",
+  "Windows не удалила видеофайл": "Windows did not delete the video file",
+  "Недопустимое имя файла Windows": "Invalid Windows filename",
+  "Файл с таким именем уже существует: ": "A file with this name already exists: "
 }

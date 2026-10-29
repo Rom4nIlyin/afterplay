@@ -7,7 +7,7 @@
  const clamp=(value,low,high)=>Math.max(low,Math.min(high,value));
  const random=(low,high)=>low+Math.random()*(high-low);
  const cfg=()=>({enabled:false,sound:true,...state.settings.pet,...pendingChoice});
- let layer,cat,sprite,bubble,loaded=false,failed=false,raf=0,lastDraw=0,frameKey='',dirty=true;
+ let layer,cat,sprite,bubble,loaded=false,groomLoaded=false,failed=false,raf=0,lastDraw=0,frameKey='',dirty=true;
  let x=0,y=0,facing=1,surface=null,surfaces=[],motion=null,mood='idle',since=0,until=0,bubbleUntil=0;
  let pending=false,pendingChoice=null,audio=null,purr=null,purrBytes=null,purrBuffer=null,audioRequest=0,enabledBefore=false;
 
@@ -23,6 +23,7 @@
   cat.addEventListener('contextmenu',event=>{event.preventDefault();event.stopPropagation();react('petted')});
   cat.addEventListener('pointerdown',event=>{event.stopPropagation();if(event.button===2)event.preventDefault()});
   const image=new Image();image.onload=()=>{loaded=true;sync()};image.onerror=()=>{failed=true;sync();toast('Не удалось загрузить Рыську. Проверь целостность папки программы.',true)};image.src=base+'pets/rysya.png';
+  const groom=new Image();groom.onload=()=>{groomLoaded=true;cat.dataset.groomReady='true';frameKey='';sync()};groom.src=base+'pets/rysya-groom.png';
   purrBytes=fetch(base+'pets/purr.wav').then(response=>{if(!response.ok)throw Error('Purr audio unavailable');return response.arrayBuffer()});
   purrBytes.catch(()=>{});
  }
@@ -110,8 +111,8 @@
   else if(mood==='startled')frame=Math.min(4,Math.floor(elapsed*8));
   else if(mood==='stretch')frame=Math.min(5,Math.floor(elapsed*3.5));
   else frame=Math.floor(elapsed*({walk:8,sleep:2,groom:5,petted:4}[mood]||4))%6;
-  const key=rows[mood]+':'+frame;
-  if(key!==frameKey){sprite.style.backgroundPosition=`${frame*20}% ${rows[mood]*100/7}%`;frameKey=key}
+  const row=mood==='groom'?0:rows[mood],key=(mood==='groom'?'groom-'+groomLoaded:row)+':'+frame;
+  if(key!==frameKey){sprite.style.backgroundPosition=`${frame*20}% ${row*100/7}%`;frameKey=key}
   cat.style.transform=`translate3d(${Math.round(x-HALF)}px,${Math.round(y-FOOT)}px,0) scaleX(${facing})`;
   bubble.style.left=clamp(x,56,innerWidth-56)+'px';bubble.style.top=Math.max(30,y-FOOT+12)+'px';bubble.classList.toggle('visible',now<bubbleUntil);
  }
@@ -192,6 +193,6 @@
  window.addEventListener('pagehide',()=>{stopPurr();if(raf)cancelAnimationFrame(raf);audio?.close().catch(()=>{})});
  setInterval(sync,800);
  // Read-only diagnostics also let the native smoke test inspect the live companion.
- window.afterplayPet={info:()=>({enabled:cfg().enabled,sound:cfg().sound,loaded,failed,visible:!!layer&&!layer.hidden,mood,x,y,facing,moving:motion?.kind||null,fleeing:!!motion?.flee,surface:surface?.element?.className||'window-edge',surfaces:surfaces.length,purring:!!purr,audioState:audio?.state||'closed',purrRecording:true,purrGain:PURR_GAIN,frames:48})};
+ window.afterplayPet={info:()=>({enabled:cfg().enabled,sound:cfg().sound,loaded,failed,visible:!!layer&&!layer.hidden,mood,x,y,facing,moving:motion?.kind||null,fleeing:!!motion?.flee,surface:surface?.element?.className||'window-edge',surfaces:surfaces.length,purring:!!purr,audioState:audio?.state||'closed',purrRecording:true,purrGain:PURR_GAIN,frames:48,groomCorrected:groomLoaded})};
  settingsCard();sync();
 })();

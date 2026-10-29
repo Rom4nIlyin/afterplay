@@ -12,7 +12,7 @@ class UiDeliveryTests(unittest.TestCase):
             try:
                 self.assertGreaterEqual(server.request_queue_size,64)
                 with patch('mimetypes.guess_type',side_effect=RuntimeError('Broken registry association')):
-                    for name,expected in [('index.html','text/html'),('style.css','text/css'),('ui.js','text/javascript'),('comfort.css','text/css'),('fonts/Inter-Regular.ttf','font/ttf')]:
+                    for name,expected in [('index.html','text/html'),('style.css','text/css'),('ui.js','text/javascript'),('recording-size.js','text/javascript'),('settings-layout.js','text/javascript'),('comfort.css','text/css'),('fonts/Inter-Regular.ttf','font/ttf')]:
                         with urllib.request.urlopen(f'http://127.0.0.1:{server.server_port}/{token}/{name}') as response:
                             self.assertEqual(response.headers.get_content_type(),expected)
                             self.assertEqual(response.version,11)

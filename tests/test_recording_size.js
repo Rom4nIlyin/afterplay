@@ -1,0 +1,32 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {estimate}=require('../ui/recording-size.js');
+const cfg={seconds:600,fps:90,mbps:60,max_mbps:80,quality_mode:'cbr',audio_mode:'none',audio_bitrate:192};
+assert.equal(estimate(cfg).bytes,4500000000);
+assert.equal(estimate(cfg).gigabytes,4.5);
+for(const fps of [24,30,60,90,120])assert.equal(estimate({...cfg,fps}).gigabytes,4.5,'bitrate already includes all frames');
+assert.equal(estimate({...cfg,seconds:1200}).gigabytes,9);
+assert.equal(estimate({...cfg,audio_mode:'system'}).bytes,4514400000);
+for(const [audio_mode,microphone_enabled,count] of [['none',false,0],['none',true,1],['system',false,1],['system',true,3],['game',false,1],['exclude',true,3],['multitrack',false,3],['multitrack',true,4]]){
+ const result=estimate({...cfg,audio_mode,microphone_enabled});assert.equal(result.audioTracks,count);
+ assert.equal(result.bytes,600*(60+count*.192)*1e6/8);
+}
+const cq={...cfg,quality_mode:'quality',cq:19,encoder:'libx264',preset:'balanced',max_mbps:200};
+const quality=estimate(cq,{width:1920,height:1080});assert.equal(quality.kind,'range');assert(quality.highBytes>quality.lowBytes);
+assert(estimate({...cq,fps:120}).highBytes>estimate({...cq,fps:30}).highBytes);
+assert(estimate(cq,{width:3840,height:2160}).highBytes>estimate(cq,{width:1920,height:1080}).highBytes);
+assert(estimate({...cq,height:720}).highBytes<estimate(cq).highBytes);
+assert(estimate({...cq,cq:14}).highBytes>estimate({...cq,cq:32}).highBytes);
+assert(estimate({...cq,preset:'performance'}).highBytes>estimate({...cq,preset:'balanced'}).highBytes);
+assert.notEqual(estimate({...cq,encoder:'libx264'}).highBytes,estimate({...cq,encoder:'h264_nvenc'}).highBytes);
+assert(estimate({...cq,max_mbps:5}).highBytes<=600*5e6/8);
+assert.deepEqual(estimate({...cq,height:2160},{width:1280,height:720}).width,1280,'no source upscaling');
+assert.equal(estimate(cq).assumed,true);assert.equal(estimate(cq,{width:1920,height:1080}).assumed,false);
+const gif=estimate({...cq,save_format:'gif',gif_seconds:5},{width:2560,height:1440});
+assert.equal(gif.width,720);assert.equal(gif.fps,15);assert.equal(gif.audioTracks,0);assert.equal(gif.kind,'gif');
+assert.equal(estimate({...cq,save_format:'gif',gif_seconds:10},{width:2560,height:1440}).highBytes,gif.highBytes*2);
+assert.equal(estimate({...cq,save_format:'gif',gif_seconds:5,fps:120,mbps:150,audio_mode:'multitrack',microphone_enabled:true},{width:2560,height:1440}).highBytes,gif.highBytes,'GIF uses its actual output settings');
+assert.equal(estimate({...cfg,quality_mode:'vbr'}).gigabytes,4.5);
+assert.equal(estimate({...cfg,audio_mode:'multitrack',microphone_enabled:true,audio_bitrate:320}).bytes,4596000000);
+for(const invalid of [{seconds:0},{seconds:NaN},{seconds:Infinity},{mbps:''},{mbps:-1},{mbps:201},{quality_mode:'bad'},{quality_mode:'vbr',max_mbps:50},{quality_mode:'quality',max_mbps:''},{quality_mode:'quality',cq:''},{quality_mode:'quality',preset:'bad'}])assert.equal(estimate({...cfg,...invalid}),null);
+console.log('Recording size: decimal units, duration, FPS, quality modes, audio tracks and invalid drafts passed.');

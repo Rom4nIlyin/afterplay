@@ -26,7 +26,7 @@ class PetTests(unittest.TestCase):
             suite=Suite(folder);server,token=server_for(suite)
             threading.Thread(target=server.serve_forever,daemon=True).start()
             try:
-                for path,mime in [('pet-ui.js','text/javascript'),('pet.css','text/css'),('pets/rysya.png','image/png'),('pets/purr.wav','audio/wav')]:
+                for path,mime in [('pet-ui.js','text/javascript'),('pet.css','text/css'),('pets/rysya.png','image/png'),('pets/rysya-groom.png','image/png'),('pets/purr.wav','audio/wav')]:
                     with urllib.request.urlopen(f'http://127.0.0.1:{server.server_port}/{token}/{path}') as response:
                         self.assertEqual(response.headers.get_content_type(),mime)
                         content=response.read();self.assertGreater(len(content),100)

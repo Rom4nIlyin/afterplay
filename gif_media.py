@@ -66,7 +66,8 @@ def encode(suite, source, target, start, duration, job, width=720, timer=False, 
             suite.log('gif_validation_failed', expected_duration=duration, expected_width=width, actual=info)
             raise ValueError(f"GIF не прошла проверку: ожидалось {duration:.3f} с, получено {info['duration']:.3f} с; {info['width']} px")
         if control:control.commit()
-        os.replace(partial, target)
+        from output_names import commit_output
+        commit_output(partial,target)
         return {'path': str(target), 'format': 'gif', 'bytes': target.stat().st_size, **info}
     finally:
         if proc:

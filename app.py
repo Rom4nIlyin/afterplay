@@ -363,6 +363,8 @@ class Suite:
         return cid
 
     def recycle_video(self,arg):
+        mode=arg.get('delete_mode','recycle')
+        if mode not in ('recycle','permanent'):raise ValueError('Неизвестный способ удаления')
         if arg.get('export_key'):
             record=next((row for row in storage.exports(self) if row['key']==str(arg['export_key'])),None)
             if not record:raise ValueError('Запись в папках экспорта не найдена')
@@ -380,18 +382,21 @@ class Suite:
                                       'path':str(path),'name':name}
         else:
             info=self.clip(arg['id']);path=Path(info['path'])
-        if path.suffix.lower() not in VIDEO_EXT or path.is_symlink() or path.is_dir():
+        if path.suffix.lower() not in VIDEO_EXT or path.is_symlink() or path.is_dir() or self.internal_media(path):
             raise ValueError('Можно удалять только обычные видеофайлы из библиотеки')
         if not path.is_file():raise ValueError('Исходный видеофайл не найден. Возможно, он уже перемещён.')
-        from send2trash.win.modern import send2trash
-        send2trash(str(path.resolve()))
-        if path.exists():raise ValueError('Windows не переместила файл в корзину')
+        if mode=='permanent':
+            path.unlink()
+        else:
+            from send2trash.win.modern import send2trash
+            send2trash(str(path.resolve()))
+        if path.exists():raise ValueError('Windows не удалила видеофайл')
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO deleted_clips VALUES(?,?,?,?)',
-                       (info['id'],json.dumps(info,ensure_ascii=False),time.strftime('%Y-%m-%d %H:%M:%S'),'recycle'))
+                       (info['id'],json.dumps(info,ensure_ascii=False),time.strftime('%Y-%m-%d %H:%M:%S'),mode))
             db.execute('DELETE FROM clips WHERE path=?',(str(path),))
-        self.log('video_recycled',path=str(path),metadata=info)
-        return {'ok':True,'name':info['name'],'path':str(path),'recycled':True}
+        self.log('video_recycled' if mode=='recycle' else 'video_deleted_permanently',path=str(path),metadata=info)
+        return {'ok':True,'name':info['name'],'path':str(path),'recycled':mode=='recycle','delete_mode':mode}
 
     def clip(self, cid):
         with self.db() as db:
@@ -415,6 +420,13 @@ class Suite:
         return {'ok': True}
 
     def export(self, arg, job):
+        from output_names import reserve_output
+        source=Path(self.clip(arg['id'])['path'])
+        extension='.gif' if arg.get('format')=='gif' else '.mp4'
+        with reserve_output(self.recordings_dir(),arg.get('name') or source.stem,extension) as destination:
+            return self._export_to(arg,job,destination)
+
+    def _export_to(self, arg, job, dest):
         control = self.export_controls.get(job.get('id'))
         if control:control.check()
         c = self.clip(arg['id'])
@@ -438,8 +450,6 @@ class Suite:
         if arg.get('format') == 'gif':
             import gif_media
             gif_media.validate_duration(end-start)
-            name = re.sub(r'[^\w .-]', '_', str(arg.get('name') or src.stem))[:90].strip(' .') or 'clip'
-            dest = self.recordings_dir()/f'{name}-{uuid.uuid4().hex[:8]}.gif'
             width=int(arg.get('gif_width',720));ass=None;extra=''
             try:
                 if show_inputs:
@@ -454,9 +464,6 @@ class Suite:
             self.log('gif_export', source=str(src), start=start, end=end, **result)
             return result
         vertical = arg.get('format') == 'vertical'
-        name = re.sub(r'[^\w .-]', '_', str(arg.get('name') or src.stem))[:90].strip(' .') or 'clip'
-        suffix = '-vertical' if vertical else ''
-        dest = self.recordings_dir()/f'{name}{suffix}-{time.strftime("%Y%m%d-%H%M%S")}-{uuid.uuid4().hex[:4]}.mp4'
         partial = dest.with_suffix('.partial.mp4')
         vf = 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1' if vertical else 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1'
         if timer:
@@ -503,7 +510,8 @@ class Suite:
             if vertical and (result['width'],result['height']) != (720,1280):
                 raise ValueError('Размер вертикального видео не прошёл проверку')
             if control:control.commit()
-            os.replace(partial, dest)
+            from output_names import commit_output
+            commit_output(partial,dest)
             if not show_inputs:input_capture.copy_trim(src,dest,start,result['duration'])
             self.index_video(dest)
             self.log('export', source=str(src), output=str(dest), start=start, end=end, **result)
@@ -918,6 +926,10 @@ class Suite:
         if action=='job_cancel': return self.cancel_export(arg.get('id'))
         if action=='open':
             target = arg.get('target')
+            if target=='github':
+                from app_update import REPOSITORY
+                os.startfile('https://github.com/'+REPOSITORY)
+                return {'ok':True}
             if target=='exports': p=self.recordings_dir()
             elif target=='data': p=self.data
             elif target in {'clip','clip-folder'}:
@@ -976,9 +988,9 @@ def server_for(suite, token=None, port=0):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
             try:
-                if route in {'','window-chrome.js','index.html','style.css','themes.css','ui.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
+                if route in {'','window-chrome.js','index.html','style.css','themes.css','ui.js','recording-size.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
-                elif route in {'scrollbars.css','sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
+                elif route in {'settings-layout.js','scrollbars.css','sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/rysya-groom.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
                     p=BASE/'ui'/route
                 elif route.startswith('backgrounds/'):
                     p=safe_child(BASE/'ui',route)

@@ -19,3 +19,5 @@
 @keyframes rysya-nuzzle{0%,100%{transform:rotate(-1deg) scaleY(1)}50%{transform:rotate(1deg) scaleY(.98)}}
 @keyframes rysya-shiver{0%,100%{transform:translateX(-1px)}50%{transform:translateX(1px)}}
 @media(prefers-reduced-motion:reduce){#rysya-cat .rysya-sprite{animation:none!important}.rysya-bubble{transition:none}}
+
+#rysya-cat[data-mood="groom"][data-groom-ready="true"] .rysya-sprite{background-image:url('pets/rysya-groom.png');background-size:600% 100%}

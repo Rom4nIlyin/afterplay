@@ -83,6 +83,13 @@ def process(suite, command, job, total, offset, log):
 
 
 def export(suite, arg, job):
+    from output_names import reserve_output
+    extension='.gif' if arg.get('format')=='gif' else '.mp4'
+    with reserve_output(suite.recordings_dir(),arg.get('name') or 'Подборка',extension,'Подборка') as target:
+        return _export_to(suite,arg,job,target)
+
+
+def _export_to(suite, arg, job, target):
     control=suite.export_controls.get(job.get('id'))
     if control:control.check()
     rows=segments(suite,arg.get('segments'))
@@ -109,8 +116,6 @@ def export(suite, arg, job):
     # The estimate covers temporary encodes plus the final copy.
     if shutil.disk_usage(destination).free < max(512*1024**2,width*height*fps*total*.04):
         raise ValueError('Недостаточно свободного места для сборки подборки')
-    name=re.sub(r'[^\w .-]','_',str(arg.get('name') or 'Подборка'))[:80].strip(' .') or 'Подборка'
-    target=destination/(name+'-'+time.strftime('%Y%m%d-%H%M%S')+'-'+uuid.uuid4().hex[:6]+('.gif' if export_format=='gif' else '.mp4'))
     partial=target.with_suffix('.partial.mp4')
     stage=destination/('.replay-stage-montage-'+uuid.uuid4().hex);stage.mkdir()
     log=suite.data/'logs'/('montage-'+uuid.uuid4().hex[:12]+'.log')
@@ -173,7 +178,8 @@ def export(suite, arg, job):
             info=gif_media.encode(suite,partial,target,0,offset,job,control=control)
         else:
             if control:control.commit()
-            os.replace(partial,target)
+            from output_names import commit_output
+            commit_output(partial,target)
         cid=suite.index_video(target)
         if not any(row['show_inputs'] for row in rows) and any(row['inputs'] is not None for row in rows):
             input_capture.write(target,events,info['duration'])

@@ -57,3 +57,16 @@ dialog{overscroll-behavior:contain}
 .connected-folder>span{overflow-wrap:anywhere;min-width:0}.connected-folder>button{flex-shrink:0}
 :root[data-theme="dark"]{color-scheme:dark;--bg:#080a0c;--sidebar:#0d1012;--panel:#111619;--panel2:#181e22;--line:#2a333a;--text:#eef3f5;--muted:#a0aeb7;--subtle:#8999a5;--strong:#f0f7fa;--input:#090d10;--input-line:#36434d;--secondary:#1d272e;--hover:#293b45;--pressed:#344e5a;--hover-text:#fff;--accent:#60e2bb;--accent-rgb:96,226,187;--primary-hover:#8cefd0;--primary-pressed:#43c5a0;--on-accent:#0e2920;--dialog:#111619;--hero-start:#132421;--hero-end:#101a1a;--hero-line:#314a43;--orb:#1c342c;--audio:#0b1711;--track:#233b31;--notice:#202c25;--notice-line:#3b5345;--notice-text:#c0d2c8;--success:#1c3c30;--success-line:#456f5c;--success-text:#e4fff1;--error:#382025;--error-text:#ffe5e5;--error-line:#7a4854;--danger:#302024;--danger-line:#68424b;--danger-text:#ffb7b5;--danger-hover:#5e303d;--danger-pressed:#733c4b;--shadow:#0008}
 :root[data-theme="dark"] .clips{--accent:#60e2bb;--accent-rgb:96,226,187}
+
+/* Cards keep a dedicated delete control at the lower right. */
+body.clips .clip-card{position:relative}
+body.clips .clip-card .clip-info{padding-right:10px!important}
+body.clips .clip-card .clip-meta,body.clips .clip-card .cinema-card-meta,body.clips .clip-card .clip-tags{padding-right:36px}
+body.clips button.library-delete{position:absolute;right:7px;bottom:7px;top:auto;z-index:5;display:grid;place-items:center;width:30px;height:30px;min-height:0;padding:6px;margin:0;border:0;background:transparent!important;box-shadow:none!important;color:var(--muted);transform:none!important;cursor:pointer}
+body.clips button.library-delete::after{content:none!important;display:none!important}
+body.clips button.library-delete:hover{color:var(--danger-text,#ffb7b5)!important}
+body.clips button.library-delete svg{display:block;width:18px;height:18px}
+body.clips .cinema-list-row{padding-right:44px}
+/* Pack cards independently instead of reserving a full row beside tall forms. */
+.settings-panel.settings-masonry{grid-auto-rows:4px;grid-auto-flow:row dense;gap:0 20px;align-items:start}
+.settings-panel.settings-masonry>.settings-card{align-self:start;margin:0}

@@ -5,3 +5,16 @@ dialog.montage-dialog{width:min(1420px,96vw);max-width:96vw;height:min(900px,92v
 @media(max-width:1150px){.montage-editor{grid-template-columns:minmax(280px,.9fr) minmax(330px,1fr);gap:16px}.montage-selection-bar{flex-wrap:wrap}.quick-clip-setting{grid-template-columns:minmax(0,1fr) 86px}}
 .montage-stage video{position:absolute;inset:0;min-width:0;min-height:0}
 .review-tabs button{flex:1 0 calc(33.333% - 6px)}
+
+/* Binding controls share a row; the short input-recording card keeps its own height. */
+#quickClipSettings{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+#quickClipSettings>h3{margin:0 0 10px}
+#quickClipSettings .quick-clip-setting{margin-top:18px;align-items:start}
+#quickClipSettings .quick-clip-setting>.field{margin:0;min-width:0}
+#quickClipSettings>.field{margin:20px 0 0}
+.hotkey-binding-row{display:flex;align-items:stretch;gap:10px;min-width:0}
+.hotkey-binding-row input{flex:1;min-width:0;width:100%;min-height:44px}
+.quick-clip-setting input[type=number]{min-height:44px}
+body.clips .hotkey-binding-row .clear-binding{flex:none;margin:0;min-height:41px;padding:8px 12px;font-size:12px}
+#hotkeySettings>.actions{margin-top:22px;gap:10px}
+#inputRecordingSettings{align-self:start}

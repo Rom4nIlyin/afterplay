@@ -37,3 +37,25 @@
 #replaySave[hidden]{display:none}
 
 .quick-replay{flex-wrap:wrap}.quick-replay .quick-actions{flex-wrap:wrap;justify-content:flex-start}.capture-mode-actions{flex-wrap:wrap}.quick-actions .replay-hotkey{margin-left:0}
+
+/* Keep the estimate visible while editing the draft quality settings. */
+.replay-layout{align-items:stretch}
+.replay-size-slot{min-width:0;position:relative}
+.recording-size-card{position:sticky;top:90px;z-index:2;margin-bottom:18px}
+.recording-size-value{display:block;margin:16px 0 10px;color:var(--accent);font-size:clamp(26px,2.5vw,38px);font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.recording-size-variable{font-size:26px}
+.recording-size-detail,.recording-size-cap{font-size:12px;line-height:1.8}
+.recording-size-cap{margin-top:10px;color:var(--accent)}
+.recording-size-card .hint,.recording-size-card>small{font-size:11px;line-height:1.6;color:var(--muted)}
+.recording-size-card>small{display:block;margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+#githubBtn{flex-shrink:0}
+@media(max-width:1100px){.recording-size-card{position:static;margin-top:18px}}
+
+.github-profile-link{display:flex;align-items:center;gap:10px;flex:1 1 350px;max-width:520px;min-width:0}
+.github-profile-link>[data-action=update-github]{flex:none}
+.github-profile-copy{position:relative;flex:1;min-width:0}
+.github-profile-copy input{min-width:0;width:100%;padding-right:43px;font-size:12px;user-select:text;cursor:text}
+body.clips .github-profile-copy button[data-action=update-github-copy]{position:absolute;right:6px;top:0;bottom:0;margin:auto 0;width:32px;height:32px;min-height:0;padding:0;display:grid;place-items:center;border:0;background:none!important;box-shadow:none!important;transform:none!important;filter:none!important;color:var(--muted);cursor:pointer}
+body.clips .github-profile-copy button[data-action=update-github-copy]::after{content:none!important;display:none!important}
+body.clips .github-profile-copy button[data-action=update-github-copy]:hover{color:var(--accent)!important}
+.github-profile-copy button svg{display:block;width:16px;height:16px}

@@ -6,6 +6,13 @@ import app_update
 
 
 class NavigationAndUpdateTests(unittest.TestCase):
+    def test_github_opens_the_project_in_the_default_browser(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            suite=Suite(tmp)
+            with patch('app.os.startfile',create=True) as opened:
+                self.assertEqual(suite.dispatch('open',{'target':'github','url':'https://example.com'}),{'ok':True})
+                opened.assert_called_once_with('https://github.com/'+app_update.REPOSITORY)
+
     def test_open_in_folder_passes_exact_unicode_path_as_one_argument(self):
         with tempfile.TemporaryDirectory() as tmp:
             suite=Suite(tmp);path=Path(tmp)/'Имя с пробелами.mp4';path.write_bytes(b'fixture')

@@ -2,6 +2,53 @@
 icons.trash='<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/>';
 let replayDevices=null,replayLoading=false;
 const options=(rows,value)=>rows.map(([v,label])=>`<option value="${esc(String(v))}" ${String(v)===String(value)?'selected':''}>${esc(label)}</option>`).join('');
+function recordingSizeSource(cfg){
+ if(cfg.capture_mode==='window'){
+  const app=(replayDevices?.applications||[]).find(a=>String(a.hwnd)===String(cfg.window_hwnd));
+  if(app&&!app.minimized&&app.width>2&&app.height>2)return app;
+ }
+ const screens=replayDevices?.monitors||[],screen=screens.find(m=>m.id===cfg.monitor)||screens.find(m=>m.primary)||screens[0];
+ return screen?{...screen,assumed:cfg.capture_mode==='window'}:{};
+}
+function recordingSizeMarkup(cfg){
+ const en=state.settings.language==='en',t=(ru,english)=>en?english:ru;
+ const number=(n,digits=2)=>new Intl.NumberFormat(en?'en-US':'ru-RU',{maximumFractionDigits:digits}).format(n);
+ const result=AfterplayRecordingSize.estimate(cfg,recordingSizeSource(cfg));
+ const gb=n=>number(n/1e9)+t(' ГБ',' GB');
+ let value='—',detail=t('Проверь длительность, качество и битрейт.','Check the duration, quality and bitrate.'),note='',extra='';
+ if(result){
+  const gif=result.kind==='gif',range=result.kind==='range';
+  value=gif?'≈ '+number(result.lowBytes/1e6)+'–'+number(result.highBytes/1e6)+t(' МБ',' MB'):range?'≈ '+number(result.lowBytes/1e9)+'–'+gb(result.highBytes):'≈ '+gb(result.bytes);
+  detail=number(result.seconds/(gif?1:60))+t(gif?' с · ':' мин · ',gif?' s · ':' min · ')+result.width+' × '+result.height+' · '+result.fps+' FPS';
+  if(gif){
+   note=t('Грубый диапазон для GIF: до 720 px по ширине, 15 FPS, без звука. Итог сильно зависит от движения и цветов. Битрейт MP4 к GIF не применяется.','Rough GIF range: up to 720 px wide, 15 FPS, no audio. Motion and colors strongly affect size. MP4 bitrate does not apply to GIF.');
+  }else{
+   const encoder={auto:t('Авто · NVENC / CPU','Auto · NVENC / CPU'),h264_nvenc:'NVENC',libx264:'CPU (x264)'}[cfg.resolved_encoder||cfg.encoder||'auto'];
+   const preset={performance:t('Минимум нагрузки','Performance'),balanced:t('Баланс','Balanced'),quality:t('Больше сжатие','Quality')}[cfg.preset||'performance'];
+   detail+='<br>'+esc(encoder)+' · '+esc(preset)+'<br>'+(range?'CQ / CRF '+number(Number(cfg.cq??19)):String(cfg.quality_mode||'cbr').toUpperCase()+' · '+number(Number(cfg.mbps))+t(' Мбит/с',' Mbit/s'));
+   detail+='<br>'+t('Звук: ','Audio: ')+(result.audioTracks?number(result.audioTracks)+t(' дор. × ',' tracks × ')+number(Number(cfg.audio_bitrate??192))+t(' кбит/с',' kbit/s'):t('выключен','off'));
+   if(cfg.quality_mode!=='cbr')extra=t('По пределу ','At the limit of ')+number(result.cap)+t(' Мбит/с: ≈ ',' Mbit/s: ≈ ')+gb(result.limitBytes);
+   note=range?t('Диапазон учитывает разрешение, FPS, CQ/CRF, кодировщик и пресет. Модель откалибрована на тестовых сценах; реальная игра может выходить за этот диапазон.','The range uses resolution, FPS, CQ/CRF, encoder and preset. The model is calibrated on test scenes; a real game can fall outside this range.'):t('Расчёт по длительности и битрейту видео и всех аудиодорожек. В CBR/VBR разрешение и FPS уже входят в битрейт; в VBR итог зависит от сцены.','Calculated from duration and bitrate of video and every audio track. In CBR/VBR, resolution and FPS are already included in the bitrate; VBR size depends on the scene.');
+  }
+  if(result.assumed)note+=' '+t('Размер источника пока неизвестен: использован экран или 1920 × 1080. Выбери доступное окно для уточнения.','Source dimensions are not yet available: using the screen or 1920 × 1080. Select an available window to refine the estimate.');
+ }
+ return `<div class="panel-title">${t('ПРИМЕРНЫЙ РАЗМЕР ФАЙЛА','ESTIMATED FILE SIZE')}</div><output class="recording-size-value ${result?.kind==='range'||result?.kind==='gif'?'recording-size-variable':''}" aria-live="polite" aria-atomic="true">${esc(value)}</output><p class="recording-size-detail">${detail}</p>${extra?`<p class="recording-size-cap">${esc(extra)}</p>`:''}<p class="hint">${esc(note)}</p><small>${t('MP4: объём за выбранную длительность буфера. Ручная запись сохраняется целиком. Служебные данные контейнера не учтены.','MP4: size for the selected buffer duration. Manual recording saves the whole session. Container overhead is excluded.')}</small>`;
+}
+function updateRecordingSize(){
+ const card=$('#recordingSize');if(!card)return;
+ if(matchMedia('(max-width:1100px)').matches){const row=$('#replayBitrateField')?.closest('.time-inputs');if(row&&card.previousElementSibling!==row)row.after(card)}
+ else if(card.parentElement!==$('.replay-size-slot'))$('.replay-size-slot')?.prepend(card);
+ const cfg={...(state.replay?.settings||{})};
+ for(const [id,key] of Object.entries({replaySeconds:'seconds',replayFPS:'fps',replayQuality:'quality_mode',replayBitrate:'mbps',replayMax:'max_mbps',replayCQ:'cq',replayHeight:'height',replayCaptureMode:'capture_mode',replayMonitor:'monitor',replayWindow:'window_hwnd',replayEncoder:'encoder',replayPreset:'preset',replayAudioMode:'audio_mode',replayAudioBitrate:'audio_bitrate',replaySaveFormat:'save_format',replayGifSeconds:'gif_seconds'})){
+  const field=$('#'+id);if(field)cfg[key]=field.value;
+ }
+ if(state.replay?.phase==='recording'&&cfg.encoder==='auto')cfg.resolved_encoder=state.replay.encoder;
+ if($('#microphoneEnabled'))cfg.microphone_enabled=$('#microphoneEnabled').checked;
+ const markup=recordingSizeMarkup(cfg);if(card.innerHTML!==markup)card.innerHTML=markup;
+}
+matchMedia('(max-width:1100px)').addEventListener('change',()=>updateRecordingSize());
+document.addEventListener('input',e=>{if(e.target.closest('.replay-config'))updateRecordingSize()});
+document.addEventListener('change',e=>{if(e.target.closest('.replay-config'))updateRecordingSize()});
 function captureStatus(r){
  if(r.continuous&&r.replay_enabled)return 'Обычная запись и повтор включены';
  if(r.continuous)return 'Идёт обычная запись';
@@ -50,7 +97,7 @@ window.replayPage=function(){
  <div class="time-inputs"><div><label>Качество звука</label><select id="replayAudioBitrate" ${active?'disabled':''}>${options([128,192,256,320].map(n=>[n,n+' кбит/с']),cfg.audio_bitrate||192)}</select></div><div><label>Сдвиг звука, мс</label><input id="replayOffset" type="number" min="-2000" max="2000" step="10" value="${cfg.audio_offset_ms||0}" ${active?'disabled':''}></div></div><div class="field"><small>Обычно оставляй 0. Отрицательное значение сдвигает звук раньше, положительное — позже.</small></div>
  <div class="audio-level"><span id="audioIndicator"></span><div><b id="audioLabel">Ожидает запуска</b><small id="audioSource">${esc(r.audio_name||'')}</small></div><div class="audio-meter"><span id="audioMeter"></span></div></div>
  </div></section><small id="replayAppStatus" class="hint">Список окон обновляется автоматически каждые 3 секунды.</small><div class="actions" style="margin-top:20px">${button('replay-settings','Сохранить параметры для этого профиля','check','primary',active?'disabled':'')}${button('replay-devices','Обновить список','refresh','quiet',active?'disabled':'')}</div></section>
- <section><div class="panel panel-pad"><div class="panel-title">КАК СОХРАНИТЬ МОМЕНТ</div><p style="font-size:12px">1. Нажми «Включить запись».<br><br>2. Чтобы закончить обычную запись, нажми «Отключить запись».<br><br>Для повтора нажми «Включить повтор», а после нужного момента — <b>${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</b> или «Сохранить последние ${minutes} мин».<br><br>3. Готовая запись появится в библиотеке и разделе «Экспорт».</p><div class="notice">Ручная запись сохраняется целиком в MP4, в том числе если длится час и больше. Лимит буфера относится только к повтору. Состояние записи видно в окне и в подсказке значка трея. Остановить запись можно здесь или через меню трея.</div></div><div class="panel panel-pad" style="margin-top:18px"><div class="panel-title">СОСТОЯНИЕ</div><p id="replayInfo" style="font-size:12px"></p><div id="replayLast" class="hint"></div><div class="actions" style="margin-top:18px">${button('open-exports','Открыть записи','folder')}</div></div></section></div>
+ <aside class="replay-size-slot"><div class="panel panel-pad recording-size-card" id="recordingSize" data-i18n-ignore>${recordingSizeMarkup(cfg)}</div><section class="replay-help"><div class="panel panel-pad"><div class="panel-title">КАК СОХРАНИТЬ МОМЕНТ</div><p style="font-size:12px">1. Нажми «Включить запись».<br><br>2. Чтобы закончить обычную запись, нажми «Отключить запись».<br><br>Для повтора нажми «Включить повтор», а после нужного момента — <b>${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</b> или «Сохранить последние ${minutes} мин».<br><br>3. Готовая запись появится в библиотеке и разделе «Экспорт».</p><div class="notice">Ручная запись сохраняется целиком в MP4, в том числе если длится час и больше. Лимит буфера относится только к повтору. Состояние записи видно в окне и в подсказке значка трея. Остановить запись можно здесь или через меню трея.</div></div><div class="panel panel-pad" style="margin-top:18px"><div class="panel-title">СОСТОЯНИЕ</div><p id="replayInfo" style="font-size:12px"></p><div id="replayLast" class="hint"></div><div class="actions" style="margin-top:18px">${button('open-exports','Открыть записи','folder')}</div></div></section></aside></div>
  <div id="replayError" class="notice hidden"></div>`;
 };
 window.renderDesktopExtras=function(){
@@ -65,6 +112,7 @@ window.updateReplay=function(){
  $('#headerStatus').textContent=active?'● '+captureStatus(r)+' · '+fmt(seconds):'Личная видеотека · запись выключена';
  $('.local-dot').classList.toggle('recording-dot',active);
  if(tab!=='replay')return;
+ updateRecordingSize();
  const phase=$('#replayPhase');if(!phase)return;
  phase.textContent=r.saving?'СОХРАНЕНИЕ ВИДЕО':active?captureStatus(r):r.pending_recording?'Запись ожидает сохранения':captureStatus(r);
  $('#replayOrb').classList.toggle('active',active);
@@ -90,7 +138,7 @@ function updateCaptureFields(){
  $('#replayMonitorField').hidden=win;$('#replayWindowField').hidden=!win;
  $('#replayFollowField').hidden=!(win&&['game','multitrack'].includes(audio));
  $('#replayApplicationField').hidden=!['game','exclude','multitrack'].includes(audio)||(win&&['game','multitrack'].includes(audio)&&$('#replayFollow').checked);
- $('#replayDeviceField').hidden=audio!=='system';$('#replayCQField').hidden=q!=='quality';$('#replayBitrateField').hidden=q==='quality';$('#replayMaxField').hidden=q==='cbr';
+ $('#replayDeviceField').hidden=audio!=='system';$('#replayCQField').hidden=q!=='quality';$('#replayBitrateField').hidden=q==='quality';$('#replayMaxField').hidden=q==='cbr';updateRecordingSize();
 }
 document.addEventListener('change',e=>{if(['replayAudioMode','replayCaptureMode','replayFollow','replayQuality'].includes(e.target.id))updateCaptureFields()});
 function replayValues(){
@@ -144,6 +192,7 @@ function syncReplayApplications(){
   }
  }
  if($('#replayAppStatus'))$('#replayAppStatus').textContent=`Список окон обновляется автоматически · доступно приложений: ${apps.length}.`;
+ updateRecordingSize();
 }
 async function refreshReplayDevices(manual=false){
  if(replayLoading)return;
@@ -175,13 +224,15 @@ window.videoDeleteAction=async function(a,el){
   if(!item)throw Error('Видео не найдено');
   if(selected&&selected.id===item.id&&$('#clipTags'))await saveClip();
   const player=$('#player');if(player){player.pause();player.removeAttribute('src');player.load()}
-  modal('Переместить видео в корзину?',`<p><b>${esc(item.name)}</b></p><div class="result-path" style="margin-top:15px">${esc(item.path)}</div><p style="margin-top:16px;font-size:12px">Будет удалён сам видеофайл. Вернуть его можно из корзины Windows. Остальные записи останутся на месте.</p>`,button('close','Отмена','close','quiet')+button('delete-video-confirm','В корзину','trash','danger',el.dataset.export?`data-export="${esc(el.dataset.export)}" data-export-name="${esc(item.name)}"`:`data-id="${esc(item.id)}"`));return;
+  const identity=el.dataset.export?`data-export="${esc(el.dataset.export)}" data-export-name="${esc(item.name)}"`:`data-id="${esc(item.id)}"`;
+  modal('Удалить видео?',`<p><b data-i18n-ignore>${esc(item.name)}</b></p><div class="result-path" style="margin-top:15px">${esc(item.path)}</div><p style="margin-top:16px;font-size:12px">В корзину: файл можно восстановить из корзины Windows.</p><p class="notice">Удалить навсегда: видео будет удалено с компьютера, минуя корзину. Это действие нельзя отменить в AFTERPLAY.</p>`,button('close','Отмена','close','quiet','autofocus')+button('delete-video-confirm','В корзину','trash','secondary',identity+' data-delete-mode="recycle"')+button('delete-video-confirm','Удалить навсегда','trash','danger',identity+' data-delete-mode="permanent"'));return;
  }
  if(a==='delete-video-confirm'){
-  const args=el.dataset.export?{export_key:el.dataset.export}:{id:el.dataset.id};
-  el.disabled=true;
-  try{await api('clip_delete',args);close();await refresh();toast('Видео перемещено в корзину Windows')}
-  catch(e){el.disabled=false;throw e}
+  const mode=el.dataset.deleteMode||'recycle';
+  const args={...(el.dataset.export?{export_key:el.dataset.export}:{id:el.dataset.id}),delete_mode:mode};
+  const buttons=[...$('#dialog').querySelectorAll('button')];buttons.forEach(button=>button.disabled=true);
+  try{await api('clip_delete',args);close();await refresh();toast(mode==='permanent'?'Видео удалено с компьютера безвозвратно':'Видео перемещено в корзину Windows')}
+  catch(e){buttons.forEach(button=>button.disabled=false);throw e}
  }
 };
 
