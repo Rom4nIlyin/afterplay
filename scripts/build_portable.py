@@ -18,11 +18,13 @@ ROOT = Path(__file__).resolve().parents[1]
 FILES = ('output_names.py','window_chrome.py','export_control.py','quick_clips.py','input_capture.py','input_overlay.py','montage.py','app.py', 'app_update.py', 'version.py', 'Updater.cs', 'shortcuts.py', 'replay.py', 'capture_media.py', 'gpu_capture.py', 'video_quality.py', 'desktop.py', 'storage.py', 'auto_record.py', 'hotkeys.py', 'gif_media.py', 'timer_overlay.py', 'single_instance.py', 'process_audio.py', 'runtime_trust.py', 'ProcessAudio.cs',
          'Launcher.cs', 'RuntimeExit.cs', 'app.manifest', 'ReplayNotification.cs', 'Install-Shortcuts.ps1', 'Update-Existing.ps1', 'README.md',
          'LICENSE', 'THIRD-PARTY.md', 'FFmpeg-COPYING.GPLv3.txt', 'CHANGELOG.md',
-         'portable_paths.py','capture_profiles.py','live_markers.py','audio_tracks.py','editor_media.py','customization.py','microphone.py','voice_processing.py','localization.py')
+         'portable_paths.py','capture_profiles.py','live_markers.py','audio_tracks.py','editor_media.py','customization.py','microphone.py','microphone_worker.py','voice_processing.py','localization.py')
 PYTHON_URL = 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-embed-amd64.zip'
 WEBVIEW_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124701'
-FFMPEG_URL = 'https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip'
-FFMPEG_SHA256 = '60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba'
+FFMPEG_BUILD = 'ffmpeg-2026-10-29-git-31ba826726-essentials_build'
+FFMPEG_URL = 'https://www.gyan.dev/ffmpeg/builds/packages/' + FFMPEG_BUILD + '.7z'
+FFMPEG_SHA256 = '94c9d4eae0817f4c2cc8c78fe2d001db347ce4a433a52f1d9312ff6a886451f8'
+FFMPEG_EXE_SHA256 = '557e97af30a1c9b6dfbd08a1d2a04894279dd15a77d23b1723e560cc7f4fc90e'
 
 
 def organize_portable(target):
@@ -43,13 +45,18 @@ def organize_portable(target):
 
 
 def install_ffmpeg(cache,runtime):
-    archive=Path(cache)/'ffmpeg-9.0.2-essentials_build.zip'
+    archive=Path(cache)/(FFMPEG_BUILD+'.7z')
     download(FFMPEG_URL,archive)
     with archive.open('rb') as source:actual=hashlib.file_digest(source,'sha256').hexdigest()
     if actual!=FFMPEG_SHA256:raise ValueError('FFmpeg download SHA-256 mismatch')
-    with zipfile.ZipFile(archive) as z:
-        with z.open('ffmpeg-9.0.2-essentials_build/bin/ffmpeg.exe') as source,open(Path(runtime)/'ffmpeg.exe','wb') as out:
-            shutil.copyfileobj(source,out)
+    executable=Path(runtime)/'ffmpeg.exe'
+    # Windows' bundled bsdtar supports 7z. Read only this fixed member to stdout;
+    # no archive-controlled filesystem paths are extracted into the bundle.
+    with executable.open('wb') as out:
+        subprocess.run(['tar.exe','-xOf',str(archive),FFMPEG_BUILD+'/bin/ffmpeg.exe'],
+                       stdout=out,stderr=subprocess.PIPE,check=True,timeout=120)
+    with executable.open('rb') as source:actual=hashlib.file_digest(source,'sha256').hexdigest()
+    if actual!=FFMPEG_EXE_SHA256:raise ValueError('FFmpeg executable SHA-256 mismatch')
 
 def run(args):
     subprocess.run([str(a) for a in args], check=True)

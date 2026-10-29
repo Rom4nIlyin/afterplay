@@ -5,7 +5,7 @@ on:
       version:
         description: Version without v
         required: true
-        default: '1.14.1'
+        default: '1.14.2'
   push:
     branches: ['main']
     paths: ['version.py']
@@ -50,7 +50,7 @@ jobs:
           python scripts/build_portable.py --version $version
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           $bundle = "build/portable-$version/AFTERPLAY Portable"
-          & "$bundle/app/runtime/python.exe" -c 'import av, windows_capture, pyaudiowpatch, webview; from voice_processing import VoiceProcessor; VoiceProcessor(); print("Portable imports and speech model OK")'
+          & "$bundle/app/runtime/python.exe" -c 'import av, windows_capture, pyaudiowpatch, webview; from voice_processing import VoiceProcessor; import microphone_worker; VoiceProcessor(); print("Portable imports, microphone worker and speech model OK")'
           if ($LASTEXITCODE -ne 0) { throw 'Portable runtime failed' }
           "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
           "RELEASE_VERSION=$version" >> $env:GITHUB_ENV

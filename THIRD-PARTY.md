@@ -21,13 +21,14 @@ Build provider and build/dependency information: https://www.gyan.dev/ffmpeg/bui
 Imageio packaging source: https://github.com/imageio/imageio-ffmpeg/tree/v0.6.0
 The unmodified FFmpeg executable runs as a separate process.
 
-FFmpeg 9.0.2 essentials build by gyan.dev: app/runtime/ffmpeg.exe
-Build archive: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip
-Archive SHA-256: 60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba
+FFmpeg 2026-10-29-git-31ba826726 essentials build by gyan.dev: app/runtime/ffmpeg.exe
+Build archive: https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-2026-10-29-git-31ba826726-essentials_build.7z
+Archive SHA-256: 94c9d4eae0817f4c2cc8c78fe2d001db347ce4a433a52f1d9312ff6a886451f8
+Executable SHA-256: 557e97af30a1c9b6dfbd08a1d2a04894279dd15a77d23b1723e560cc7f4fc90e
 License: GPL version 3 or later; see FFmpeg-COPYING.GPLv3.txt.
-Corresponding source: https://github.com/FFmpeg/FFmpeg/tree/n9.0.2
+Corresponding source: https://github.com/FFmpeg/FFmpeg/commit/31ba826726
 Build configuration and dependency sources: https://www.gyan.dev/ffmpeg/builds/
-The GPU capture path uses gfxcapture / ddagrab D3D11 frames directly with NVENC; only audio
+The GPU capture path uses gfxcapture with dup_frames / ddagrab D3D11 frames directly with NVENC; only audio
 is packetized by Python. The imageio executable remains a development fallback.
 
 Microsoft WebView2 Evergreen Standalone Installer, x64:

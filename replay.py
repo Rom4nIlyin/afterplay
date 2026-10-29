@@ -311,7 +311,7 @@ class Replay:
         if self.native_gpu:
             cmd+=gpu_capture.input_options(self.capture_graph,self.video_epoch,audio)
         else:
-            cmd+=['-thread_queue_size','8','-probesize','32768','-analyzeduration','0',
+            cmd+=['-probesize','32768','-analyzeduration','0',
                   '-f','nut','-colorspace','bt709','-color_range','tv','-i','pipe:0','-map','0:v:0']
         if audio:
             count=len(audio.get('titles') or (('Общий звук','Игра','Discord / чат') if audio.get('sources') else ('Общий звук',)))
@@ -373,13 +373,17 @@ class Replay:
                     self.output_size=video_quality.output_size(self.settings,*size)
                     self.capture_graph=gpu_capture.source_filter(self.settings,window,monitor,self.output_size)
                     try:
-                        probe=subprocess.run([self.suite.ff(),'-hide_banner','-loglevel','error',
-                                              '-f','lavfi','-i',self.capture_graph,'-frames:v','3',
-                                              '-c:v','h264_nvenc','-preset','p1','-delay','0','-f','null','-'],
-                                             stdin=subprocess.DEVNULL,capture_output=True,creationflags=NO_WINDOW,timeout=3)
-                        self.native_gpu=probe.returncode==0
-                        if not self.native_gpu:
-                            self.backend_note='GPU-захват недоступен; включён совместимый режим. '+probe.stderr.decode('utf-8','replace')[-400:]
+                        if self.capture_graph.startswith('gfxcapture=') and not gpu_capture.repeats_idle_frames(self.suite.ff()):
+                            self.backend_note='Этот FFmpeg не поддерживает повтор неподвижных GPU-кадров; включён совместимый захват без остановки буфера.'
+                        else:
+                            self.capture_graph=gpu_capture.source_filter(self.settings,window,monitor,self.output_size,idle_frames=True)
+                            probe=subprocess.run([self.suite.ff(),'-hide_banner','-loglevel','error',
+                                                  '-f','lavfi','-i',self.capture_graph,'-frames:v','3',
+                                                  '-c:v','h264_nvenc','-preset','p1','-delay','0','-f','null','-'],
+                                                 stdin=subprocess.DEVNULL,capture_output=True,creationflags=NO_WINDOW,timeout=3)
+                            self.native_gpu=probe.returncode==0
+                            if not self.native_gpu:
+                                self.backend_note='GPU-захват недоступен; включён совместимый режим. '+probe.stderr.decode('utf-8','replace')[-400:]
                     except subprocess.TimeoutExpired:
                         self.backend_note='Источник не обновляет изображение; включён совместимый режим для неподвижных окон.'
                 else:self.backend_note='Для GPU-захвата нужен FFmpeg с фильтром gfxcapture; включён совместимый режим.'
@@ -478,7 +482,7 @@ class Replay:
                 if source.get('optional'):continue
                 if source.get('microphone'):
                     import microphone
-                    self._microphone=microphone.Capture(source['device'],source['queue'],self.settings['microphone_gain'],self.settings['microphone_voice_cleanup'])
+                    self._microphone=microphone.OptionalInput(self.settings,source['queue'])
                     continue
                 if not source.get('process'):
                     self._open_loopback(source,source['queue'],output_rate=48000)
@@ -518,14 +522,13 @@ class Replay:
             try:
                 capture=source.get('_capture')
                 if source['optional']=='microphone':
-                    devices=microphone.devices();name=self.settings.get('microphone_name')
-                    if self.settings['microphone_device']=='default':chosen=next((d for d in devices if d['default']),None)
-                    else:chosen=next((d for d in devices if d['name']==name),None) if name else next((d for d in devices if d['id']==self.settings['microphone_device']),None)
-                    if capture and (not chosen or chosen!=source.get('device') or not capture.is_active()):
+                    if capture and not capture.is_active():
                         self._close_optional_audio(source);capture=None
-                    if capture or not chosen:continue
-                    source['device']=chosen
-                    source['_capture']=microphone.Capture(chosen,source['queue'],self.settings['microphone_gain'],self.settings['microphone_voice_cleanup'])
+                    if capture:continue
+                    def status(event,error,source=source):
+                        self.suite.log('audio_source_connected' if event=='connected' else 'audio_source_waiting',source=source['name'],error=error)
+                    source['_capture']=microphone.OptionalInput(self.settings,source['queue'],status)
+                    continue
                 else:
                     if capture and (source.get('_error') or not process_audio.is_alive(source['pid'])):
                         self._close_optional_audio(source);capture=None
@@ -634,9 +637,6 @@ class Replay:
             if self.audio_error:
                 self.error='Ошибка захвата звука приложения: '+self.audio_error
                 self.stop();self.phase='error';break
-            if self._microphone and self._microphone.error:
-                self.error='Микрофон: '+self._microphone.error
-                self.stop(preserve=None if self.continuous else True);self.phase='error';break
             if self.proc.poll() is not None:
                 code=self.proc.returncode
                 self.error=f'Запись завершилась с кодом {code}. Подробности: data/logs/replay-{self.session.name}.log'
@@ -832,6 +832,10 @@ class Replay:
                 if self.phase!='recording':break
                 time.sleep(.1)
             if self.phase=='recording' and (not rows or rows[-1]['end']<cutoff-.1):
+                self.suite.log('replay_capture_lag',requested_end=cutoff,
+                               available_end=rows[-1]['end'] if rows else None,
+                               media_time=self.media_time,duplicate_frames=self.duplicate_frames,
+                               dropped_frames=self.dropped_frames,native_gpu=self.native_gpu)
                 raise ValueError('Захват отстаёт от текущего времени. Повтор не сохранён: проверьте нагрузку и журнал записи.')
             is_gif=not full_recording and clip_seconds is None and self.settings.get('save_format')=='gif'
             seconds=cutoff if full_recording else clip_seconds if clip_seconds is not None else self.settings.get('gif_seconds',5) if is_gif else self.settings['seconds']

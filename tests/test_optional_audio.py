@@ -17,6 +17,8 @@ class OptionalAudioTests(unittest.TestCase):
         self.rec=Replay(Suite(Path(self.temp.name)/'data'))
         self.rec.settings.update(audio_mode='multitrack',microphone_enabled=True)
         self.chat=patch('process_audio.resolve_chat',side_effect=ValueError('not running')).start()
+        self.microphone=Mock();self.microphone.is_active.return_value=True
+        self.mic_opener=patch('microphone.OptionalInput',return_value=self.microphone).start()
         self.addCleanup(patch.stopall)
         self.device=self.rec._audio_device(GAME)
         self.rec._optional_audio=self.device['sources'][1:]
@@ -45,19 +47,23 @@ class OptionalAudioTests(unittest.TestCase):
             self.rec._refresh_optional_audio();self.assertIs(source['_capture'],second)
             first.Dispose.assert_called_once();self.assertIs(source['queue'],original)
             self.assertEqual([call.args[0] for call in opener.call_args_list],[456,789])
-    def test_late_microphone_unplug_and_replug(self):
-        source=self.rec._optional_audio[1];capture=Mock();capture.is_active.return_value=True
-        with patch('microphone.devices',return_value=[]) as devices,patch('microphone.Capture',return_value=capture) as opener:
-            self.rec._refresh_optional_audio();opener.assert_not_called()
-            devices.return_value=[MIC];self.rec._refresh_optional_audio();self.assertIs(source['_capture'],capture)
-            devices.return_value=[];self.rec._refresh_optional_audio();capture.close.assert_called_once()
-            devices.return_value=[{**MIC,'id':'12'}];self.rec._refresh_optional_audio();self.assertEqual(opener.call_count,2)
-    def test_failed_or_idle_microphone_is_retried_without_stopping(self):
-        with patch('microphone.devices',return_value=[MIC]),patch('microphone.Capture',side_effect=OSError('unplugged')):
-            self.rec._refresh_optional_audio();self.assertFalse(self.rec.stop_event.is_set())
-        capture=Mock();capture.is_active.return_value=False
-        with patch('microphone.devices',return_value=[MIC]),patch('microphone.Capture',return_value=capture) as opener:
-            self.rec._refresh_optional_audio();self.rec._refresh_optional_audio();self.assertEqual(opener.call_count,2)
+    def test_muted_or_unplugged_microphone_does_not_reopen_or_stop_video(self):
+        source=self.rec._optional_audio[1];original=source['queue']
+        with patch('microphone.devices',side_effect=AssertionError('driver must stay out of recorder')):
+            self.rec._refresh_optional_audio()
+            self.microphone.error='device muted or unavailable'
+            self.rec._refresh_optional_audio()
+        self.mic_opener.assert_called_once()
+        self.assertIs(source['_capture'],self.microphone);self.assertIs(source['queue'],original)
+        self.assertFalse(self.rec.stop_event.is_set())
+        self.microphone.close.assert_not_called()
+    def test_dead_microphone_supervisor_is_replaced_without_stopping(self):
+        self.rec._refresh_optional_audio()
+        self.microphone.is_active.return_value=False
+        self.rec._refresh_optional_audio()
+        self.assertEqual(self.mic_opener.call_count,2)
+        self.microphone.close.assert_called_once()
+        self.assertFalse(self.rec.stop_event.is_set())
     def test_stop_does_not_open_new_optional_handles(self):
         self.rec.stop_event.set()
         with patch('microphone.devices') as devices:self.rec._refresh_optional_audio();devices.assert_not_called()

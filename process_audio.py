@@ -4,15 +4,25 @@ from ctypes import wintypes
 from pathlib import Path
 import sys
 
+# ctypes caches WinDLL functions globally. Their argtypes must reference stable
+# Structure classes: per-call classes race when the watcher and UI enumerate
+# processes at the same time ("expected LP_Entry instead of pointer to Entry").
+class _WindowsVersion(ctypes.Structure):
+    _fields_=[('size',wintypes.DWORD),('major',wintypes.DWORD),('minor',wintypes.DWORD),
+              ('build',wintypes.DWORD),('platform',wintypes.DWORD),('service',wintypes.WCHAR*128)]
+
+class _ProcessEntry(ctypes.Structure):
+    _fields_=[('size',wintypes.DWORD),('usage',wintypes.DWORD),('pid',wintypes.DWORD),
+              ('heap',ctypes.c_size_t),('module',wintypes.DWORD),('threads',wintypes.DWORD),
+              ('parent',wintypes.DWORD),('priority',ctypes.c_long),('flags',wintypes.DWORD),
+              ('exe',wintypes.WCHAR*260)]
+
 def windows_version():
     # A native host without a supportedOS manifest can report Windows 8 through
     # GetVersionEx/sys.getwindowsversion even on Windows 11. Read the real build.
-    class Version(ctypes.Structure):
-        _fields_=[('size',wintypes.DWORD),('major',wintypes.DWORD),('minor',wintypes.DWORD),
-                  ('build',wintypes.DWORD),('platform',wintypes.DWORD),('service',wintypes.WCHAR*128)]
-    info=Version();info.size=ctypes.sizeof(info)
+    info=_WindowsVersion();info.size=ctypes.sizeof(info)
     get_version=ctypes.WinDLL('ntdll').RtlGetVersion
-    get_version.argtypes=[ctypes.POINTER(Version)];get_version.restype=ctypes.c_long
+    get_version.argtypes=[ctypes.POINTER(_WindowsVersion)];get_version.restype=ctypes.c_long
     if get_version(ctypes.byref(info))!=0:raise RuntimeError('Не удалось определить версию Windows')
     return info.major,info.minor,info.build
 
@@ -74,16 +84,11 @@ def resolve_target(settings):
 def audio_applications():
     """Include tray applications and choose the root of each executable's tree."""
     import ntpath
-    class Entry(ctypes.Structure):
-        _fields_=[('size',wintypes.DWORD),('usage',wintypes.DWORD),('pid',wintypes.DWORD),
-                  ('heap',ctypes.c_size_t),('module',wintypes.DWORD),('threads',wintypes.DWORD),
-                  ('parent',wintypes.DWORD),('priority',ctypes.c_long),('flags',wintypes.DWORD),
-                  ('exe',wintypes.WCHAR*260)]
     kernel=ctypes.windll.kernel32
     kernel.CreateToolhelp32Snapshot.argtypes=[wintypes.DWORD,wintypes.DWORD]
     kernel.CreateToolhelp32Snapshot.restype=wintypes.HANDLE
-    kernel.Process32FirstW.argtypes=[wintypes.HANDLE,ctypes.POINTER(Entry)]
-    kernel.Process32NextW.argtypes=[wintypes.HANDLE,ctypes.POINTER(Entry)]
+    kernel.Process32FirstW.argtypes=[wintypes.HANDLE,ctypes.POINTER(_ProcessEntry)]
+    kernel.Process32NextW.argtypes=[wintypes.HANDLE,ctypes.POINTER(_ProcessEntry)]
     kernel.OpenProcess.restype=wintypes.HANDLE
     kernel.QueryFullProcessImageNameW.argtypes=[wintypes.HANDLE,wintypes.DWORD,wintypes.LPWSTR,ctypes.POINTER(wintypes.DWORD)]
     kernel.CloseHandle.argtypes=[wintypes.HANDLE]
@@ -91,7 +96,7 @@ def audio_applications():
     if snapshot==wintypes.HANDLE(-1).value:return applications()
     rows={}
     try:
-        entry=Entry();entry.size=ctypes.sizeof(entry)
+        entry=_ProcessEntry();entry.size=ctypes.sizeof(entry)
         success=kernel.Process32FirstW(snapshot,ctypes.byref(entry))
         while success:
             if entry.pid:
@@ -125,5 +130,9 @@ def open_capture(pid,exclude=False):
     capture=ProcessCapture()
     try:capture.Start(pid,exclude)
     except Exception:
-        capture.Dispose();raise
+        # Preserve the activation error even with an older native helper whose
+        # cleanup can fail while releasing a partially initialized COM object.
+        try:capture.Dispose()
+        except Exception:pass
+        raise
     return capture

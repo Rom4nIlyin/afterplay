@@ -80,6 +80,24 @@ class QualityTests(unittest.TestCase):
             graph=source_filter(DEFAULTS,None,monitor,(1920,1080))
         self.assertIn('gfxcapture=monitor_idx=2',graph)
 
+    def test_idle_gpu_window_keeps_frames_and_clock_flowing(self):
+        from gpu_capture import source_filter
+        graph=source_filter(DEFAULTS,{'hwnd':123},None,(1000,600),idle_frames=True)
+        self.assertIn('gfxcapture=hwnd=123',graph)
+        self.assertIn(':dup_frames=1',graph)
+        self.assertNotIn('hwdownload',graph)
+
+    def test_old_ffmpeg_is_not_assumed_to_support_idle_frames(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from gpu_capture import repeats_idle_frames
+        self.addCleanup(repeats_idle_frames.cache_clear)
+        repeats_idle_frames.cache_clear()
+        with patch('gpu_capture.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=b'Filter gfxcapture\n max_framerate <video_rate>')):
+            self.assertFalse(repeats_idle_frames('old-ffmpeg'))
+        with patch('gpu_capture.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=b'Filter gfxcapture\n   dup_frames <boolean> repeat last frame')):
+            self.assertTrue(repeats_idle_frames('new-ffmpeg'))
+
     def test_each_buffer_duration_selects_correct_continuous_range(self):
         rows=[{'start':i*2,'end':i*2+2} for i in range(950)]
         for minutes in (1,3,5,10,15,20,30):

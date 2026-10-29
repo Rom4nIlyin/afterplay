@@ -1162,5 +1162,7 @@
   "Чистый и ровный голос": "Clean, even voice",
   "Подавляет фоновый шум, выравнивает громкость речи и защищает от перегруза. Работает на компьютере без интернета. Обработка применяется к новым записям.": "Suppresses background noise, levels speech volume and prevents clipping. Runs locally without internet. Processing applies to new recordings.",
   "Нужен переключатель очистки голоса": "Expected a voice cleanup toggle",
-  "Модель очистки голоса отсутствует или повреждена. Переустановите обновление AFTERPLAY.": "The voice cleanup model is missing or damaged. Reinstall the AFTERPLAY update."
+  "Модель очистки голоса отсутствует или повреждена. Переустановите обновление AFTERPLAY.": "The voice cleanup model is missing or damaged. Reinstall the AFTERPLAY update.",
+  "Этот FFmpeg не поддерживает повтор неподвижных GPU-кадров; включён совместимый захват без остановки буфера.": "This FFmpeg cannot repeat idle GPU frames; compatibility capture keeps the buffer running.",
+  "Тишина или недоступность микрофона не останавливает видео и повтор. Мьют Discord не синхронизируется с микрофоном AFTERPLAY.": "Silence or an unavailable microphone does not stop video or replay. Discord mute is not synchronized with the AFTERPLAY microphone."
 }

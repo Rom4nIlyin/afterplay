@@ -24,6 +24,15 @@ def available(ffmpeg):
     return result.returncode==0 and b' gfxcapture ' in result.stdout
 
 
+@lru_cache(maxsize=4)
+def repeats_idle_frames(ffmpeg):
+    """Older gfxcapture stalls both inputs when an open window stops changing."""
+    result=subprocess.run([str(ffmpeg),'-hide_banner','-h','filter=gfxcapture'],
+                          stdin=subprocess.DEVNULL,capture_output=True,
+                          creationflags=NO_WINDOW,timeout=15)
+    return result.returncode==0 and b'dup_frames ' in result.stdout
+
+
 def source_size(window,monitor):
     if not window:return monitor['width'],monitor['height']
     # Get physical client dimensions even when hosted by a DPI-unaware process.
@@ -42,7 +51,7 @@ def source_size(window,monitor):
         if previous:set_dpi(previous)
 
 
-def source_filter(cfg,window,monitor,size):
+def source_filter(cfg,window,monitor,size,*,idle_frames=False):
     if not window and size==(monitor['width'],monitor['height']) and not cfg['capture_border']:
         adapter,output=desktop_output(monitor['id'])
         if adapter==0:
@@ -53,7 +62,8 @@ def source_filter(cfg,window,monitor,size):
     w,h=size
     return (f'gfxcapture={target}:max_framerate={cfg["fps"]}'
             f':capture_cursor={int(cfg["cursor"])}:display_border={int(cfg["capture_border"])}'
-            f':width={w}:height={h}:resize_mode=scale_aspect:scale_mode=bilinear')
+            f':width={w}:height={h}:resize_mode=scale_aspect:scale_mode=bilinear'
+            +(':dup_frames=1' if idle_frames else ''))
 
 
 def desktop_output(device_name):
@@ -96,9 +106,9 @@ def input_options(graph,epoch,audio):
     # Later frames retain WGC/DXGI monotonic intervals, including a stalled pipe.
     origin_us=round(epoch*1000000)
     clock=(f'setpts=PTS-STARTPTS+if(eq(N\\,0)\\,st(0\\,(RTCTIME-{origin_us})/1000000)\\,ld(0))/TB')
-    args=['-copyts','-thread_queue_size','8','-f','lavfi','-i',graph+','+clock]
+    args=['-copyts','-f','lavfi','-i',graph+','+clock]
     if audio:
-        args+=['-thread_queue_size','64','-probesize','32768','-analyzeduration','0',
+        args+=['-probesize','32768','-analyzeduration','0',
                '-f','nut','-i','pipe:0']
     args+=['-map','0:v:0']
     return args

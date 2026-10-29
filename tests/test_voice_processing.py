@@ -110,6 +110,22 @@ class VoiceProcessingTests(unittest.TestCase):
         # FFmpeg's standard mono -> stereo matrix applies -3 dB per channel.
         np.testing.assert_allclose(np.frombuffer(destination.get_nowait()[1],dtype='float32'),.1/np.sqrt(2),atol=1e-7)
 
+    def test_physical_mute_empty_callback_is_silence(self):
+        import microphone
+        manager=Mock();callbacks={}
+        manager.open.side_effect=lambda **args:(callbacks.update(args) or Mock())
+        destination=queue.Queue()
+        with patch('pyaudiowpatch.PyAudio',return_value=manager),patch('microphone.time.perf_counter',return_value=100.):
+            capture=microphone.Capture({'id':'1','rate':RATE,'channels':1},destination,100,True)
+            for i,data in enumerate((None,b'')):
+                callbacks['stream_callback'](data,1024,{'input_buffer_adc_time':100+i*1024/RATE},0)
+            capture.close()
+        self.assertFalse(capture.error,capture.error)
+        rows=[]
+        while not destination.empty():rows.append(destination.get_nowait())
+        self.assertEqual(sum(len(data)//8 for _,data in rows),2048)
+        self.assertTrue(all(not any(data) for _,data in rows))
+
     def test_microphone_tail_is_drained_before_mux_stop(self):
         from app import Suite
         from replay import Replay

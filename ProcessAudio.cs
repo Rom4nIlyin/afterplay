@@ -2,6 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Runtime.ExceptionServices;
 
 [assembly:System.Reflection.AssemblyTitle("AFTERPLAY")]
 [assembly:System.Reflection.AssemblyProduct("AFTERPLAY")]
@@ -59,14 +61,57 @@ namespace AfterplayAudio {
  public sealed class ProcessCapture : IDisposable {
   [DllImport("Mmdevapi.dll", CharSet=CharSet.Unicode)]
   static extern int ActivateAudioInterfaceAsync(string path, ref Guid iid, ref PropVariant param, ICompletion completion, out IAsyncOperation operation);
+  [DllImport("ole32.dll")] static extern int CoInitializeEx(IntPtr reserved, uint flags);
+  [DllImport("ole32.dll")] static extern void CoUninitialize();
   readonly ConcurrentQueue<AudioPacket> packets=new ConcurrentQueue<AudioPacket>();
   readonly AutoResetEvent signal=new AutoResetEvent(false);
   readonly ManualResetEvent stop=new ManualResetEvent(false);
+  readonly object lifecycle=new object();
+  readonly TaskCompletionSource<Exception> startup=new TaskCompletionSource<Exception>();
   IAudioClient client; ICapture capture; Thread thread;
-  bool disposed;
+  bool disposed, clientStarted;
   public string Error { get; private set; }
   static void Check(int hr) { Marshal.ThrowExceptionForHR(hr); }
   public void Start(uint pid, bool exclude) {
+   lock(lifecycle) {
+    if(disposed)throw new ObjectDisposedException("ProcessCapture");
+    if(thread!=null)throw new InvalidOperationException("Capture is already started");
+    // Callers may be Python/.NET STA threads. The process-loopback interface
+    // cannot be used through an STA proxy: keep its entire lifetime in MTA.
+    thread=new Thread(()=>Run(pid,exclude));thread.IsBackground=true;
+    thread.SetApartmentState(ApartmentState.MTA);thread.Start();
+   }
+   if(!startup.Task.Wait(15000)) {
+    Dispose();throw new TimeoutException("Не удалось дождаться запуска звука приложения");
+   }
+   Exception failure=startup.Task.Result;
+   if(failure!=null) { Dispose();ExceptionDispatchInfo.Capture(failure).Throw(); }
+  }
+  void Run(uint pid, bool exclude) {
+   bool initialized=false;
+   try {
+    Check(CoInitializeEx(IntPtr.Zero,0));initialized=true;
+    Open(pid,exclude);
+    startup.TrySetResult(null);
+    Pump();
+   } catch(Exception error) {
+    Error=error.Message;startup.TrySetResult(error);
+   } finally {
+    // COM interfaces and services are stopped and released on their owner.
+    if(clientStarted) {
+     try { Check(client.Stop()); } catch(Exception error) { if(Error==null)Error=error.Message; }
+    }
+    Release(capture);capture=null;Release(client);client=null;
+    if(initialized)CoUninitialize();
+    lock(lifecycle) { disposed=true;stop.Dispose();signal.Dispose(); }
+   }
+  }
+  void Release(object value) {
+   if(value==null)return;
+   try { Marshal.ReleaseComObject(value); }
+   catch(Exception error) { if(Error==null)Error=error.Message; }
+  }
+  void Open(uint pid, bool exclude) {
    IntPtr blob=Marshal.AllocHGlobal(12);
    var completion=new Completion(); IAsyncOperation operation=null;
    try {
@@ -76,15 +121,19 @@ namespace AfterplayAudio {
     Check(ActivateAudioInterfaceAsync("VAD\\Process_Loopback",ref iid,ref param,completion,out operation));
     // Keep the activation blob alive until the asynchronous operation completes.
     completion.done.WaitOne(); Check(completion.result);
+    if(stop.WaitOne(0))throw new ObjectDisposedException("ProcessCapture");
     client=(IAudioClient)completion.audio;
+    completion.audio=null;
     var format=new WaveFormat { tag=3,channels=2,rate=48000,average=384000,align=8,bits=32,extra=0 };
     Check(client.Initialize(0,0x88060000,0,0,ref format,IntPtr.Zero));
     Guid captureId=new Guid("C8ADBD64-E71E-48A0-A4DE-185C395CD317"); object service;
     Check(client.GetService(ref captureId,out service)); capture=(ICapture)service;
     Check(client.SetEventHandle(signal.SafeWaitHandle.DangerousGetHandle())); Check(client.Start());
-    thread=new Thread(Pump); thread.IsBackground=true; thread.Start();
-   } catch { Dispose(); throw; }
-   finally { Marshal.FreeHGlobal(blob); if(operation!=null)Marshal.ReleaseComObject(operation); GC.KeepAlive(completion); }
+    clientStarted=true;
+   } finally {
+    Marshal.FreeHGlobal(blob);Release(operation);Release(completion.audio);
+    completion.audio=null;completion.done.Dispose();GC.KeepAlive(completion);
+   }
   }
   void Pump() {
    try {
@@ -108,12 +157,14 @@ namespace AfterplayAudio {
   public AudioPacket ReadPacket() { AudioPacket block; return packets.TryDequeue(out block)?block:null; }
   public byte[] Read() { AudioPacket block=ReadPacket();return block==null?null:block.Data; }
   public void Dispose() {
-   if(disposed)return;disposed=true;
-   stop.Set(); if(thread!=null)thread.Join(2000);
-   if(client!=null) { client.Stop(); }
-   if(capture!=null) { Marshal.ReleaseComObject(capture);capture=null; }
-   if(client!=null) { Marshal.ReleaseComObject(client);client=null; }
-   stop.Dispose();signal.Dispose();
+   Thread owner;
+   lock(lifecycle) {
+    if(disposed)return;disposed=true;stop.Set();owner=thread;
+    if(owner==null) { stop.Dispose();signal.Dispose(); }
+   }
+   // A slow activation retains its blob/events until the owner can release
+   // them. Never dispose live worker handles or call COM from the caller.
+   if(owner!=null && owner!=Thread.CurrentThread)owner.Join(2000);
   }
  }
 }
