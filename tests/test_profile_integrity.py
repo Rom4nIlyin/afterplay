@@ -67,3 +67,45 @@ class ProfileIntegrityTests(unittest.TestCase):
             profiles.ensure_defaults(suite)
             self.assertEqual(suite.replay.settings['capture_mode'],'monitor')
             self.assertEqual(suite.replay.settings['window_path'],'')
+
+    def test_border_toggle_is_global_across_profiles(self):
+        with tempfile.TemporaryDirectory() as temp:
+            suite,game=self.setup_suite(temp)
+            self.assertNotIn('capture_border',game['settings'])
+            suite.replay.configure({'capture_border':True})
+            profiles.apply(suite,game['id'])
+            self.assertTrue(suite.replay.settings['capture_border'])
+            profiles.apply(suite,profiles.DEFAULT_PROFILE)
+            self.assertTrue(suite.replay.settings['capture_border'])
+            suite.replay.configure({'capture_border':False})
+            profiles.apply(suite,game['id'])
+            self.assertFalse(suite.replay.settings['capture_border'])
+            self.assertFalse(suite.cfg['replay']['capture_border'])
+            self.assertNotIn('capture_border',profiles.for_app(suite.cfg,game['path']))
+
+    def test_legacy_profile_border_values_are_removed_on_startup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            suite,game=self.setup_suite(temp)
+            saved=suite.cfg['capture_profiles']
+            saved[profiles.DEFAULT_PROFILE]['settings']['capture_border']=True
+            saved[profiles.key(game['id'])]['settings']['capture_border']=True
+            suite.save_cfg()
+            profiles.ensure_defaults(suite)
+            self.assertFalse(suite.replay.settings['capture_border'])
+            self.assertFalse(suite.cfg['replay']['capture_border'])
+            for profile in suite.cfg['capture_profiles'].values():
+                self.assertNotIn('capture_border',profile['settings'])
+            persisted=json.loads(suite.cfg_path.read_text('utf-8'))
+            for profile in persisted['capture_profiles'].values():
+                self.assertNotIn('capture_border',profile['settings'])
+
+    def test_profile_form_cannot_override_global_border(self):
+        with tempfile.TemporaryDirectory() as temp:
+            suite,game=self.setup_suite(temp)
+            suite.replay.configure({'capture_border':False})
+            values={**game['settings'],'capture_border':True}
+            updated=profiles.configure(suite,{'id':game['id'],'path':game['path'],
+                                             'name':game['name'],'settings':values})
+            self.assertNotIn('capture_border',updated['settings'])
+            self.assertFalse(suite.replay.settings['capture_border'])
+            self.assertFalse(suite.cfg['replay']['capture_border'])
