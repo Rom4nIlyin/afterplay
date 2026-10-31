@@ -372,13 +372,17 @@ class Replay:
             choice=self.settings['encoder']
             if choice=='h264_nvenc' and check.returncode:raise ValueError('NVENC недоступен. Выберите автоматический кодировщик или CPU.')
             self.encoder=('h264_nvenc' if check.returncode==0 else 'libx264') if choice=='auto' else choice
-            if self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto' and can_use_wgc(window['hwnd'] if window else None,process_audio.windows_version()[2]):
+            windows_build=process_audio.windows_version()[2]
+            if (self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto'
+                    and windows_build>=18362 and (not window or can_use_wgc(window['hwnd'],windows_build))):
                 if gpu_capture.available(self.suite.ff()):
                     size=gpu_capture.source_size(window,monitor)
                     self.output_size=video_quality.output_size(self.settings,*size)
                     self.capture_graph=gpu_capture.source_filter(self.settings,window,monitor,self.output_size)
                     try:
-                        if self.capture_graph.startswith('gfxcapture=') and not gpu_capture.repeats_idle_frames(self.suite.ff()):
+                        if windows_build<22000 and self.capture_graph.startswith('gfxcapture='):
+                            self.backend_note='Windows 10: для экрана без системной рамки включён совместимый захват.'
+                        elif self.capture_graph.startswith('gfxcapture=') and not gpu_capture.repeats_idle_frames(self.suite.ff()):
                             self.backend_note='Этот FFmpeg не поддерживает повтор неподвижных GPU-кадров; включён совместимый захват без остановки буфера.'
                         else:
                             self.capture_graph=gpu_capture.source_filter(self.settings,window,monitor,self.output_size,idle_frames=True)
