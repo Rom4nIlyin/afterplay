@@ -2,8 +2,7 @@
 DEFAULTS={'capture_mode':'monitor','window_hwnd':0,'window_pid':0,'window_path':'','window_title':'',
           'audio_follow_window':True,'quality_mode':'quality','cq':19,'max_mbps':80,'height':0,
           'preset':'performance','encoder':'auto','audio_bitrate':192,'audio_offset_ms':0,'cursor':True,
-          'capture_backend':'auto',
-          'capture_border':False}
+          'capture_backend':'auto'}
 FPS=(24,30,60,90,120)
 
 def validate(cfg):
