@@ -625,7 +625,7 @@
   "Плотность панелей · %": "Panel opacity · %",
   "По умолчанию": "Default",
   "По умолчанию · весь экран": "Default · entire screen",
-  "По умолчанию выключена. Применяется при следующем запуске записи. Для изменения останови запись и дождись экспорта.": "Disabled by default. Applies when recording starts again. Stop recording and finish exporting before changing it.",
+  "По умолчанию выключена. Настройка общая для всех профилей. Применяется при следующем запуске записи. Для изменения останови запись и дождись экспорта.": "Disabled by default. Shared across all capture profiles. Applies when recording starts again. Stop recording and finish exporting before changing it.",
   "По умолчанию выключено. При включении новая версия загружается и устанавливается, когда запись и экспорт остановлены. Кнопка ручной проверки работает всегда.": "Disabled by default. If enabled, updates download and install while recording and exporting are stopped. Manual checking is always available.",
   "По этому запросу ничего не найдено": "No matches found",
   "Повтор": "Replay",
