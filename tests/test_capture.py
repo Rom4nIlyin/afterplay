@@ -63,6 +63,13 @@ class QualityTests(unittest.TestCase):
         self.assertIn('RTCTIME-1700000000250000',cmd[cmd.index('-i')+1])
         self.assertNotIn('-vf',cmd)
 
+    def test_windows10_native_video_only_accepts_dxgi_without_wgc(self):
+        from gpu_capture import native_source_allowed
+        self.assertTrue(native_source_allowed('ddagrab=output_idx=0',19045))
+        self.assertFalse(native_source_allowed('gfxcapture=hwnd=123',19045))
+        self.assertFalse(native_source_allowed('gfxcapture=monitor_idx=0',19045))
+        self.assertTrue(native_source_allowed('gfxcapture=hwnd=123',22631))
+
     def test_windows10_uses_non_wgc_capture_for_windows_and_monitors(self):
         from unittest.mock import patch
         from capture_media import can_use_wgc,create_video_source
