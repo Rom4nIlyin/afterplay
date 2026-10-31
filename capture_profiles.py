@@ -1,4 +1,4 @@
-"""Per-executable capture settings, independent from transient PID/HWND values."""
+"""Per-executable settings; capture_border is a global replay preference."""
 import copy
 import math
 import ntpath
@@ -7,7 +7,7 @@ import video_quality
 
 FIELDS = {'seconds','fps','mbps','monitor','audio','audio_mode','capture_mode',
           'quality_mode','cq','max_mbps','height','preset','encoder','audio_bitrate',
-          'audio_offset_ms','audio_follow_window','cursor','capture_border',
+          'audio_offset_ms','audio_follow_window','cursor',
           'capture_backend','save_format','gif_seconds','chat_path','microphone_enabled','microphone_device','microphone_name','microphone_gain','microphone_voice_cleanup'}
 DEFAULT_PROFILE='screen:default'
 
@@ -17,6 +17,12 @@ def ensure_defaults(suite):
     with suite.lock:
         profiles=suite.cfg.setdefault('capture_profiles',{})
         changed=False
+        # Migrate legacy per-profile border values. The replay setting is canonical.
+        for profile in profiles.values():
+            settings=profile.get('settings',{})
+            if isinstance(settings,dict) and 'capture_border' in settings:
+                del settings['capture_border']
+                changed=True
         default=profiles.get(DEFAULT_PROFILE)
         if default and (default.get('path') or default.get('settings',{}).get('capture_mode')=='window'):
             # Older forms could accidentally save an application's fields into
@@ -58,6 +64,8 @@ def configure(suite,args):
         if not name:raise ValueError('Укажите название профиля')
         values=args.get('settings',{})
         validated(values)
+        # An old form must not overwrite the global border preference.
+        values={name:value for name,value in values.items() if name!='capture_border'}
         if key(identifier)==DEFAULT_PROFILE and (path or values.get('capture_mode',profile['settings'].get('capture_mode'))!='monitor'):
             raise ValueError('Профиль по умолчанию предназначен для экрана. Для приложения создай отдельный профиль.')
         if path and (not ntpath.isabs(path) or ntpath.splitext(path)[1].lower()!='.exe'):raise ValueError('Укажите полный путь к приложению .exe')
