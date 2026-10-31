@@ -7,11 +7,8 @@ import time
 VIDEO_TIME_BASE=Fraction(1,1000000)
 
 def can_use_wgc(hwnd,windows_build):
-    """No WGC window sessions on Windows 10: those show a system border.
-
-    Monitor capture and Windows 11 window capture retain the current backend.
-    """
-    return windows_build>=18362 and (not hwnd or windows_build>=22000)
+    """WGC on Windows 10 may draw a system outline; never start it there."""
+    return windows_build>=22000
 
 
 class AudioTimeline:
