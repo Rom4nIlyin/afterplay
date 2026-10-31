@@ -51,6 +51,11 @@ def source_size(window,monitor):
         if previous:set_dpi(previous)
 
 
+def native_source_allowed(graph,windows_build):
+    """Windows 10 may only use DXGI Desktop Duplication, never WGC."""
+    return windows_build>=22000 or graph.startswith('ddagrab=')
+
+
 def source_filter(cfg,window,monitor,size,*,idle_frames=False):
     if not window and size==(monitor['width'],monitor['height']):
         adapter,output=desktop_output(monitor['id'])
