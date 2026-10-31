@@ -19,7 +19,7 @@ import process_audio
 import storage
 import video_quality
 import gpu_capture
-from capture_media import VideoSource,MediaMux
+from capture_media import VideoSource,MediaMux,can_use_wgc
 
 NO_WINDOW = 0x08000000
 MINUTES = (1,3,5,10,15,20,30)
@@ -122,7 +122,12 @@ class Replay:
         self._extra_audio_captures=[];self._extra_audio_readers=[]
         self._microphone=None;self.audio_titles=None;self._optional_audio=[]
         self.tray=None;self.auto_owned=False;self.hotkeys=None
-        self.settings={**DEFAULTS,**suite.cfg.get('replay',{})}
+        # The old border toggle no longer exists. Migrate portable settings.
+        stored=suite.cfg.get('replay',{})
+        if 'capture_border' in stored:
+            stored.pop('capture_border')
+            suite.save_cfg()
+        self.settings={**DEFAULTS,**stored}
         if 'audio_mode' not in suite.cfg.get('replay',{}) and self.settings['audio']=='none':
             self.settings['audio_mode']='none'
             self.settings['audio']='default'
@@ -201,7 +206,7 @@ class Replay:
             if key in args:cfg[key]=int(args[key])
         for key in ('capture_mode','quality_mode','preset','encoder','capture_backend'):
             if key in args:cfg[key]=str(args[key])
-        for key in ('audio_follow_window','cursor','capture_border'):
+        for key in ('audio_follow_window','cursor'):
             if key in args:
                 if not isinstance(args[key],bool):raise ValueError('Ожидался переключатель: '+key)
                 cfg[key]=args[key]
@@ -367,7 +372,7 @@ class Replay:
             choice=self.settings['encoder']
             if choice=='h264_nvenc' and check.returncode:raise ValueError('NVENC недоступен. Выберите автоматический кодировщик или CPU.')
             self.encoder=('h264_nvenc' if check.returncode==0 else 'libx264') if choice=='auto' else choice
-            if self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto' and process_audio.windows_version()[2]>=18362:
+            if self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto' and can_use_wgc(window['hwnd'] if window else None,process_audio.windows_version()[2]):
                 if gpu_capture.available(self.suite.ff()):
                     size=gpu_capture.source_size(window,monitor)
                     self.output_size=video_quality.output_size(self.settings,*size)
@@ -387,6 +392,8 @@ class Replay:
                     except subprocess.TimeoutExpired:
                         self.backend_note='Источник не обновляет изображение; включён совместимый режим для неподвижных окон.'
                 else:self.backend_note='Для GPU-захвата нужен FFmpeg с фильтром gfxcapture; включён совместимый режим.'
+            if window and not can_use_wgc(window['hwnd'],process_audio.windows_version()[2]):
+                self.backend_note='Windows 10: запись отдельного окна без системной рамки через GDI. Некоторые игры могут не поддерживать этот захват.'
             self.session=self.root/uuid.uuid4().hex;self.session.mkdir()
             (self.session/'.afterplay-buffer').write_text('Owned rolling buffer; no original media.',encoding='utf-8')
             self.engine=('D3D11 → NVENC · ' if self.native_gpu else 'Windows Graphics Capture · совместимый · ')+('окно' if window else 'экран')
@@ -398,8 +405,7 @@ class Replay:
             else:
                 from capture_media import create_video_source
                 self.video_source,source_name=create_video_source(hwnd=window['hwnd'] if window else None,monitor=monitor,
-                                                                  fps=self.settings['fps'],cursor=self.settings['cursor'],
-                                                                  capture_border=self.settings['capture_border'])
+                                                                  fps=self.settings['fps'],cursor=self.settings['cursor'])
                 self.engine=source_name+' · '+('окно' if window else 'экран')
                 monitor={'width':self.video_source.width,'height':self.video_source.height}
             self.window_hwnd=window['hwnd'] if window else None
