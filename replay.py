@@ -380,7 +380,7 @@ class Replay:
                     self.output_size=video_quality.output_size(self.settings,*size)
                     self.capture_graph=gpu_capture.source_filter(self.settings,window,monitor,self.output_size)
                     try:
-                        if windows_build<22000 and self.capture_graph.startswith('gfxcapture='):
+                        if not gpu_capture.native_source_allowed(self.capture_graph,windows_build):
                             self.backend_note='Windows 10: для экрана без системной рамки включён совместимый захват.'
                         elif self.capture_graph.startswith('gfxcapture=') and not gpu_capture.repeats_idle_frames(self.suite.ff()):
                             self.backend_note='Этот FFmpeg не поддерживает повтор неподвижных GPU-кадров; включён совместимый захват без остановки буфера.'
