@@ -19,6 +19,37 @@ class ProfileIntegrityTests(unittest.TestCase):
         suite.auto=AutoRecorder(suite,applications=lambda:[])
         return suite,game
 
+    def test_capture_border_is_global_across_new_and_existing_profiles(self):
+        with tempfile.TemporaryDirectory() as temp:
+            suite,game=self.setup_suite(temp)
+            suite.replay.configure({'capture_border':False})
+            # Simulate legacy installs where game profiles enabled the border.
+            suite.cfg['capture_profiles'][profiles.key(game['id'])]['settings']['capture_border']=True
+            suite.cfg['capture_profiles'][profiles.DEFAULT_PROFILE]['settings']['capture_border']=True
+            suite.save_cfg()
+            profiles.ensure_defaults(suite)
+            for profile in suite.cfg['capture_profiles'].values():
+                self.assertNotIn('capture_border',profile['settings'])
+            profiles.apply(suite,game['id'])
+            self.assertFalse(suite.replay.settings['capture_border'])
+            # Stale or malicious profile forms must never change the global toggle.
+            profiles.configure(suite,{'id':game['id'],'name':'Game',
+                                      'path':game['path'],
+                                      'settings':{**suite.replay.settings,'capture_border':True}})
+            self.assertFalse(suite.replay.settings['capture_border'])
+            self.assertNotIn('capture_border',profiles.for_app(suite.cfg,game['path']))
+            fresh=profiles.create(suite)
+            self.assertNotIn('capture_border',fresh['settings'])
+            suite.replay.configure({'capture_border':True})
+            profiles.apply(suite,game['id'])
+            self.assertTrue(suite.replay.settings['capture_border'])
+            profiles.apply(suite,fresh['id'])
+            self.assertTrue(suite.replay.settings['capture_border'])
+            persisted=json.loads(suite.cfg_path.read_text('utf-8'))
+            self.assertTrue(persisted['replay']['capture_border'])
+            for profile in persisted['capture_profiles'].values():
+                self.assertNotIn('capture_border',profile['settings'])
+
     def test_repeated_failed_starts_preserve_both_profiles_and_config(self):
         with tempfile.TemporaryDirectory() as temp:
             suite,game=self.setup_suite(temp);profiles.apply(suite,game['id'])
