@@ -7,7 +7,7 @@ import video_quality
 
 FIELDS = {'seconds','fps','mbps','monitor','audio','audio_mode','capture_mode',
           'quality_mode','cq','max_mbps','height','preset','encoder','audio_bitrate',
-          'audio_offset_ms','audio_follow_window','cursor','capture_border',
+          'audio_offset_ms','audio_follow_window','cursor',
           'capture_backend','save_format','gif_seconds','chat_path','microphone_enabled','microphone_device','microphone_name','microphone_gain','microphone_voice_cleanup'}
 DEFAULT_PROFILE='screen:default'
 
@@ -17,6 +17,14 @@ def ensure_defaults(suite):
     with suite.lock:
         profiles=suite.cfg.setdefault('capture_profiles',{})
         changed=False
+        # The capture border is a global setting in replay, not a per-profile
+        # override. Discard legacy copies so a saved window profile cannot
+        # unexpectedly turn the Windows capture border back on.
+        for profile in profiles.values():
+            settings=profile.get('settings')
+            if isinstance(settings,dict) and 'capture_border' in settings:
+                settings.pop('capture_border')
+                changed=True
         default=profiles.get(DEFAULT_PROFILE)
         if default and (default.get('path') or default.get('settings',{}).get('capture_mode')=='window'):
             # Older forms could accidentally save an application's fields into
@@ -56,7 +64,10 @@ def configure(suite,args):
         if not profile:raise ValueError('Выберите профиль')
         path=str(args.get('path','')).strip().strip('"');name=str(args.get('name','')).strip()
         if not name:raise ValueError('Укажите название профиля')
-        values=args.get('settings',{})
+        # A profile form (including a stale client) cannot alter the global
+        # border preference. Only replay_config may change capture_border.
+        values={name:value for name,value in args.get('settings',{}).items()
+                if name!='capture_border'}
         validated(values)
         if key(identifier)==DEFAULT_PROFILE and (path or values.get('capture_mode',profile['settings'].get('capture_mode'))!='monitor'):
             raise ValueError('Профиль по умолчанию предназначен для экрана. Для приложения создай отдельный профиль.')
@@ -105,7 +116,7 @@ def validated(values):
     if combined.get('save_format','mp4') not in {'mp4','gif'}:raise ValueError('Неизвестный формат')
     from gif_media import validate_duration
     validate_duration(combined.get('gif_seconds',5))
-    for name in ('cursor','capture_border','audio_follow_window','microphone_enabled','microphone_voice_cleanup'):
+    for name in ('cursor','audio_follow_window','microphone_enabled','microphone_voice_cleanup'):
         if not isinstance(combined[name],bool):raise ValueError('Ожидался переключатель: '+name)
     if type(combined['microphone_gain']) not in (int,float) or not 0<=combined['microphone_gain']<=100:raise ValueError('Громкость микрофона: 0–100%')
     for name in ('monitor','audio','chat_path','microphone_device','microphone_name'):
