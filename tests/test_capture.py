@@ -51,7 +51,7 @@ class QualityTests(unittest.TestCase):
 
     def test_native_target_is_exact_window_handle_and_same_output_size(self):
         from gpu_capture import source_filter,input_options
-        cfg={**DEFAULTS,'capture_border':False,'cursor':False}
+        cfg={**DEFAULTS,'cursor':False}
         graph=source_filter(cfg,{'hwnd':123456789},None,(2560,1440))
         self.assertIn('hwnd=123456789',graph)
         self.assertIn('width=2560:height=1440',graph)
@@ -62,6 +62,30 @@ class QualityTests(unittest.TestCase):
         self.assertIn('setpts=PTS-STARTPTS',cmd[cmd.index('-i')+1])
         self.assertIn('RTCTIME-1700000000250000',cmd[cmd.index('-i')+1])
         self.assertNotIn('-vf',cmd)
+
+    def test_windows10_native_video_only_accepts_dxgi_without_wgc(self):
+        from gpu_capture import native_source_allowed
+        self.assertTrue(native_source_allowed('ddagrab=output_idx=0',19045))
+        self.assertFalse(native_source_allowed('gfxcapture=hwnd=123',19045))
+        self.assertFalse(native_source_allowed('gfxcapture=monitor_idx=0',19045))
+        self.assertTrue(native_source_allowed('gfxcapture=hwnd=123',22631))
+
+    def test_windows10_uses_non_wgc_capture_for_windows_and_monitors(self):
+        from unittest.mock import patch
+        from capture_media import can_use_wgc,create_video_source
+        self.assertFalse(can_use_wgc(123,19045))
+        self.assertFalse(can_use_wgc(None,19045))
+        self.assertTrue(can_use_wgc(123,22631))
+        monitor={'id':'test','width':1280,'height':720,'wgc_index':1}
+        with patch('process_audio.windows_version',return_value=(10,0,19045)), \
+             patch('capture_media.VideoSource',side_effect=AssertionError('WGC must not start')), \
+             patch('capture_media.GdiVideoSource') as compatible:
+            source,name=create_video_source(hwnd=123,fps=30)
+            self.assertIs(source,compatible.return_value)
+            self.assertIn('GDI',name)
+            source,name=create_video_source(monitor=monitor,fps=30)
+            self.assertIs(source,compatible.return_value)
+            self.assertEqual(compatible.call_count,2)
 
     def test_desktop_uses_dxgi_identity_and_repeats_unchanged_frames(self):
         from unittest.mock import patch

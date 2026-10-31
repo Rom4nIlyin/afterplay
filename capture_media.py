@@ -6,6 +6,11 @@ import time
 
 VIDEO_TIME_BASE=Fraction(1,1000000)
 
+def can_use_wgc(hwnd,windows_build):
+    """WGC on Windows 10 may draw a system outline; never start it there."""
+    return windows_build>=22000
+
+
 class AudioTimeline:
     """Place packets at their captured sample position, never append clocked gaps."""
     def __init__(self,rate,channels,epoch,offset_ms=0):
@@ -35,13 +40,13 @@ class AudioTimeline:
         return start,bytes(output)
 
 class VideoSource:
-    def __init__(self,*,hwnd=None,monitor_index=None,fps=60,cursor=True,capture_border=False):
+    def __init__(self,*,hwnd=None,monitor_index=None,fps=60,cursor=True):
         from windows_capture import WindowsCapture
         self.ready=threading.Event();self.lock=threading.Lock()
         self.first=None;self.latest=None;self.serial=0;self.error='';self.closed=False
         self.received=0;self.dropped=0;self.last_read=0;self.clock_fallback=False
         self.capture=WindowsCapture(window_hwnd=hwnd,monitor_index=monitor_index,
-                                    cursor_capture=cursor,draw_border=capture_border,
+                                    cursor_capture=cursor,draw_border=False,
                                     minimum_update_interval=max(1,int(1000/fps)))
         @self.capture.event
         def on_frame_arrived(frame,capture_control):
@@ -123,11 +128,11 @@ class GdiVideoSource:
         self.closed=True;self._stop.set();self.thread.join(timeout=2)
 
 
-def create_video_source(*,hwnd=None,monitor=None,fps=60,cursor=True,capture_border=False):
+def create_video_source(*,hwnd=None,monitor=None,fps=60,cursor=True):
     from process_audio import windows_version
-    if windows_version()[2]>=18362:
+    if can_use_wgc(hwnd,windows_version()[2]):
         try:
-            source=VideoSource(hwnd=hwnd,monitor_index=None if hwnd else monitor['wgc_index'],fps=fps,cursor=cursor,capture_border=capture_border)
+            source=VideoSource(hwnd=hwnd,monitor_index=None if hwnd else monitor['wgc_index'],fps=fps,cursor=cursor)
             return source,'Windows Graphics Capture'
         except Exception:
             # GDI uses PrintWindow for a selected HWND, never a desktop crop.

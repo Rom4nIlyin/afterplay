@@ -17,9 +17,7 @@ def ensure_defaults(suite):
     with suite.lock:
         profiles=suite.cfg.setdefault('capture_profiles',{})
         changed=False
-        # The capture border is a global setting in replay, not a per-profile
-        # override. Discard legacy copies so a saved window profile cannot
-        # unexpectedly turn the Windows capture border back on.
+        # Discard obsolete preferences stored by previous portable versions.
         for profile in profiles.values():
             settings=profile.get('settings')
             if isinstance(settings,dict) and 'capture_border' in settings:
@@ -64,8 +62,7 @@ def configure(suite,args):
         if not profile:raise ValueError('Выберите профиль')
         path=str(args.get('path','')).strip().strip('"');name=str(args.get('name','')).strip()
         if not name:raise ValueError('Укажите название профиля')
-        # A profile form (including a stale client) cannot alter the global
-        # border preference. Only replay_config may change capture_border.
+        # Ignore obsolete fields sent by older user interfaces.
         values={name:value for name,value in args.get('settings',{}).items()
                 if name!='capture_border'}
         validated(values)

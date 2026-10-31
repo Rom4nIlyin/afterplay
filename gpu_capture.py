@@ -51,8 +51,13 @@ def source_size(window,monitor):
         if previous:set_dpi(previous)
 
 
+def native_source_allowed(graph,windows_build):
+    """Windows 10 may only use DXGI Desktop Duplication, never WGC."""
+    return windows_build>=22000 or graph.startswith('ddagrab=')
+
+
 def source_filter(cfg,window,monitor,size,*,idle_frames=False):
-    if not window and size==(monitor['width'],monitor['height']) and not cfg['capture_border']:
+    if not window and size==(monitor['width'],monitor['height']):
         adapter,output=desktop_output(monitor['id'])
         if adapter==0:
             # DDA repeats an unchanged desktop on its own clock. WGC emits only
@@ -61,7 +66,7 @@ def source_filter(cfg,window,monitor,size,*,idle_frames=False):
     target=f"hwnd={int(window['hwnd'])}" if window else f"monitor_idx={int(monitor['wgc_index'])-1}"
     w,h=size
     return (f'gfxcapture={target}:max_framerate={cfg["fps"]}'
-            f':capture_cursor={int(cfg["cursor"])}:display_border={int(cfg["capture_border"])}'
+            f':capture_cursor={int(cfg["cursor"])}:display_border=0'
             f':width={w}:height={h}:resize_mode=scale_aspect:scale_mode=bilinear'
             +(':dup_frames=1' if idle_frames else ''))
 
