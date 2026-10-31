@@ -26,8 +26,18 @@ class WindowsCompatibilityTests(unittest.TestCase):
                 source,name=create_video_source(hwnd=123,monitor={},fps=30)
                 modern.assert_not_called();legacy.assert_called_once()
                 self.assertIs(source,legacy.return_value);self.assertIn('GDI',name)
-    def test_modern_windows_10_and_11_keep_wgc_and_fall_back_if_unavailable(self):
-        for build in (18362,19045,22000,22631,26100):
+    def test_windows_10_window_and_monitor_capture_never_start_wgc(self):
+        for build in (18362,19045):
+            with self.subTest(build=build),patch('process_audio.windows_version',return_value=(10,0,build)),patch('capture_media.VideoSource') as modern,patch('capture_media.GdiVideoSource') as legacy:
+                source,name=create_video_source(hwnd=123,monitor={},fps=60)
+                self.assertIs(source,legacy.return_value);self.assertIn('GDI',name)
+                source,name=create_video_source(monitor={'wgc_index':1},fps=60)
+                self.assertIs(source,legacy.return_value);self.assertIn('GDI',name)
+                modern.assert_not_called()
+                self.assertEqual(legacy.call_count,2)
+
+    def test_windows_11_uses_wgc_and_falls_back_if_unavailable(self):
+        for build in (22000,22631,26100):
             with self.subTest(build=build),patch('process_audio.windows_version',return_value=(10,0,build)),patch('capture_media.VideoSource') as modern,patch('capture_media.GdiVideoSource') as legacy:
                 source,name=create_video_source(hwnd=123,monitor={},fps=60)
                 self.assertIs(source,modern.return_value);legacy.assert_not_called()
