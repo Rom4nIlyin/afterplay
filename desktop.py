@@ -18,7 +18,7 @@ class Desktop:
         items=[pystray.MenuItem(lambda item:translate(suite,'Открыть '+self.title),self.show,default=True)]
         if suite.replay:
             items.extend([pystray.MenuItem(lambda item:translate(suite,'Сохранить последние '+str(suite.replay.settings['seconds']//60)+' мин'),lambda *_:suite.replay.save_job(),
-                                          enabled=lambda item:suite.replay.phase=='recording' and not suite.replay.saving and not suite.replay.finishing),
+                                          enabled=lambda item:suite.replay.phase=='recording' and len(suite.replay._save_requests)<8 and not suite.replay.finishing),
                           pystray.MenuItem(lambda item:translate(suite,'Отметить момент'),lambda *_:suite.replay.add_marker(),
                                           enabled=lambda item:suite.replay.phase=='recording'),
                           pystray.MenuItem(lambda item:translate(suite,'Отключить запись' if suite.replay.continuous else 'Включить запись'),lambda *_:suite.replay.recording_job(),

@@ -65,7 +65,7 @@ function captureControls(r){
  return button(manual?'replay-record-stop':'replay-record-start',manual?'Отключить запись':'Включить запись',manual?'close':'play',manual?'danger':'primary',busy?'disabled':'')+
   (state.settings.hotkeys?.record?`<kbd>${esc(state.settings.hotkeys.record)}</kbd>`:'')+
   button(r.replay_enabled?'replay-stop':'replay-start',r.replay_enabled?'Отключить повтор':'Включить повтор','clock','secondary',busy?'disabled':'')+
-  button('replay-save',`Сохранить последние ${(r.settings?.seconds||300)/60} мин`,'download','secondary',`id="replaySave" ${r.phase!=='recording'||busy?'disabled':''}`)+
+  button('replay-save',`Сохранить последние ${(r.settings?.seconds||300)/60} мин`,'download','secondary',`id="replaySave" ${r.phase!=='recording'||r.finishing||(r.save_queue||0)>=8?'disabled':''}`)+
   `<span class="replay-hotkey"><span class="kbd">${esc(state.settings.hotkeys?.save||'Ctrl+Alt+F10')}</span><span id="hotkeyStatus"></span></span>`;
 }
 window.replayPage=function(){
@@ -114,13 +114,13 @@ window.updateReplay=function(){
  if(tab!=='replay')return;
  updateRecordingSize();
  const phase=$('#replayPhase');if(!phase)return;
- phase.textContent=r.saving?'СОХРАНЕНИЕ ВИДЕО':active?captureStatus(r):r.pending_recording?'Запись ожидает сохранения':captureStatus(r);
+ phase.textContent=r.saving?'СОХРАНЕНИЕ ВИДЕО'+((r.save_queue||0)>1?' · В ОЧЕРЕДИ: '+(r.save_queue-1):''):active?captureStatus(r):r.pending_recording?'Запись ожидает сохранения':captureStatus(r);
  $('#replayOrb').classList.toggle('active',active);
  $('#replayTime').textContent=fmt(seconds);
  $('#replayLimit').textContent=r.continuous?'· вся запись':r.replay_enabled?'/ '+fmt(limit):'· до отключения';
  $('#replayFill').style.width=(r.continuous?(active?100:0):Math.min(100,seconds/limit*100))+'%';
  $('#replayDescription').textContent=r.continuous?'Обычная запись сохраняется целиком при отключении. Последние X минут можно сохранить отдельно, не прерывая запись.':r.replay_enabled?'Повтор хранит последние '+limit/60+' мин. Сохрани момент кнопкой или своей горячей клавишей.':'Включи обычную запись или повтор. Оба режима могут работать одновременно.';
- const controls=$('.capture-mode-actions'),signature=[r.phase,r.continuous,r.replay_enabled,r.saving,r.pending_recording,limit].join(':');
+ const controls=$('.capture-mode-actions'),signature=[r.phase,r.continuous,r.replay_enabled,r.saving,r.save_queue,r.finishing,r.pending_recording,limit].join(':');
  if(controls&&controls.dataset.signature!==signature){controls.innerHTML=captureControls(r);controls.dataset.signature=signature}
  if($('#hotkeyStatus'))$('#hotkeyStatus').textContent=r.hotkey_ok?'Сохранить повтор · работает в фоне':'Сочетание клавиш недоступно';
  $('#audioLabel').textContent=!active?'Ожидает запуска':r.settings.audio_mode==='none'?'Звук выключен':r.audio_recent?'Есть звуковой сигнал':'Сейчас тишина';

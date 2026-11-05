@@ -38,11 +38,11 @@ class StorageTests(unittest.TestCase):
             suite.replay=SimpleNamespace(phase='recording',saving=False)
             with self.assertRaises(ValueError):suite.dispatch('storage_config',{'recordings_dir':str(Path(temp)/'new')})
             self.assertEqual(before,suite.cfg)
-    def test_buffer_follows_custom_destination_and_default_remains_portable(self):
+    def test_export_destination_does_not_move_the_live_capture_buffer(self):
         with tempfile.TemporaryDirectory() as temp:
             suite=Suite(Path(temp)/'data');self.assertEqual(storage.buffer_dir(suite),suite.data/'replay-buffer')
             folder=Path(temp)/'recordings';suite.dispatch('storage_config',{'recordings_dir':str(folder)})
-            self.assertEqual(storage.buffer_dir(suite),folder.resolve()/'.afterplay-buffer')
+            self.assertEqual(storage.buffer_dir(suite),suite.data/'replay-buffer')
     def test_library_view_persists_without_changing_theme(self):
         with tempfile.TemporaryDirectory() as temp:
             suite=Suite(temp);suite.dispatch('appearance_config',{'theme':'obsidian'})

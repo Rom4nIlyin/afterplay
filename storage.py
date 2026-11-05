@@ -11,9 +11,9 @@ def recording_dir(suite):
 
 
 def buffer_dir(suite):
-    folder=recording_dir(suite)
-    if folder.resolve()==(suite.data/'exports').resolve():return suite.data/'replay-buffer'
-    return folder/'.afterplay-buffer'
+    # Live capture must not share the export destination's write/flush queue.
+    # Keep the disposable rolling buffer with app data even for custom folders.
+    return suite.data/'replay-buffer'
 
 
 def configure(suite,value):

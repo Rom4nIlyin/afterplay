@@ -1161,5 +1161,10 @@
   "Нужен переключатель очистки голоса": "Expected a voice cleanup toggle",
   "Модель очистки голоса отсутствует или повреждена. Переустановите обновление AFTERPLAY.": "The voice cleanup model is missing or damaged. Reinstall the AFTERPLAY update.",
   "Этот FFmpeg не поддерживает повтор неподвижных GPU-кадров; включён совместимый захват без остановки буфера.": "This FFmpeg cannot repeat idle GPU frames; compatibility capture keeps the buffer running.",
-  "Тишина или недоступность микрофона не останавливает видео и повтор. Мьют Discord не синхронизируется с микрофоном AFTERPLAY.": "Silence or an unavailable microphone does not stop video or replay. Discord mute is not synchronized with the AFTERPLAY microphone."
+  "Тишина или недоступность микрофона не останавливает видео и повтор. Мьют Discord не синхронизируется с микрофоном AFTERPLAY.": "Silence or an unavailable microphone does not stop video or replay. Discord mute is not synchronized with the AFTERPLAY microphone.",
+  "Папка используется для готовых повторов и клипов. Существующие файлы сохраняют свои пути и доступны в библиотеке.": "This folder stores finished replays and clips. Existing files keep their paths and remain in the library.",
+  "В ОЧЕРЕДИ:": "QUEUED:",
+  "В очереди на сохранение": "Queued for saving",
+  "В очереди уже 8 повторов. Дождись сохранения.": "Eight replays are already queued. Wait for a save to finish.",
+  "Системный звук": "System audio"
 }

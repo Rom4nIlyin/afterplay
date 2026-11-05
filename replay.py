@@ -45,15 +45,8 @@ def monitors():
     return sorted(result,key=lambda m:not m['primary'])
 
 def audio_devices():
-    import pyaudiowpatch as pa
-    p=pa.PyAudio()
-    try:
-        try: default=p.get_default_wasapi_loopback()['index']
-        except Exception: default=None
-        return [{'id':int(d['index']),'name':d['name'],'rate':int(d['defaultSampleRate']),
-                 'channels':min(2,int(d['maxInputChannels'])),'default':d['index']==default}
-                for d in p.get_loopback_device_info_generator()]
-    finally:p.terminate()
+    import loopback
+    return loopback.devices()
 
 def closed_segments(session):
     session=Path(session)
@@ -89,6 +82,7 @@ def validate_export(path,duration,fps,audio):
     tolerance=max(.08,2/fps)
     with av.open(str(path)) as media:
         video=media.streams.video[0]
+        video.codec_context.thread_count=2
         first=next(media.decode(video),None)
         if first is None or first.time is None or abs(first.time)>tolerance:
             raise ValueError('Начало видеодорожки не прошло проверку')
@@ -111,6 +105,8 @@ class Replay:
         self.root=storage.buffer_dir(suite)
         self.root.mkdir(parents=True,exist_ok=True)
         self.lock=threading.RLock()
+        self._save_condition=threading.Condition(self.lock)
+        self._save_requests=[]
         self.stop_event=threading.Event()
         self.proc=None;self.session=None;self.started=None
         self.phase='off';self.error='';self.audio_name='';self.engine=''
@@ -289,6 +285,7 @@ class Replay:
                     'late_audio_ms':round(self.muxer.late_audio_frames/(self._audio_rate or 48000)*1000,1) if self.muxer else 0,
                     'output_size':getattr(self,'output_size',None),
                     'settings':self.settings,'hotkey_ok':bool(self.hotkeys and self.hotkeys.ok),'hotkey_error':self.hotkeys.error if self.hotkeys else '', 'saving':self.saving or self.finishing,
+                    'save_queue':len(self._save_requests),
                     'continuous':self.continuous,'pending_recording':bool(self.continuous and self.session),
                     'replay_enabled':self.replay_enabled,'recording_seconds':round(max(0,end-self.recording_start),1) if self.continuous else 0,
                     'marker_count':len(self.session_marks),'active_profile':self.active_profile,
@@ -453,10 +450,11 @@ class Replay:
         audio=None
         mode=self.settings['audio_mode']
         if mode=='system':
-            devices=audio_devices()
-            audio=next((d for d in devices if str(d['id'])==self.settings['audio']),None)
-            if self.settings['audio']=='default':audio=next((d for d in devices if d['default']),None)
-            if not audio:raise ValueError('Устройство системного звука недоступно. Выбери его заново.')
+            # Reserve a clocked track even with no output endpoint. The worker
+            # opens/reopens devices without touching the live video pipeline.
+            audio={'rate':48000,'channels':2,'name':'Системный звук',
+                   'sources':[{'optional':'loopback','name':'Звук устройства','queue':queue.Queue(maxsize=256)}],
+                   'titles':['Общий звук']}
         elif mode in {'game','exclude','multitrack'}:
             target=window if window and self.settings['audio_follow_window'] and mode in {'game','multitrack'} else process_audio.resolve_target(self.settings)
             audio={'name':('Только ' if mode=='game' else 'Всё кроме ')+target['name'],
@@ -519,7 +517,7 @@ class Replay:
         capture=source.pop('_capture',None)
         if capture:
             try:
-                if source['optional']=='microphone':capture.close()
+                if source['optional'] in {'microphone','loopback'}:capture.close()
                 else:capture.Dispose()
             except Exception:pass
         source.pop('_stop',None)
@@ -531,13 +529,17 @@ class Replay:
             if self.stop_event.is_set():return
             try:
                 capture=source.get('_capture')
-                if source['optional']=='microphone':
+                if source['optional'] in {'microphone','loopback'}:
                     if capture and not capture.is_active():
                         self._close_optional_audio(source);capture=None
                     if capture:continue
                     def status(event,error,source=source):
                         self.suite.log('audio_source_connected' if event=='connected' else 'audio_source_waiting',source=source['name'],error=error)
-                    source['_capture']=microphone.OptionalInput(self.settings,source['queue'],status)
+                    if source['optional']=='microphone':factory=microphone.OptionalInput
+                    else:
+                        from loopback import OptionalOutput
+                        factory=OptionalOutput
+                    source['_capture']=factory(self.settings,source['queue'],status)
                     continue
                 else:
                     if capture and (source.get('_error') or not process_audio.is_alive(source['pid'])):
@@ -631,6 +633,11 @@ class Replay:
     def _maintain(self,audio):
         last_device_check=0;last_optional_check=0
         while not self.stop_event.wait(.5):
+            for source in self._optional_audio:
+                capture=source.get('_capture')
+                if capture and source.get('optional') in {'microphone','loopback'}:
+                    self.audio_peak=max(self.audio_peak*.8,getattr(capture,'peak',0.))
+                    self.last_signal=max(self.last_signal,getattr(capture,'last_signal',0.))
             if time.monotonic()-last_optional_check>2:
                 last_optional_check=time.monotonic()
                 with self.lock:self._refresh_optional_audio()
@@ -680,13 +687,6 @@ class Replay:
                         if self.suite.desktop:self.suite.desktop.notify('Игра закрыта · повтор сохранён',Path(saved['path']).name)
                     except Exception as error:self.error='Игра закрыта: '+str(error)
                     self.phase='error';break
-                try:
-                    if self.settings['audio_mode']=='system' and self.settings['audio']=='default':
-                        current=next((d for d in audio_devices() if d['default']),None)
-                        if not current or current['name']!=audio.get('output_name',audio['name']):
-                            self.error='Устройство системного звука изменилось. Включи повтор заново.'
-                            self.stop();self.phase='error';break
-                except Exception:pass
 
     def _cleanup_session(self,session):
         if not session:return
@@ -706,7 +706,7 @@ class Replay:
             # Drain speech DSP while the mux can still receive its lookahead.
             # The watcher uses this lock too, so it cannot reopen the input.
             for source in self._optional_audio:
-                if source.get('optional')=='microphone':self._close_optional_audio(source)
+                if source.get('optional') in {'microphone','loopback'}:self._close_optional_audio(source)
             if self._microphone:
                 self._microphone.close();self._microphone=None
             self.stop_event.set();proc=self.proc
@@ -815,26 +815,45 @@ class Replay:
             return self.suite.job('Сохранение записи',lambda job:self.suite.auto.manual('stop_recording',job))
         return self.suite.job('Включение записи',lambda job:self.suite.auto.manual('start_recording'))
 
-    def save(self,job,allow_stopped=False,*,full_recording=False,clip_seconds=None):
+    def _reserve_save(self,allow_stopped=False,clip_seconds=None):
         if clip_seconds is not None and (type(clip_seconds) is not int or not 5<=clip_seconds<=1800):
             raise ValueError('Длительность быстрого клипа: от 5 до 1800 секунд')
-        from audio_tracks import TITLES
-        audio_titles=self.audio_titles if self.audio_titles is not None else (list(TITLES) if self.settings['audio_mode']=='multitrack' else ['Общий звук'] if self.settings['audio_mode']!='none' else [])
         with self.lock:
             if self.phase!='recording' and not (allow_stopped and self.session):raise ValueError('Сначала включи повтор')
-            if self.saving:raise ValueError('Предыдущий повтор ещё сохраняется')
-            self.saving=True;session=self.session
-            rows=closed_segments(session)
-            # The next interval begins at this invocation after a successful
-            # save. Capture keeps running while the current clip is encoded.
+            if len(self._save_requests)>=8:raise ValueError('В очереди уже 8 повторов. Дождись сохранения.')
+            rows=closed_segments(self.session) if self.phase!='recording' else []
             cutoff=max(0,time.perf_counter()-self.capture_epoch) if self.phase=='recording' else (rows[-1]['end'] if rows else 0)
-            mark_snapshot=tuple(self._prune_markers(cutoff))
+            request={'id':uuid.uuid4().hex,'session':self.session,'cutoff':cutoff,'marks':tuple(self._prune_markers(cutoff))}
+            self._save_requests.append(request)
+            self.saving=True # Pin the buffer until EVERY reserved save finishes.
+            return request
+
+    def _release_save(self,request,succeeded=False):
+        with self._save_condition:
+            self._save_requests.remove(request)
+            self.saving=bool(self._save_requests)
+            if not self.saving and self.phase!='recording' and (succeeded or not self.continuous):
+                self._cleanup_session(request['session']);self.session=None
+            self._save_condition.notify_all()
+
+    def save(self,job,allow_stopped=False,*,full_recording=False,clip_seconds=None,_request=None):
+        request=_request if _request is not None else self._reserve_save(allow_stopped,clip_seconds)
+        session=request['session'];cutoff=request['cutoff'];mark_snapshot=request['marks']
         stage=None;partial=None;succeeded=False
         try:
+            with self._save_condition:
+                while self._save_requests[0] is not request:
+                    job.update(message='В очереди на сохранение',progress=0)
+                    self._save_condition.wait()
+            if request.get('started'):request['started']()
+            from audio_tracks import TITLES
+            audio_titles=self.audio_titles if self.audio_titles is not None else (list(TITLES) if self.settings['audio_mode']=='multitrack' else ['Общий звук'] if self.settings['audio_mode']!='none' else [])
             destination=self.suite.recordings_dir()
+            destination.mkdir(parents=True,exist_ok=True)
             stage=destination/('.replay-stage-'+uuid.uuid4().hex)
             stage.mkdir()
             # Close the segment containing the hotkey moment; trim away future frames.
+            rows=closed_segments(session)
             deadline=time.monotonic()+10
             while time.monotonic()<deadline:
                 rows=closed_segments(session)
@@ -875,35 +894,35 @@ class Replay:
             name=('Запись-' if full_recording else 'Повтор-')+time.strftime('%Y-%m-%d_%H-%M-%S')+'-'+uuid.uuid4().hex[:4]+'.mp4'
             target=destination/name
             partial=target.with_suffix('.partial.mp4')
+            # Reserve the index at the front instead of +faststart's second
+            # pass over the ENTIRE video on the same disk as live capture.
+            # 32 bytes/sample, up to 200 AAC packets/sec/track, plus overhead.
+            moov_size=1048576+int((duration+3)*(self.settings['fps']+200*len(audio_titles))*32)
+            # Let FFmpeg read the byte-contiguous TS segments itself. Python's
+            # pipe feeder competes with the live PCM pipe during large saves.
+            # concatf preserves TS timestamps (unlike the concat demuxer) and
+            # keeps even a 30-minute buffer below Windows' command-line limit.
+            listing=stage/'segments.txt'
+            listing.write_text(''.join("'file:"+row['path'].resolve().as_posix().replace("'","'\\''")+"'\n" for row in selected),encoding='utf-8')
             # Keep the leading IDR and its dependent frames as hidden preroll.
             # A common negative timestamp offset and MP4 edit lists trim both
             # tracks exactly without seeking into TS or encoding either again.
             cmd=[self.suite.ff(),'-hide_banner','-loglevel','error','-itsoffset',f'{-max(0,skip):.6f}',
-                 '-f','mpegts','-i','pipe:0','-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
+                 '-f','mpegts','-i','concatf:'+listing.resolve().as_posix(),'-t',f'{duration:.6f}','-map','0:v:0','-map','0:a?',
                  '-c','copy','-video_track_timescale','90000','-avoid_negative_ts','disabled',
-                 '-use_editlist','1','-movflags','+faststart','-y',str(partial)]
+                 '-use_editlist','1','-moov_size',str(moov_size),'-y',str(partial)]
             for index,title in enumerate(audio_titles):cmd[-2:-2]=[f'-metadata:s:a:{index}','title='+title,f'-metadata:s:a:{index}','handler_name='+title,f'-disposition:a:{index}','default' if index==0 else '0']
-            proc=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=NO_WINDOW)
+            proc=subprocess.Popen(cmd,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                                  creationflags=NO_WINDOW|subprocess.BELOW_NORMAL_PRIORITY_CLASS)
             with self.suite.lock:self.suite.children.add(proc)
-            pipe=proc.stdin;proc.stdin=None;copy_errors=[]
-            def feed_segments():
-                try:
-                    with pipe:
-                        for row in selected:
-                            with row['path'].open('rb') as source:shutil.copyfileobj(source,pipe,1024*1024)
-                except BrokenPipeError:pass # Output reached the requested end.
-                except OSError as error:copy_errors.append(error)
-            writer=threading.Thread(target=feed_segments,daemon=True);writer.start()
             try:
                 try:stdout,stderr=proc.communicate(timeout=max(120,duration*2))
                 except subprocess.TimeoutExpired:
                     proc.kill();proc.communicate()
                     raise ValueError('Превышено время сохранения повтора')
             finally:
-                writer.join(timeout=3)
                 with self.suite.lock:self.suite.children.discard(proc)
             if proc.returncode:raise ValueError('Не удалось сохранить повтор: '+stderr.decode('utf-8','replace')[-500:])
-            if copy_errors:raise ValueError('Не удалось прочитать буфер: '+str(copy_errors[0]))
             job.update(progress=80,message='Проверка видео и звука')
             info=self.suite.probe(partial)
             validate_export(partial,duration,self.settings['fps'],bool(audio_titles))
@@ -924,23 +943,23 @@ class Replay:
             succeeded=True
             return self.last_saved
         finally:
-            if partial:partial.unlink(missing_ok=True)
-            if stage and stage.resolve().parent==destination.resolve() and stage.name.startswith('.replay-stage-'):
-                shutil.rmtree(stage,ignore_errors=True)
-            with self.lock:
-                self.saving=False
-                if self.phase!='recording' and (succeeded or not self.continuous):self._cleanup_session(session);self.session=None
+            try:
+                if partial:partial.unlink(missing_ok=True)
+                if stage and stage.resolve().parent==destination.resolve() and stage.name.startswith('.replay-stage-'):
+                    shutil.rmtree(stage,ignore_errors=True)
+            finally:self._release_save(request,succeeded)
 
     def save_job(self,clip_seconds=None):
         if self.phase!='recording':raise ValueError('Сначала включи повтор или обычную запись')
+        request=self._reserve_save(clip_seconds=clip_seconds)
         def notice(title,message,kind):
             try:
                 if self.suite.desktop:self.suite.desktop.notify(title,message,kind)
             except Exception as e:self.suite.log('notification_failed',error=str(e))
         def save_with_notice(job):
-            notice('Сохраняю повтор…','AFTERPLAY · подготовка видео','saving')
+            request['started']=lambda:notice('Сохраняю повтор…','AFTERPLAY · подготовка видео','saving')
             try:
-                result=self.save(job,clip_seconds=clip_seconds)
+                result=self.save(job,clip_seconds=clip_seconds,_request=request)
             except Exception as e:
                 notice('Не удалось сохранить повтор',str(e),'error')
                 raise
@@ -948,7 +967,10 @@ class Replay:
             duration=f'{seconds//60:02d}:{seconds%60:02d}'
             notice('Повтор сохранён',duration+(' · GIF' if result.get('format')=='gif' else ' · видео')+' в разделе «Экспорт»','success')
             return result
-        return self.suite.job('Сохранение повтора',save_with_notice)
+        try:return self.suite.job('Сохранение повтора',save_with_notice)
+        except Exception:
+            self._release_save(request)
+            raise
 
     def attach_desktop(self):
         from hotkeys import GlobalHotkeys,DEFAULTS,validate
@@ -964,6 +986,10 @@ class Replay:
     def shutdown(self):
         self.stop()
         if self.hotkeys:self.hotkeys.shutdown()
+        # Suite.shutdown must not terminate the active FFmpeg or leave queued
+        # daemon workers behind after the desktop window has closed.
+        with self._save_condition:
+            while self._save_requests:self._save_condition.wait()
         if self.tray:
             icon=self.tray;self.tray=None
             try:icon.stop()

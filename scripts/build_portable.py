@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FILES = ('output_names.py','window_chrome.py','export_control.py','quick_clips.py','input_capture.py','input_overlay.py','montage.py','app.py', 'app_update.py', 'version.py', 'Updater.cs', 'shortcuts.py', 'replay.py', 'capture_media.py', 'gpu_capture.py', 'video_quality.py', 'desktop.py', 'storage.py', 'auto_record.py', 'hotkeys.py', 'gif_media.py', 'timer_overlay.py', 'single_instance.py', 'process_audio.py', 'runtime_trust.py', 'ProcessAudio.cs',
          'Launcher.cs', 'RuntimeExit.cs', 'app.manifest', 'ReplayNotification.cs', 'Install-Shortcuts.ps1', 'Update-Existing.ps1', 'README.md',
          'LICENSE', 'THIRD-PARTY.md', 'FFmpeg-COPYING.GPLv3.txt', 'CHANGELOG.md',
-         'portable_paths.py','capture_profiles.py','live_markers.py','audio_tracks.py','editor_media.py','customization.py','microphone.py','microphone_worker.py','voice_processing.py','localization.py')
+         'portable_paths.py','capture_profiles.py','live_markers.py','audio_tracks.py','editor_media.py','customization.py','microphone.py','microphone_worker.py','audio_clock.py','loopback.py','loopback_worker.py','voice_processing.py','localization.py')
 PYTHON_URL = 'https://www.python.org/ftp/python/3.13.0/python-3.13.0-embed-amd64.zip'
 WEBVIEW_URL = 'https://go.microsoft.com/fwlink/p/?LinkId=2124701'
 FFMPEG_BUILD = 'ffmpeg-2026-10-29-git-31ba826726-essentials_build'

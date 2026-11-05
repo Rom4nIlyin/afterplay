@@ -49,16 +49,20 @@ class OptionalInput:
     """Keep microphone driver/DSP failures outside the video recorder process."""
     HEARTBEAT_TIMEOUT=8.
     RETRY_SECONDS=2.
+    SOURCE_NAME='microphone'
 
     def __init__(self,settings,destination,on_state=None):
-        self.config={name:settings.get(name,default) for name,default in (
+        self.config=self._configuration(settings)
+        self.destination=destination;self.on_state=on_state
+        self.closed=False;self.error='';self.peak=0.;self.last_signal=0.;self.process=None
+        self.stop_event=threading.Event();self.last_message=0.;self.last_state=None
+        self.thread=threading.Thread(target=self._run,name='AFTERPLAY '+self.SOURCE_NAME,daemon=True)
+        self.thread.start()
+
+    def _configuration(self,settings):
+        return {name:settings.get(name,default) for name,default in (
             ('microphone_device','default'),('microphone_name',''),
             ('microphone_gain',100),('microphone_voice_cleanup',True))}
-        self.destination=destination;self.on_state=on_state
-        self.closed=False;self.error='';self.peak=0.;self.process=None
-        self.stop_event=threading.Event();self.last_message=0.;self.last_state=None
-        self.thread=threading.Thread(target=self._run,name='AFTERPLAY microphone',daemon=True)
-        self.thread.start()
 
     def _command(self):
         runtime=Path(__file__).parent/'runtime/python.exe'
@@ -86,6 +90,10 @@ class OptionalInput:
                 if kind==AUDIO_PACKET:
                     if length<8 or (length-8)%8:raise ValueError('Invalid microphone PCM')
                     value=(struct.unpack_from('<d',body)[0],body[8:])
+                    import array
+                    samples=array.array('f');samples.frombytes(body[8:])
+                    self.peak=max((abs(x) for x in samples[::16]),default=0.)
+                    if self.peak>.00003:self.last_signal=time.monotonic()
                     try:self.destination.put_nowait(value)
                     except queue.Full:
                         try:self.destination.get_nowait()
@@ -109,9 +117,9 @@ class OptionalInput:
                 process.stdin.write(json.dumps(self.config).encode('utf-8')+b'\n');process.stdin.flush()
                 reader=threading.Thread(target=self._read,args=(process,),daemon=True);reader.start()
                 while not self.stop_event.wait(.1):
-                    if process.poll() is not None:raise RuntimeError('Microphone worker exited')
+                    if process.poll() is not None:raise RuntimeError(self.SOURCE_NAME+' worker exited')
                     if time.monotonic()-self.last_message>self.HEARTBEAT_TIMEOUT:
-                        raise TimeoutError('Microphone driver stopped responding')
+                        raise TimeoutError(self.SOURCE_NAME+' driver stopped responding')
             except Exception as error:
                 if not self.closed:self._state('waiting',str(error))
             finally:
@@ -162,6 +170,8 @@ class Capture:
         self.error='';self.closed=False;self.peak=0;self.manager=None;self.stream=None
         self.device=device;self.destination=destination
         self.processor=None;self.epoch=None;self.input_frames=0;self.output_frames=0
+        from audio_clock import SampleClock
+        sample_clock=SampleClock(device['rate'])
         if voice_cleanup:
             from voice_processing import VoiceProcessor
             self.processor=VoiceProcessor(gain)
@@ -170,11 +180,9 @@ class Capture:
         def callback(data,frames,clock,status):
             if self.closed:return None,pa.paComplete
             try:
-                timestamp=clock.get('input_buffer_adc_time',0)
-                if abs(timestamp-time.perf_counter())>30:timestamp=time.perf_counter()-frames/device['rate']
+                timestamp,gap=sample_clock.stamp(frames,clock,time.perf_counter(),bool(status&pa.paInputOverflow))
                 if self.epoch is None:self.epoch=timestamp
-                expected=self.epoch+self.input_frames/device['rate']
-                if abs(timestamp-expected)>.1:
+                if gap:
                     # Preserve a real device gap instead of joining unrelated samples.
                     if self.processor:
                         for block in self.processor.flush():self._deliver(block,self.epoch+block.pts/48000)
