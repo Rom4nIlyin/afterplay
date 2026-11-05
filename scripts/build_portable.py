@@ -25,6 +25,8 @@ FFMPEG_BUILD = 'ffmpeg-2026-10-29-git-31ba826726-essentials_build'
 FFMPEG_URL = 'https://www.gyan.dev/ffmpeg/builds/packages/' + FFMPEG_BUILD + '.7z'
 FFMPEG_SHA256 = '94c9d4eae0817f4c2cc8c78fe2d001db347ce4a433a52f1d9312ff6a886451f8'
 FFMPEG_EXE_SHA256 = '557e97af30a1c9b6dfbd08a1d2a04894279dd15a77d23b1723e560cc7f4fc90e'
+FFMPEG_FALLBACK_URL = 'https://github.com/Rom4nIlyin/afterplay/releases/download/v1.14.4/AFTERPLAY-1.14.4-Portable-Win64.zip'
+FFMPEG_FALLBACK_SHA256 = '069017c91ae465835c2123dcffc4a03614759c1a1b8389062c47b54178716b07'
 
 
 def organize_portable(target):
@@ -46,10 +48,24 @@ def organize_portable(target):
 
 def install_ffmpeg(cache,runtime):
     archive=Path(cache)/(FFMPEG_BUILD+'.7z')
-    download(FFMPEG_URL,archive)
+    executable=Path(runtime)/'ffmpeg.exe'
+    try:download(FFMPEG_URL,archive)
+    except (urllib.error.HTTPError,urllib.error.URLError):
+        # Upstream expires dated build archives. The previous public release
+        # contains the SAME pinned executable; never substitute a newer build.
+        print('FFmpeg archive unavailable; using verified previous release',flush=True)
+        fallback=Path(cache)/'AFTERPLAY-1.14.4-Portable-Win64.zip'
+        download(FFMPEG_FALLBACK_URL,fallback)
+        with fallback.open('rb') as source:actual=hashlib.file_digest(source,'sha256').hexdigest()
+        if actual!=FFMPEG_FALLBACK_SHA256:raise ValueError('FFmpeg fallback archive SHA-256 mismatch')
+        with zipfile.ZipFile(fallback) as bundle:
+            with bundle.open('AFTERPLAY Portable/app/runtime/ffmpeg.exe') as source,executable.open('wb') as out:
+                shutil.copyfileobj(source,out,1024*1024)
+        with executable.open('rb') as source:actual=hashlib.file_digest(source,'sha256').hexdigest()
+        if actual!=FFMPEG_EXE_SHA256:raise ValueError('FFmpeg executable SHA-256 mismatch')
+        return
     with archive.open('rb') as source:actual=hashlib.file_digest(source,'sha256').hexdigest()
     if actual!=FFMPEG_SHA256:raise ValueError('FFmpeg download SHA-256 mismatch')
-    executable=Path(runtime)/'ffmpeg.exe'
     # Windows' bundled bsdtar supports 7z. Read only this fixed member to stdout;
     # no archive-controlled filesystem paths are extracted into the bundle.
     with executable.open('wb') as out:
