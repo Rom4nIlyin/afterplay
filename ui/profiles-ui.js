@@ -2,7 +2,7 @@
 const profileId=p=>p?.id||p?.path||'';
 const selectedProfile=()=>{
  const rows=studioProfiles();
- if(state.auto?.active&&state.replay?.active_profile){const automatic=rows.find(p=>p.name===state.replay.active_profile);if(automatic)return automatic}
+ if(state.auto_record?.active&&state.replay?.active_profile){const automatic=rows.find(p=>p.name===state.replay.active_profile);if(automatic)return automatic}
  return rows.find(p=>profileId(p).toLowerCase()===String(state.settings.selected_capture_profile||'screen:default').toLowerCase())||rows[0];
 };
 function profilePanel(){
@@ -12,7 +12,7 @@ function profilePanel(){
 const beforeProfilesReplayPage=window.replayPage;
 window.replayPage=function(){
  let markup=beforeProfilesReplayPage();
- markup=markup.replace('<div class="panel-title">ЗАХВАТ И КАЧЕСТВО</div>',`<div class="replay-config-head"><div><span class="eyebrow">ЗАПИСЬ ПО ПРОФИЛЮ</span><h2>Параметры профиля</h2></div><span class="pill" id="replayConfigStatus" role="status">Сохранено</span></div>${profilePanel()}<p class="hint">Все изменения ниже относятся к выбранному профилю. Сохрани их зелёной кнопкой внизу страницы.</p>`);
+ markup=markup.replace('<div class="panel-title">ЗАХВАТ И КАЧЕСТВО</div>',`<div class="replay-config-head"><div><span class="eyebrow">ЗАПИСЬ ПО ПРОФИЛЮ</span><h2>Параметры профиля</h2></div><span class="pill" id="replayConfigStatus" role="status">Сохранено</span></div>${profilePanel()}<p class="hint">Все изменения ниже относятся к выбранному профилю. Сохрани их кнопкой сохранения внизу страницы.</p>`);
  markup=markup.replace('<span class="replay-hotkey">',button('live-mark','Отметить момент','plus','quiet',`id="liveMark" ${state.replay?.phase==='recording'?'':'disabled'}`)+'<span id="liveMarkCount" class="hint"></span><span class="replay-hotkey">');
  setTimeout(()=>{installChatSelector();updateProfileControls()},0);return markup;
 };
@@ -33,7 +33,7 @@ window.prepareSelectedProfile=async function(){
  if(tab!=='replay')return;
  const identifier=$('.studio-profiles')?.dataset.profileId;
  if(!identifier||identifier!==$('#captureProfile')?.value)throw Error('Дождись загрузки выбранного профиля');
- if($('#replayConfigStatus')?.dataset.dirty)throw Error('Сначала сохрани изменения профиля зелёной кнопкой');
+ if($('#replayConfigStatus')?.dataset.dirty)throw Error('Сначала сохрани изменения профиля кнопкой сохранения');
  if(identifier!==state.settings.selected_capture_profile)await api('profile_apply',{path:identifier});
 };
 document.addEventListener('input',e=>{

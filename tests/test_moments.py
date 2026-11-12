@@ -79,17 +79,19 @@ class InputTrackTests(unittest.TestCase):
 class QuickClipTests(unittest.TestCase):
     def test_optional_shortcuts_keep_existing_keys_and_reject_conflicts(self):
         old={'save':'Alt+F10','window':'Alt+M','record':'F5','mark':'F6'}
-        values=validate({**old,'clip_1':'F7','clip_2':'F8','clip_3':'F9','inputs':'F11'})
+        values=validate({**old,'clip_1':'F7','clip_2':'F8','inputs':'F11'})
         self.assertEqual({k:values[k] for k in old},old)
         with self.assertRaises(ValueError):validate({**old,'clip_1':'F5'})
-        for values in ([0,30,60],[30,120,1801],[True,120,300],[30,60],['30',60,120]):
+        for values in ([0,30],[30,1801],[True,120],[30],['30',60],[30,60,120,300]):
             with self.assertRaises(ValueError):quick_clips.durations(values)
+        # Settings from versions with three quick clips keep the first two.
+        self.assertEqual(quick_clips.durations([30,120,300]),[30,120])
 
     def test_only_assigned_shortcuts_expand_retention(self):
         with tempfile.TemporaryDirectory() as temp:
             suite=Suite(temp);rec=Replay(suite);rec.settings['seconds']=60
-            self.assertEqual(quick_clips.retention(rec),60)
-            suite.cfg['hotkeys']={'clip_3':'F9'};self.assertEqual(quick_clips.retention(rec),300)
+            suite.cfg['hotkeys']={};self.assertEqual(quick_clips.retention(rec),60)
+            suite.cfg['hotkeys']={'clip_2':'F9'};self.assertEqual(quick_clips.retention(rec),120)
 
     def test_fixed_length_saves_overlap_without_advancing_ordinary_interval(self):
         with tempfile.TemporaryDirectory() as temp:

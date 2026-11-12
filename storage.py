@@ -2,6 +2,7 @@
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import tempfile
 
 
@@ -37,7 +38,12 @@ def configure(suite,value):
 
 
 def state(suite):
-    return {'recordings_dir':str(recording_dir(suite)), 'buffer_dir':str(buffer_dir(suite))}
+    result={'recordings_dir':str(recording_dir(suite)), 'buffer_dir':str(buffer_dir(suite))}
+    try:
+        usage=shutil.disk_usage(recording_dir(suite))
+        result.update(disk_total=usage.total,disk_free=usage.free)
+    except OSError:pass
+    return result
 
 
 def exports(suite):

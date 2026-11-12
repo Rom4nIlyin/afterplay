@@ -10,7 +10,7 @@
   return '#'+[...context.getImageData(0,0,1,1).data].slice(0,3).map(n=>n.toString(16).padStart(2,'0')).join('');
  }
  async function sync(){
-  if(disabled||pending||!state.replay)return;
+  if(disabled||pending||!state.replay||document.hidden||window.customNativeHidden)return;
   const style=getComputedStyle(document.body),read=(name,fallback)=>color(style.getPropertyValue(name),fallback);
   const colors={background:read('--bg','#101314'),panel:read('--panel','#151c1d'),text:read('--text','#edf4f0'),muted:read('--muted','#9cacaa'),accent:read('--accent','#8bf5c8')};
   const key=JSON.stringify([colors,state.replay.phase,state.replay.continuous,state.replay.replay_enabled,Math.floor(state.replay.elapsed||0),state.settings.language]);

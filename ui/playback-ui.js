@@ -11,6 +11,9 @@ openClip=function(id){
  const player=$('#player');if(!player||player.tagName!=='VIDEO')return;
  let enabled=false,speed=1;
  try{enabled=localStorage.getItem('afterplay.timer')==='true';speed=Number(localStorage.getItem('afterplay.speed'))||1}catch{}
+ // The window runs in private mode, so browser storage resets on restart.
+ // The timer choice is kept in settings and applies to every new export.
+ if(typeof state.settings.customization?.timer_default==='boolean')enabled=state.settings.customization.timer_default;
  speed=Math.min(4,Math.max(.1,speed));
  const stage=document.createElement('div');stage.className='playback-stage';
  player.before(stage);stage.append(player);
@@ -48,7 +51,8 @@ openClip=function(id){
   timerCue.position=cfg.timer_x??97.5;timerCue.line=cfg.timer_y??2.5;
  }
  function setTimer(value){
-  enabled=value;timer.hidden=!value;$('#previewTimer').checked=value;$('#exportTimer').checked=value;
+  const changed=enabled!==value;enabled=value;timer.hidden=!value;$('#previewTimer').checked=value;$('#exportTimer').checked=value;
+  if(changed&&state.settings.customization?.timer_default!==value)api('customize_config',{timer_default:value}).then(result=>{state.settings.customization=result}).catch(()=>{});
   timerTrack.mode=value&&player.matches(':fullscreen')?'showing':'disabled';
   remember('afterplay.timer',value);updateTimer();positionTimer();
  }

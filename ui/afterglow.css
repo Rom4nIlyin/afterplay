@@ -1,0 +1,151 @@
+/* Afterglow — the single AFTERPLAY theme. Flat graphite, one warm accent. */
+body.afterglow.onyx-cinema{
+ --line:#262A31;--input:#131519;--input-line:#2E333B;--panel2:#1B1E24;--hover:#1B1E24;--hover-text:#F2F3F5;
+ --sidebar:#0E1013;--dialog:#131519;--subtle:#A3A9B4;--danger-text:#FFB4B5;
+ --ag-surface-2:#1B1E24;--ag-rec:#FF4D4F;--ag-ok:#4ADE80;--ag-soft:rgba(var(--accent-rgb),.14);
+ --ag-glow:0 0 0 1px var(--cinema-accent),0 8px 24px -8px rgba(var(--accent-rgb),.55);
+ --custom-radius:12px;--radius:12px;
+ font-family:'AFTERPLAY Inter','Inter','Segoe UI',sans-serif;font-weight:400;
+}
+body.afterglow.onyx-cinema button,body.afterglow.onyx-cinema input,body.afterglow.onyx-cinema select,body.afterglow.onyx-cinema textarea{font-family:inherit}
+body.afterglow.onyx-cinema button{font-weight:500}
+
+/* Flat surfaces: no wallpapers, gradients or background blur (also cheaper to draw). */
+body.afterglow #cinemaSidebarArt,body.afterglow #customBackground,body.afterglow .custom-theme-grid,
+body.afterglow .cinema-layout-choice,body.afterglow .cinema-layout-select,
+body.afterglow .cinema-design-panel>.cinema-design-label,body.afterglow .cinema-palette-grid,
+body.afterglow .cinema-color-grid,body.afterglow .cinema-art-grid,
+body.afterglow .custom-tabs [data-value="background"]{display:none!important}
+body.afterglow.onyx-cinema .workspace{background:#0B0C0F}
+body.afterglow.onyx-cinema .sidebar{background:#0E1013!important;border-right:1px solid var(--line)}
+body.afterglow.onyx-cinema .workspace>header{background:#0B0C0F!important;backdrop-filter:none;height:64px}
+body.afterglow #cinemaStatus{backdrop-filter:none;background:#131519;border-color:var(--line)}
+body.afterglow.onyx-cinema *{backdrop-filter:none!important}
+
+/* Sidebar */
+body.afterglow.onyx-cinema .brand-mark{background:var(--cinema-accent);filter:drop-shadow(0 0 10px rgba(var(--accent-rgb),.45))}
+body.afterglow.onyx-cinema .brand b{font-size:19px;letter-spacing:.08em;font-weight:700}
+body.afterglow.onyx-cinema .nav-button{min-height:42px;padding:10px 14px;gap:12px;font-size:14px;color:#C4C9D1;font-weight:500}
+body.afterglow.onyx-cinema .nav-button svg{width:19px;height:19px;flex-basis:19px}
+body.afterglow.onyx-cinema .nav-button.active{background:var(--ag-soft);color:#F2F3F5}
+body.afterglow.onyx-cinema .nav-button.active svg{color:var(--cinema-accent)}
+body.afterglow.onyx-cinema .nav-button:enabled:hover{background:var(--ag-surface-2);color:#F2F3F5}
+body.afterglow.onyx-cinema .nav-button .count{font-variant-numeric:tabular-nums;background:transparent}
+
+/* Buttons */
+body.afterglow.onyx-cinema button.primary,body.afterglow.onyx-cinema .cinema-hero .actions .primary{background:var(--cinema-accent)!important;color:var(--cinema-on-accent)!important;border:1px solid transparent!important;font-weight:600;box-shadow:0 8px 24px -10px rgba(var(--accent-rgb),.7)}
+body.afterglow.onyx-cinema button.primary:hover:not(:disabled){filter:brightness(1.07)}
+body.afterglow.onyx-cinema button.secondary,body.afterglow.onyx-cinema button.quiet,body.afterglow.onyx-cinema .cinema-hero .actions .secondary{background:transparent!important;border:1px solid var(--line)!important;color:#F2F3F5}
+body.afterglow.onyx-cinema button.secondary:hover:not(:disabled),body.afterglow.onyx-cinema button.quiet:hover:not(:disabled){background:var(--ag-surface-2)!important;border-color:#363B44!important}
+body.afterglow.onyx-cinema button.danger{background:rgba(255,77,79,.12)!important;border:1px solid var(--ag-rec)!important;color:#FFD6D6!important}
+body.afterglow.onyx-cinema button:disabled{opacity:.45}
+body.afterglow.onyx-cinema button:focus-visible,body.afterglow.onyx-cinema a:focus-visible,body.afterglow.onyx-cinema input:focus-visible,body.afterglow.onyx-cinema select:focus-visible{outline:2px solid #F2F3F5;outline-offset:2px}
+body.afterglow.onyx-cinema :where(input:not([type=checkbox],[type=radio],[type=range]),select,textarea),body.afterglow :where(.ap-dropdown-trigger){background:#131519!important;border:1px solid var(--input-line)!important;border-radius:8px}
+body.afterglow.onyx-cinema input[type=range],body.afterglow.onyx-cinema input[type=checkbox],body.afterglow.onyx-cinema input[type=radio]{accent-color:var(--cinema-accent)}
+body.afterglow kbd{font-family:inherit;font-variant-numeric:tabular-nums}
+
+/* Panels, cards and dialogs */
+body.afterglow.onyx-cinema .settings-card,body.afterglow.onyx-cinema .panel,body.afterglow.onyx-cinema .custom-panel,body.afterglow.onyx-cinema .cinema-design-panel{background:#131519!important;border:1px solid var(--line)!important;border-radius:12px!important;box-shadow:none!important}
+body.afterglow.onyx-cinema dialog{background:#131519;border:1px solid var(--line)}
+body.afterglow.onyx-cinema .cinema-card{border-radius:12px;border:1px solid var(--line);background:#131519;transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease}
+body.afterglow.onyx-cinema .cinema-card:hover{transform:translateY(-2px);border-color:#363B44}
+body.afterglow.onyx-cinema .cinema-card.is-selected{border-color:var(--cinema-accent);box-shadow:var(--ag-glow)}
+body.afterglow.onyx-cinema .cinema-card .thumb{border-radius:8px;overflow:hidden}
+body.afterglow.onyx-cinema .cinema-card .duration{font-variant-numeric:tabular-nums;background:rgba(11,12,15,.82);border-radius:6px}
+body.afterglow.onyx-cinema .clip-tags span,body.afterglow.onyx-cinema .clip-tags button{background:var(--ag-soft);color:#F2F3F5;border-color:transparent}
+
+/* Compact hero: the library starts on the first screen. */
+body.afterglow .cinema-hero{height:clamp(220px,30vh,340px);border-radius:12px;background:#131519}
+body.afterglow .cinema-hero-shade{background:linear-gradient(0deg,rgba(11,12,15,.88),transparent 70%),linear-gradient(90deg,rgba(11,12,15,.6),transparent 60%)}
+body.afterglow.onyx-cinema .cinema-hero h1{font-size:clamp(24px,2vw,34px);letter-spacing:-.5px;font-weight:700}
+body.afterglow .cinema-hero .actions button{height:42px;padding:0 18px}
+body.afterglow .cinema-eyebrow{color:var(--cinema-accent);letter-spacing:.12em}
+
+/* Recording dock in the header */
+body.afterglow #cinemaCapture.ag-dock-host{display:flex;flex:0 1 auto;min-width:0}
+.ag-dock{display:flex;align-items:center;gap:4px;height:48px;padding:4px;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;background:#131519;min-width:0}
+.ag-dock[data-mode=replay]{border-color:rgba(var(--accent-rgb),.45)}
+.ag-dock[data-mode=record]{border-color:rgba(255,77,79,.55)}
+.ag-dock[data-mode=error]{border-color:rgba(255,77,79,.55)}
+.ag-dock button{height:38px;border-radius:8px;border:0;background:transparent;color:#F2F3F5;display:flex;align-items:center;gap:8px;padding:0 12px;font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer}
+.ag-dock button:hover:not(:disabled){background:#1B1E24}
+.ag-dock button:disabled{opacity:.4;cursor:default}
+.ag-dock svg{width:17px;height:17px;flex:none}
+.ag-dock-status{min-width:0;max-width:240px;text-align:left;position:relative;padding:0 12px 0 10px!important}
+.ag-dock-text{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.ag-dock-text b{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-dock-text small{font-size:11px;color:#A3A9B4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:400}
+.ag-dot{width:9px;height:9px;flex:none;border-radius:50%;background:#6B7280}
+.ag-dock[data-mode=replay] .ag-dot{background:var(--cinema-accent);box-shadow:0 0 10px rgba(var(--accent-rgb),.85);animation:agPulse 1.6s ease-in-out infinite}
+.ag-dock[data-mode=record] .ag-dot,.ag-dock[data-mode=error] .ag-dot{background:var(--ag-rec);box-shadow:0 0 10px rgba(255,77,79,.85)}
+.ag-dock[data-mode=record] .ag-dot{animation:agPulse 1.6s ease-in-out infinite}
+.ag-dock[data-mode=busy] .ag-dot{background:#F2F3F5;animation:agPulse .8s ease-in-out infinite}
+.ag-fill{position:absolute;left:10px;right:12px;bottom:3px;height:2px;border-radius:1px;background:#262A31;overflow:hidden}
+.ag-fill span{display:block;height:100%;background:var(--cinema-accent)}
+.ag-dock-sep{width:1px;height:24px;background:var(--line);flex:none;margin:0 2px}
+.ag-dock-toggle.is-on{background:var(--ag-soft)!important;color:#F2F3F5}
+.ag-dock-toggle.is-on svg{color:var(--cinema-accent)}
+.ag-rec-dot{width:9px;height:9px;border-radius:50%;background:var(--ag-rec);flex:none}
+.ag-dock-rec.is-on{background:rgba(255,77,79,.14)!important;color:#FFD6D6}
+.ag-dock-save{background:var(--cinema-accent)!important;color:var(--cinema-on-accent)!important;font-weight:600!important}
+.ag-dock-save:hover:not(:disabled){filter:brightness(1.07)}
+.ag-dock-save:disabled{background:#1B1E24!important;color:#A3A9B4!important;opacity:1!important}
+.ag-dock-save kbd{font-size:11px;font-weight:600;padding:1px 6px;border-radius:5px;background:rgba(11,12,15,.18);border:0}
+.ag-dock-save:disabled kbd{background:#262A31;color:#A3A9B4}
+.ag-dock-quick{padding:0 10px!important;border:1px solid var(--line)!important;font-variant-numeric:tabular-nums}
+@keyframes agPulse{0%,100%{opacity:1}50%{opacity:.35}}
+/* Narrow windows: keep the record controls whole, shrink everything else first. */
+body.afterglow.onyx-cinema #cinemaTopbar{gap:12px}
+body.afterglow.onyx-cinema .cinema-search{height:44px;min-width:120px;flex:1 1 240px;width:auto;max-width:420px}
+body.afterglow #cinemaCapture.ag-dock-host{flex:0 0 auto}
+@media (max-width:1500px){.ag-dock-save kbd{display:none}.ag-dock-status{max-width:190px}}
+@media (max-width:1380px){body.afterglow.onyx-cinema .cinema-profile{max-width:160px}body.afterglow #studioCommandButton{display:none}}
+@media (max-width:1320px){.ag-dock-text small{display:none}.ag-dock-toggle span{display:none}.ag-dock-toggle{padding:0 10px!important}}
+@media (max-width:1240px){body.afterglow.onyx-cinema .cinema-profile>span{display:none}body.afterglow.onyx-cinema .cinema-profile{padding:0 10px}.ag-dock-status{max-width:150px}}
+@media (max-width:1150px){.ag-dock-save span{display:none}.ag-dock-quick{padding:0 8px!important}}
+
+/* A visible red frame while a manual recording runs. */
+body.afterglow.ag-recording::after{content:'';position:fixed;inset:0;border:2px solid var(--ag-rec);pointer-events:none;z-index:2147483000;animation:agFrame 2.4s ease-in-out infinite}
+@keyframes agFrame{0%,100%{opacity:.9}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.ag-dot,body.afterglow.ag-recording::after{animation:none!important}body.afterglow.onyx-cinema .cinema-card{transition:none}}
+
+/* Profiles: automatic start per game */
+.ag-auto{margin-top:14px}
+.ag-auto-note{padding:12px 14px;border-radius:10px;background:#0E1013;border:1px solid var(--line);color:#A3A9B4;font-size:13px;font-weight:400}
+.ag-switch{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border-radius:10px;background:#0E1013;border:1px solid var(--line);cursor:pointer}
+.ag-switch input{position:absolute;opacity:0;width:1px;height:1px}
+.ag-switch-track{width:36px;height:20px;flex:none;border-radius:10px;background:#363B44;padding:2px;box-sizing:border-box;display:flex;transition:background .14s}
+.ag-switch-track span{width:16px;height:16px;border-radius:50%;background:#A3A9B4;transition:transform .14s,background .14s}
+.ag-switch input:checked+.ag-switch-track{background:var(--cinema-accent)}
+.ag-switch input:checked+.ag-switch-track span{transform:translateX(16px);background:#0B0C0F}
+.ag-switch input:focus-visible+.ag-switch-track{outline:2px solid #F2F3F5;outline-offset:2px}
+.ag-switch input:disabled+.ag-switch-track{opacity:.4}
+.ag-switch b{display:block;font-weight:600;font-size:14px}
+.ag-switch small{display:block;color:#A3A9B4;font-size:12px;font-weight:400;margin-top:2px}
+
+/* Appearance: accent picker */
+.ag-accent{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px 28px;padding-bottom:22px;margin-bottom:22px;border-bottom:1px solid var(--line)}
+.ag-accent h2{margin:4px 0}
+.ag-accent p{margin:0;color:#A3A9B4}
+.ag-swatches{display:flex;align-items:center;gap:12px}
+.ag-swatch{width:34px;height:34px;border-radius:50%!important;border:0!important;padding:0!important;background:var(--swatch)!important;cursor:pointer}
+.ag-swatch.selected{box-shadow:0 0 0 3px #131519,0 0 0 5px var(--swatch)}
+.ag-swatch-name{color:#A3A9B4;font-size:13px;min-width:70px}
+
+/* Appearance tab: colours now come from Afterglow; remove the retired controls. */
+body.afterglow .cinema-design-heading,
+body.afterglow #main:has(.cinema-design-panel) .page-head>.pill,
+body.afterglow .custom-color:has([data-custom=accent]),body.afterglow .custom-check:has([data-custom=colors_custom]),
+body.afterglow .custom-color:has([data-custom=panel_color]),body.afterglow .custom-color:has([data-custom=text_color]),
+body.afterglow .custom-color:has([data-custom=muted_color]),body.afterglow .custom-field:has([data-custom=panel_opacity]){display:none!important}
+body.afterglow .cinema-design-panel .ag-accent{border-bottom:0;margin-bottom:6px}
+
+/* Search field: one box, not a box inside a box. */
+body.afterglow.onyx-cinema .cinema-search{background:#131519;border:1px solid var(--line);border-radius:10px}
+body.afterglow.onyx-cinema .cinema-search input{background:transparent!important;border:0!important;box-shadow:none!important;outline:none}
+body.afterglow.onyx-cinema .cinema-search:focus-within{border-color:#4A505B}
+
+/* Toasts sit on a surface instead of a coloured block. */
+body.afterglow .toast{background:#1B1E24!important;border:1px solid #363B44!important;color:#F2F3F5!important;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+body.afterglow .toast.error{border-color:rgba(255,77,79,.6)!important;color:#FFD6D6!important}
+@media (max-width:1240px){body.afterglow.onyx-cinema .cinema-profile svg{display:block!important;width:18px;height:18px}}

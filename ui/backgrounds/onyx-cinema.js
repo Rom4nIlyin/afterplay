@@ -11,7 +11,8 @@
   rose:{name:'Rose',description:['Розовый кварц и тёмная слива','Rose quartz and dark plum'],values:['#f39bc5','#140e18','#221827','#fff0fa','#c6b0c6']}
  };
  Object.assign(customDefaults,Object.fromEntries(paletteKeys.map((key,i)=>[key,palettes.cinema.values[i]])),{cinema_palette:'cinema',cinema_sidebar:'banner'});
- const artwork=[['banner','Рыцарь со знаменем','Banner knight'],['ranger','Изумрудный лес','Emerald forest'],['citadel','Лунная цитадель','Moonlit citadel'],['ember','Пепельное знамя','Ember standard']];
+ // Afterglow retired the sidebar artwork; the large pictures are never loaded.
+ const artwork=[];
  const mediaInfo=new Map(),favoritePending=new Set();
  const strokes={heart:'<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>',scissors:'<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="m8.1 8.1 12.4 12.4M14 10l6.5-6.5M8.1 15.9 11 13"/>',calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h.01"/>',more:'<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',frame:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 10 4 4-4 4M14 10h3"/>',image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/>',record:'<circle cx="12" cy="12" r="9"/>',save:'<path d="M20 8a8 8 0 1 0 0 8M20 3v6h-6"/>',play:'<path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none"/>'};
  const cIcon=name=>strokes[name]?`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${strokes[name]}</svg>`:icon(name);
@@ -119,7 +120,7 @@
   if(!on){$('#cinemaTopbar')?.remove();$('#cinemaStatus')?.remove();$('#cinemaSidebarArt')?.remove();$('#cinemaProfile')?.remove();shellSignature='';return}
   applyDesign();
   let art=$('#cinemaSidebarArt');if(!art){art=document.createElement('div');art.id='cinemaSidebarArt';art.setAttribute('aria-hidden','true');art.innerHTML='<img alt="">';$('.sidebar').prepend(art)}
-  const chosen=customSettings().cinema_sidebar||'banner';art.hidden=chosen==='none';document.body.dataset.cinemaArt=chosen;if(chosen!=='none'&&art.dataset.choice!==chosen){art.dataset.choice=chosen;art.querySelector('img').src=base+'backgrounds/onyx-art-'+chosen+'.png'}
+  const chosen='none';art.hidden=chosen==='none';document.body.dataset.cinemaArt=chosen;if(chosen!=='none'&&art.dataset.choice!==chosen){art.dataset.choice=chosen;art.querySelector('img').src=base+'backgrounds/onyx-art-'+chosen+'.png'}
   let bar=$('#cinemaTopbar');
   if(!bar){bar=document.createElement('div');bar.id='cinemaTopbar';bar.innerHTML=`<div class="cinema-search">${icon('search')}<input id="searchInput" type="search" autocomplete="off"></div><div class="cinema-section"></div><div id="cinemaCapture"></div>`;document.querySelector('.workspace>header').prepend(bar)}
   const input=bar.querySelector('input');input.placeholder=t('Поиск записей…','Search recordings…');input.setAttribute('aria-label',t('Поиск записей','Search recordings'));if(document.activeElement!==input)input.value=search;

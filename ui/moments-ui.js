@@ -1,6 +1,6 @@
 'use strict';
-const quickClipDefaults=[30,120,300];
-const quickClipValues=()=>state.settings.quick_clips||quickClipDefaults;
+const quickClipDefaults=[30,120];
+const quickClipValues=()=>(state.settings.quick_clips||quickClipDefaults).slice(0,2);
 const inputDefaults={layout:'full',position:'bottom-left',size:42,opacity:90};
 const montageSelection=new Set();
 let montageDraft=null,montageView=null,inputEditor=null;
@@ -56,7 +56,7 @@ window.renderDesktopExtras=function(){
  if(tab!=='settings'||$('#quickClipSettings'))return;
  const card=$('#saveHotkey')?.closest('.settings-card');if(!card)return;
  const values=quickClipValues(),keys=state.settings.hotkeys||{};
- card.querySelector('.actions').insertAdjacentHTML('beforebegin',`<section id="quickClipSettings"><h3>Клипы разной длины</h3><p class="hint">Каждая клавиша сохраняет последние N секунд в MP4. Доступная длина растёт по мере записи. Эти клипы могут перекрываться.</p>${values.map((seconds,i)=>`<div class="quick-clip-setting"><div class="field"><label for="quickClipKey${i}">Клавиша ${i+1} · необязательно</label><div class="hotkey-binding-row"><input class="hotkey-input" id="quickClipKey${i}" value="${esc(keys['clip_'+(i+1)]||'')}" placeholder="Не назначена" autocomplete="off" spellcheck="false"><button type="button" class="quiet clear-binding" data-action="clear-binding" data-target="quickClipKey${i}">Очистить</button></div></div><div class="field"><label for="quickClipSeconds${i}">Секунды</label><input id="quickClipSeconds${i}" type="number" min="5" max="1800" step="1" value="${seconds}"></div></div>`).join('')}<div class="field"><label for="inputsHotkey">Включить / выключить запись нажатий · необязательно</label><div class="hotkey-binding-row"><input class="hotkey-input" id="inputsHotkey" value="${esc(keys.inputs||'')}" placeholder="Не назначена" autocomplete="off" spellcheck="false"><button class="quiet clear-binding" data-action="clear-binding" data-target="inputsHotkey">Очистить</button></div></div></section>`);
+ card.querySelector('.actions').insertAdjacentHTML('beforebegin',`<section id="quickClipSettings"><h3>Быстрые клипы</h3><p class="hint">Две клавиши сохраняют последние N секунд в MP4 — например, 30 секунд и 2 минуты. Кнопки этих клипов есть и в панели записи сверху. Доступная длина растёт по мере записи. Эти клипы могут перекрываться.</p>${values.map((seconds,i)=>`<div class="quick-clip-setting"><div class="field"><label for="quickClipKey${i}">Быстрый клип ${i+1} · клавиша</label><div class="hotkey-binding-row"><input class="hotkey-input" id="quickClipKey${i}" value="${esc(keys['clip_'+(i+1)]||'')}" placeholder="Не назначена" autocomplete="off" spellcheck="false"><button type="button" class="quiet clear-binding" data-action="clear-binding" data-target="quickClipKey${i}">Очистить</button></div></div><div class="field"><label for="quickClipSeconds${i}">Секунды</label><input id="quickClipSeconds${i}" type="number" min="5" max="1800" step="1" value="${seconds}"></div></div>`).join('')}<div class="field"><label for="inputsHotkey">Включить / выключить запись нажатий · необязательно</label><div class="hotkey-binding-row"><input class="hotkey-input" id="inputsHotkey" value="${esc(keys.inputs||'')}" placeholder="Не назначена" autocomplete="off" spellcheck="false"><button class="quiet clear-binding" data-action="clear-binding" data-target="inputsHotkey">Очистить</button></div></div></section>`);
  card.insertAdjacentHTML('afterend',`<section class="settings-card" id="inputRecordingSettings"><span class="eyebrow">КЛАВИАТУРА И МЫШЬ</span><h2>Запись нажатий</h2><label class="check"><input id="recordInputs" type="checkbox" ${state.replay?.input_recording?.enabled?'checked':''}> Записывать нажатия вместе с видео</label><p class="hint">Работает во время обычной записи и повтора. Можно переключать на ходу кнопкой на странице записи или назначенной клавишей.</p><p class="hint">При записи окна учитываются нажатия только в его приложении. При записи экрана — в активном приложении, кроме AFTERPLAY. Сохраняются клавиши, кнопки мыши и колесо.</p><div class="notice">Во время игры оверлей не отображается. Его вид и включение в ролик выбираются позже, во вкладке «Нажатия» монтажа.</div><p class="hint error-text" id="inputCaptureError">${esc(state.replay?.input_recording?.error||'')}</p></section>`);
 };
 const beforeMomentsPreferences=window.updatePreferences;
@@ -190,12 +190,12 @@ action=async function(name,element){
  }
  if(name==='clear-binding'){const field=$('#'+element.dataset.target);if(field)field.value='';return}
  if(name==='hotkeys-save'){
-  const values={save:$('#saveHotkey').value,window:$('#windowHotkey').value,mark:$('#markHotkey')?.value||'',record:$('#recordHotkey')?.value||'',inputs:$('#inputsHotkey').value,quick_clips:[0,1,2].map(i=>Number($('#quickClipSeconds'+i).value))};
-  for(let i=0;i<3;i++)values['clip_'+(i+1)]=$('#quickClipKey'+i).value;
+  const values={save:$('#saveHotkey').value,window:$('#windowHotkey').value,mark:$('#markHotkey')?.value||'',record:$('#recordHotkey')?.value||'',inputs:$('#inputsHotkey').value,quick_clips:[0,1].map(i=>Number($('#quickClipSeconds'+i).value))};
+  for(let i=0;i<2;i++)values['clip_'+(i+1)]=$('#quickClipKey'+i).value;
   state.settings.hotkeys=await api('hotkeys_config',values);state.settings.quick_clips=values.quick_clips;await refresh();toast('Горячие клавиши сохранены');return;
  }
  if(name==='hotkeys-reset'){
-  for(let i=0;i<3;i++){$('#quickClipKey'+i).value='';$('#quickClipSeconds'+i).value=quickClipDefaults[i]}
+  const suggested=['Ctrl+Alt+F6','Ctrl+Alt+F7'];for(let i=0;i<2;i++){$('#quickClipKey'+i).value=suggested[i];$('#quickClipSeconds'+i).value=quickClipDefaults[i]}
   $('#inputsHotkey').value='';return beforeMomentsAction(name,element);
  }
  if(name==='montage-select'){

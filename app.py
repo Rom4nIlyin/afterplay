@@ -120,6 +120,8 @@ class Suite:
         self.cfg.setdefault('updates', {'auto_enabled': False})
         self.cfg.setdefault('desktop',{}).setdefault('clips',{}).setdefault('close_action','tray')
         self.cfg.get('hotkeys',{}).pop('auto',None)
+        from quick_clips import migrate as migrate_quick_clips
+        migrate_quick_clips(self.cfg)
         from customization import migrate_palettes
         migrate_palettes(self.cfg)
         self.save_cfg()
@@ -172,6 +174,9 @@ class Suite:
                     atomic_json(self.cfg_path, current)
                     self.cfg = current
                     self._saved_cfg = json.loads(json.dumps(current))
+                    try:
+                        stat=self.cfg_path.stat();self._cfg_signature=(stat.st_mtime_ns,stat.st_size)
+                    except OSError:self._cfg_signature=None
                 finally:
                     if os.name == 'nt':
                         handle.seek(0)
@@ -179,12 +184,59 @@ class Suite:
 
     def log(self, event, **detail):
         with self.lock:
-            with open(self.data / 'journal.jsonl', 'a', encoding='utf-8') as f:
-                f.write(json.dumps({'at': time.strftime('%Y-%m-%d %H:%M:%S'), 'event': event, **detail}, ensure_ascii=False) + '\n')
+            path = self.data / 'journal.jsonl'
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps({'at': time.strftime('%Y-%m-%d %H:%M:%S'), 'event': event, **detail}, ensure_ascii=False, default=str) + '\n')
+                size = f.tell()
+            # The journal used to grow forever; keep the current and one previous file.
+            if size > 16 * 1024 ** 2:
+                try:os.replace(path, self.data / 'journal.previous.jsonl')
+                except OSError:pass
+
+    CACHE_MARKERS = ((('thumbs',), ('-strip-', '-wave-', '-audio2-')),
+                     (('logs',), ('replay-', 'export-', 'gif-', 'input-', 'montage-')))
+
+    def cache_bytes(self):
+        total = 0
+        for (folder,), markers in self.CACHE_MARKERS:
+            try:
+                for entry in os.scandir(self.data / folder):
+                    if any(marker in entry.name for marker in markers) and entry.is_file(follow_symlinks=False):
+                        total += entry.stat().st_size
+            except OSError:
+                continue
+        return total
+
+    def cleanup_caches(self, max_age_days=30):
+        """Drop regenerable caches and old logs so data/ does not grow without bound.
+
+        Filmstrips, waveforms and audio previews are cached per trim range and
+        were never removed. Clip thumbnails ({id}.jpg) are kept.
+        """
+        cutoff = time.time() - max_age_days * 86400
+        removed = 0
+        patterns = ((self.data / 'thumbs', ('-strip-', '-wave-', '-audio2-')),
+                    (self.data / 'logs', ('replay-', 'export-', 'gif-', 'input-', 'montage-')))
+        for folder, markers in patterns:
+            try:entries = list(os.scandir(folder))
+            except OSError:continue
+            for entry in entries:
+                if not any(marker in entry.name for marker in markers):continue
+                try:
+                    if entry.is_file(follow_symlinks=False) and entry.stat().st_mtime < cutoff:
+                        os.unlink(entry.path);removed += 1
+                except OSError:pass
+        if removed:self.log('cache_cleanup', removed=removed)
+        return removed
 
     def job(self, label, fn, cancellable=False):
         jid = uuid.uuid4().hex
-        self.jobs[jid] = {'id': jid, 'label': label, 'status': 'running', 'progress': 0, 'message': 'Подготовка…'}
+        with self.lock:
+            # Finished jobs were never removed: a long session kept every result
+            # in memory and every running-job check scanned all of them.
+            finished=[key for key,value in self.jobs.items() if value.get('status')!='running']
+            for key in finished[:max(0,len(finished)-60)]:self.jobs.pop(key,None)
+            self.jobs[jid] = {'id': jid, 'label': label, 'status': 'running', 'progress': 0, 'message': 'Подготовка…'}
         control = ExportControl(self.jobs[jid]) if cancellable else None
         if control:
             with self.lock:
@@ -261,7 +313,27 @@ class Suite:
             self.ffmpeg = str(binary)
         return self.ffmpeg
 
+    @staticmethod
+    def _probe_av(path):
+        """In-process probe: avoids launching the 100 MB FFmpeg for every file."""
+        try:
+            import av
+            with av.open(str(path)) as media:
+                if not media.streams.video:return None
+                video=media.streams.video[0]
+                width,height=int(video.codec_context.width or 0),int(video.codec_context.height or 0)
+                duration=float(media.duration)/1000000 if media.duration else 0.
+                if not (duration>0 and width>=10 and height>=10):return None
+                audio=list(media.streams.audio)
+                return {'duration':duration,'width':width,'height':height,'audio':len(audio),
+                        'audio_titles':[s.metadata.get('title') or s.metadata.get('handler_name','') for s in audio],
+                        'fps':float(video.average_rate or 60)}
+        except Exception:
+            return None
+
     def probe(self, path):
+        fast=self._probe_av(path)
+        if fast:return fast
         p = run([self.ff(), '-hide_banner', '-i', path], timeout=25)
         text = p.stderr.decode('utf-8', 'replace')
         d = re.search(r'Duration: (\d+):(\d+):(\d+(?:\.\d+)?)', text)
@@ -278,69 +350,150 @@ class Suite:
         except Exception:pass
         return result
 
-    def internal_media(self, path):
-        path=Path(path)
-        if any(part.casefold() in {'.afterplay-buffer','.afterpaly-buffer'} or part.casefold().startswith('.replay-stage-') for part in path.parts):
+    @staticmethod
+    def _path_key(path):
+        # Case-normalized (Windows rules), separator-normalized key with a trailing separator,
+        # so prefix tests never match "D:\\Video2" against "D:\\Video".
+        return os.path.normcase(os.path.abspath(str(path))).rstrip('\\/')+os.sep
+
+    def _resolved_key(self, path):
+        cache=self.__dict__.setdefault('_resolved_keys',{})
+        text=str(path);key=cache.get(text)
+        if key is None:
+            try:key=self._path_key(Path(text).resolve())
+            except (OSError,ValueError):key=self._path_key(text)
+            if len(cache)>256:cache.clear()
+            cache[text]=key
+        return key
+
+    @staticmethod
+    def _internal_name(path):
+        text=str(path).casefold()
+        # Fast path for ordinary library rows: no marker text, no parsing.
+        if not any(marker in text for marker in ('.afterplay-buffer','.afterpaly-buffer','.replay-stage-','.partial.')):
+            return False
+        parts=Path(path).parts
+        if any(part.casefold() in {'.afterplay-buffer','.afterpaly-buffer'} or part.casefold().startswith('.replay-stage-') for part in parts):
             return True
-        if '.partial.' in path.name.casefold():return True
-        return path.resolve().is_relative_to((self.data/'replay-buffer').resolve())
+        return bool(parts) and '.partial.' in parts[-1].casefold()
+
+    def internal_media(self, path):
+        if self._internal_name(path):return True
+        return Path(path).resolve().is_relative_to((self.data/'replay-buffer').resolve())
+
+    def _visibility(self):
+        """Build a fast filter once per listing instead of resolving every row.
+
+        Root folders are resolved once (cached); clip paths are compared by
+        normalized absolute text. Resolving each of thousands of rows on every
+        1.8 s UI poll was the main cause of library/UI slowdowns on Windows.
+        """
+        buffer=self._resolved_key(self.data/'replay-buffer')
+        inactive=tuple(self._resolved_key(root) for root in self.cfg.get('disconnected_roots',[]))
+        active=tuple(self._resolved_key(root) for root in [*self.cfg.get('video_roots',[]),str(self.recordings_dir()),*self.cfg.get('storage',{}).get('previous_dirs',[])])
+        internal=self._internal_name;path_key=self._path_key
+        def visible(path):
+            if internal(path):return False
+            key=path_key(path)
+            if key.startswith(buffer):return False
+            if not inactive or not key.startswith(inactive):return True
+            # Keep notes for disconnected sources, and reveal them on reconnection.
+            return key.startswith(active)
+        return visible
 
     def library_visible(self, path):
-        if self.internal_media(path):return False
-        path=Path(path).resolve()
-        inactive=self.cfg.get('disconnected_roots',[])
-        if not any(path.is_relative_to(Path(root).resolve()) for root in inactive):return True
-        # Keep notes for disconnected sources, and reveal them on reconnection.
-        active=[*self.cfg.get('video_roots',[]),str(self.recordings_dir()),*self.cfg.get('storage',{}).get('previous_dirs',[])]
-        return any(path.is_relative_to(Path(root).resolve()) for root in active)
+        return self._visibility()(path)
 
     def scan_videos(self, job):
         paths = []
+        buffer = self._resolved_key(self.data/'replay-buffer')
+        def internal(path):
+            # Same rules as internal_media() without resolving every file.
+            return self._internal_name(path) or self._path_key(path).startswith(buffer)
         for root in self.cfg['video_roots']:
             root = Path(root)
             if not root.is_dir() or self.internal_media(root):
                 continue
             for folder, dirs, files in os.walk(root, followlinks=False):
-                dirs[:] = [d for d in dirs if not self.internal_media(Path(folder)/d) and not (Path(folder)/d).is_symlink()
+                dirs[:] = [d for d in dirs if not internal(Path(folder)/d) and not (Path(folder)/d).is_symlink()
                            and not (hasattr(Path(folder)/d,'is_junction') and (Path(folder)/d).is_junction())]
                 for name in files:
                     p = Path(folder)/name
-                    if p.suffix.lower() in VIDEO_EXT and not p.is_symlink() and not self.internal_media(p):
+                    if p.suffix.lower() in VIDEO_EXT and not internal(p) and not p.is_symlink():
                         paths.append(p)
                 if len(paths) > 5000:
                     raise ValueError('Более 5000 видео. Выбери папку поменьше.')
-        paths = sorted(set(paths), key=lambda p: p.stat().st_mtime, reverse=True)
-        for i, p in enumerate(paths):
-            job.update(message=f'Видео {i+1}/{len(paths)} · {p.name}', progress=int(i/max(len(paths),1)*100))
-            st = p.stat()
-            cid = hashlib.sha256(str(p.resolve()).lower().encode()).hexdigest()[:24]
-            with self.db() as db:
-                old = db.execute('SELECT * FROM clips WHERE path=?', (str(p),)).fetchone()
+        entries = []
+        for p in set(paths):
+            try:entries.append((p, p.stat()))
+            except OSError:continue  # Removed while scanning.
+        entries.sort(key=lambda item: item[1].st_mtime, reverse=True)
+        pending = []
+        with self.db() as db:
+            # One query instead of a connection + SELECT per file.
+            existing = {row['path']: row for row in db.execute('SELECT id,path,size,mtime FROM clips')}
+            for p, st in entries:
+                old = existing.get(str(p))
+                # Thumbnails and metadata belong to the stored row id.
+                cid = old['id'] if old else hashlib.sha256(str(p.resolve()).lower().encode()).hexdigest()[:24]
                 changed = not old or old['size'] != st.st_size or old['mtime'] != st.st_mtime
                 if changed:
-                    db.execute('''INSERT INTO clips(id,path,name,size,mtime) VALUES(?,?,?,?,?)
-                                  ON CONFLICT(path) DO UPDATE SET size=excluded.size,mtime=excluded.mtime''',
-                               (cid, str(p), p.name, st.st_size, st.st_mtime))
-            if changed or not (self.data/'thumbs'/f'{cid}.jpg').exists():
-                try:
-                    info = self.probe(p)
-                    thumb = self.data/'thumbs'/f'{cid}.jpg'
-                    proc = run([self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(min(3, info['duration']/3)),
-                                '-i', p, '-frames:v', '1', '-vf', 'scale=480:-2', '-y', thumb], timeout=30)
-                    if proc.returncode:
-                        raise ValueError('Не удалось создать превью')
-                    with self.db() as db:
-                        db.execute('UPDATE clips SET duration=?,width=?,height=?,audio=?,error=? WHERE id=?',
-                                   (info['duration'],info['width'],info['height'],info['audio'],'',cid))
-                except Exception as e:
-                    with self.db() as db:
-                        db.execute('UPDATE clips SET error=? WHERE id=?', (str(e),cid))
-        self.log('video_scan', count=len(paths))
-        return {'count': len(paths)}
+                    try:
+                        db.execute('''INSERT INTO clips(id,path,name,size,mtime) VALUES(?,?,?,?,?)
+                                      ON CONFLICT(path) DO UPDATE SET size=excluded.size,mtime=excluded.mtime''',
+                                   (cid, str(p), p.name, st.st_size, st.st_mtime))
+                    except sqlite3.IntegrityError:
+                        continue  # The same file is already indexed under another spelling.
+                if changed or not (self.data/'thumbs'/f'{cid}.jpg').exists():
+                    pending.append((p, cid))
+        total = len(pending)
+        job.update(message=f'Видео 0/{total}', progress=0)
+        if pending:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            # Probing and thumbnails are independent FFmpeg runs; a few in
+            # parallel make a large rescan several times faster.
+            workers = max(1, min(4, (os.cpu_count() or 2) // 2, total))
+            self.ff()  # Locate/verify FFmpeg once, before the workers start.
+            db = sqlite3.connect(self.data / 'library.sqlite3', timeout=30)
+            try:
+                with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='afterplay-scan') as pool:
+                    futures = {pool.submit(self._index_thumbnail, p, cid): (p, cid) for p, cid in pending}
+                    for done, future in enumerate(as_completed(futures), 1):
+                        p, cid = futures[future]
+                        job.update(message=f'Видео {done}/{total} · {p.name}', progress=int(done/total*100))
+                        try:
+                            info = future.result()
+                            db.execute('UPDATE clips SET duration=?,width=?,height=?,audio=?,error=? WHERE id=?',
+                                       (info['duration'],info['width'],info['height'],info['audio'],'',cid))
+                        except Exception as e:
+                            db.execute('UPDATE clips SET error=? WHERE id=?', (str(e),cid))
+                        db.commit()
+            finally:
+                db.close()
+        self.log('video_scan', count=len(entries))
+        return {'count': len(entries)}
+
+    def _index_thumbnail(self, path, cid):
+        info = self.probe(path)
+        thumb = self.data/'thumbs'/f'{cid}.jpg'
+        proc = run([self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(min(3, info['duration']/3)),
+                    '-i', path, '-frames:v', '1', '-vf', 'scale=480:-2', '-threads', '2', '-y', thumb], timeout=30)
+        if proc.returncode:
+            raise ValueError('Не удалось создать превью')
+        return info
 
     def clips(self):
+        visible=self._visibility()
         with self.db() as db:
-            return [dict(r) for r in db.execute('SELECT * FROM clips ORDER BY mtime DESC') if self.library_visible(r['path'])]
+            return [dict(r) for r in db.execute('SELECT * FROM clips ORDER BY mtime DESC') if visible(r['path'])]
+
+    def latest_clip_id(self):
+        """Newest visible clip without materializing the whole library."""
+        visible=self._visibility()
+        with self.db() as db:
+            for row in db.execute('SELECT id,path FROM clips ORDER BY mtime DESC'):
+                if visible(row['path']):return row['id']
+        return None
 
     def index_video(self,path):
         path=Path(path)
@@ -438,6 +591,9 @@ class Suite:
             raise ValueError('Проверь начало и конец отрезка')
         if arg.get('format') not in (None, 'original', 'vertical', 'gif'):
             raise ValueError('Неизвестный формат экспорта')
+        quality = arg.get('quality') or 'standard'
+        if quality not in ('standard', 'discord', 'high'):
+            raise ValueError('Неизвестное качество экспорта')
         timer = arg.get('timer', False)
         if not isinstance(timer, bool):
             raise ValueError('Ожидался переключатель таймера')
@@ -466,6 +622,9 @@ class Suite:
         vertical = arg.get('format') == 'vertical'
         partial = dest.with_suffix('.partial.mp4')
         vf = 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1' if vertical else 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1'
+        if quality == 'discord' and not vertical:
+            # Fit Discord's 10 MB limit: 720p, 30 fps and a bitrate from the length.
+            vf = "fps=30,scale='min(1280,iw)':-2:flags=lanczos,setsar=1"
         if timer:
             from timer_overlay import video_filter
             vf += ',' + video_filter(self.cfg.get('customization'),info.get('fps',60),self.cfg.get('language','ru'))
@@ -476,10 +635,22 @@ class Suite:
             vf+=',setpts=PTS-STARTPTS,'+input_overlay.render_ass(ass,input_data,start,end-start,ow,oh,overlay_cfg)
         from audio_tracks import export_audio
         audio_filters,audio_maps,expected_audio,titles=export_audio(info,arg)
+        video_rate = ['-preset', 'fast', '-crf', '20']
+        audio_rate = '192k'
+        if quality == 'high':
+            video_rate = ['-preset', 'medium', '-crf', '17']
+        elif quality == 'discord':
+            audio_rate = '96k'
+            budget = 9.4 * 1000 * 1000 * 8 / max(end - start, .1)  # bits per second for 9.4 MB
+            kbps = int((budget - 96000 * expected_audio - 60000) / 1000)
+            if kbps < 250:
+                raise ValueError('Для Discord до 10 МБ отрезок слишком длинный. Укоротите его или выберите Discord Nitro.')
+            kbps = min(kbps, 8000)
+            video_rate = ['-preset', 'fast', '-b:v', f'{kbps}k', '-maxrate', f'{int(kbps*1.3)}k', '-bufsize', f'{kbps*2}k']
         cmd = [self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-i', src,
                '-t', str(end-start), *audio_filters, '-map', '0:v:0', *audio_maps, '-vf', vf,
-               '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p',
-               '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', '-y', partial]
+               '-c:v', 'libx264', *video_rate, '-pix_fmt', 'yuv420p',
+               '-c:a', 'aac', '-b:a', audio_rate, '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', '-y', partial]
         for index,title in enumerate(titles):cmd[-2:-2]=[f'-metadata:s:a:{index}','title='+title,f'-metadata:s:a:{index}','handler_name='+title,f'-disposition:a:{index}','default' if index==0 else '0']
         log_path = self.data/'logs'/f'export-{uuid.uuid4().hex[:12]}.log'
         proc = None
@@ -546,14 +717,24 @@ class Suite:
             from PIL import Image
             sheet=Image.new('RGB',(160*frames,90),(20,26,30))
             available=0
-            for index in range(frames):
+            def grab(index):
                 position=max(0,start+(end-start)*(index+.5)/frames)
-                frame=run([self.ff(),'-hide_banner','-loglevel','error','-ss',f'{position:.3f}',
-                           '-i',source,'-frames:v','1','-vf','scale=160:90:force_original_aspect_ratio=decrease,pad=160:90:(ow-iw)/2:(oh-ih)/2',
-                           '-threads','1','-f','image2pipe','-vcodec','mjpeg','pipe:1'],timeout=20)
-                if frame.returncode==0 and frame.stdout:
-                    with Image.open(io.BytesIO(frame.stdout)) as image:sheet.paste(image.convert('RGB'),(160*index,0))
-                    available+=1
+                try:
+                    return run([self.ff(),'-hide_banner','-loglevel','error','-ss',f'{position:.3f}',
+                                '-i',source,'-frames:v','1','-vf','scale=160:90:force_original_aspect_ratio=decrease,pad=160:90:(ow-iw)/2:(oh-ih)/2',
+                                '-threads','1','-f','image2pipe','-vcodec','mjpeg','pipe:1'],timeout=20)
+                except subprocess.TimeoutExpired:return None
+            # Independent seeks: decode several frames at once instead of
+            # launching up to 64 FFmpeg processes one after another.
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=max(1,min(6,os.cpu_count() or 2,frames))) as pool:
+                results=list(pool.map(grab,range(frames)))
+            for index,frame in enumerate(results):
+                if frame is not None and frame.returncode==0 and frame.stdout:
+                    try:
+                        with Image.open(io.BytesIO(frame.stdout)) as image:sheet.paste(image.convert('RGB'),(160*index,0))
+                        available+=1
+                    except OSError:pass
             if not available:raise ValueError('Не удалось получить кадры видео')
             temporary=target.with_suffix('.tmp.jpg');sheet.save(temporary,quality=80);os.replace(temporary,target)
         return target
@@ -564,7 +745,7 @@ class Suite:
             return (self.cfg.get('updates',{}).get('auto_enabled',False)
                     and self.desktop and self.updater.state()['supported']
                     and not (self.replay and (self.replay.phase in {'starting','recording','stopping'} or self.replay.saving))
-                    and not any(j['status']=='running' for j in self.jobs.values())
+                    and not any(j['status']=='running' for j in list(self.jobs.values()))
                     and not self.update_stop.is_set())
         if not idle():return
         if not self.updater.check()['latest']['available'] or not idle():return
@@ -599,11 +780,30 @@ class Suite:
         return {'path': selected[0] if selected else None}
 
 
-    def dispatch(self, action, arg):
+    def _reload_cfg(self):
+        """Pick up settings changed by another writer, but skip unchanged files.
+
+        Every UI poll used to read, parse and deep-copy settings.json.
+        """
         with self.lock:
-            if self.cfg_path.exists():
-                self.cfg = json.loads(self.cfg_path.read_text('utf-8'))
-                self._saved_cfg = json.loads(json.dumps(self.cfg))
+            try:stat=self.cfg_path.stat()
+            except FileNotFoundError:return
+            signature=(stat.st_mtime_ns,stat.st_size)
+            if signature==getattr(self,'_cfg_signature',None):return
+            self.cfg = json.loads(self.cfg_path.read_text('utf-8'))
+            self._saved_cfg = json.loads(json.dumps(self.cfg))
+            self._cfg_signature=signature
+
+    def dispatch(self, action, arg):
+        self._reload_cfg()
+        try:return self._dispatch(action, arg)
+        except BaseException:
+            # A failed command may have left partial edits in self.cfg. Reload
+            # the saved file on the next request, exactly as before caching.
+            self._cfg_signature=None
+            raise
+
+    def _dispatch(self, action, arg):
         if action=='inputs_config':
             if not self.replay:raise ValueError('Запись нажатий доступна в окне AFTERPLAY')
             return self.replay.configure_inputs(arg.get('enabled'))
@@ -661,13 +861,15 @@ class Suite:
                     'replay':self.replay.state() if self.replay else None}
         if action=='storage_config':
             active=self.replay and (self.replay.phase in {'starting','recording','stopping'} or self.replay.saving)
-            if active or any(job['status']=='running' for job in self.jobs.values()):
+            if active or any(job['status']=='running' for job in list(self.jobs.values())):
                 raise ValueError('Остановите запись и дождитесь завершения текущих операций')
             return storage.configure(self,arg.get('recordings_dir'))
         if action=='auto_config':
             if not self.auto:raise ValueError('Автозапись недоступна')
             return self.auto.configure(arg)
-        if action=='auto_toggle':return self.auto.toggle()
+        if action=='auto_toggle':
+            if not self.auto:raise ValueError('Автозапись недоступна')
+            return self.auto.toggle()
         if action=='hotkeys_edit':
             if not self.replay or not self.replay.hotkeys:raise ValueError('Горячие клавиши доступны в окне AFTERPLAY')
             self.replay.hotkeys.editing(bool(arg.get('enabled')))
@@ -682,7 +884,7 @@ class Suite:
             from quick_clips import durations
             values=validate(arg)
             clips=durations(arg.get('quick_clips',self.cfg.get('quick_clips')))
-            if not self.replay.hotkeys:raise ValueError('Настройка клавиш доступна в окне AFTERPLAY')
+            if not self.replay or not self.replay.hotkeys:raise ValueError('Настройка клавиш доступна в окне AFTERPLAY')
             self.replay.hotkeys.configure(values)
             self.cfg['hotkeys']=values;self.cfg['quick_clips']=clips;self.save_cfg()
             return values
@@ -716,12 +918,12 @@ class Suite:
             self.save_cfg()
             return result
         if action=='update_check':
-            if self.updater.busy or any(j['status']=='running' and j['label']=='Проверка обновлений' for j in self.jobs.values()):raise ValueError('Дождитесь завершения проверки или загрузки')
+            if self.updater.busy or any(j['status']=='running' and j['label']=='Проверка обновлений' for j in list(self.jobs.values())):raise ValueError('Дождитесь завершения проверки или загрузки')
             return self.job('Проверка обновлений',lambda j:self.updater.check())
         if action in {'update_prepare','update_install'}:
             if self.replay and (self.replay.phase in {'starting','recording','stopping'} or self.replay.saving):
                 raise ValueError('Перед обновлением остановите запись и дождитесь сохранения клипа')
-            if any(j['status']=='running' for j in self.jobs.values()):raise ValueError('Дождитесь завершения текущих операций')
+            if any(j['status']=='running' for j in list(self.jobs.values())):raise ValueError('Дождитесь завершения текущих операций')
             if not self.desktop:raise ValueError('Установка обновления доступна в окне портативной программы')
             if action=='update_prepare':return self.job('Обновление AFTERPLAY',self.updater.prepare)
             result=self.updater.launch()
@@ -828,7 +1030,7 @@ class Suite:
                 return self.window.evaluate_js("(()=>{const d=document.querySelector('#dialog'),p=document.querySelector('.player'),r=p?.getBoundingClientRect();return {save:document.querySelector('#saveHotkey')?.value,auto:document.querySelector('#autoHotkey')?.value,autoUpdate:document.querySelector('#autoUpdateEnabled')?.checked,gif:!!document.querySelector('#replaySaveFormat'),gifSeconds:document.querySelector('#replayGifSeconds')?.value,format:document.querySelector('#clipFormat')?.value,exportDisabled:document.querySelector('[data-action=export]')?.disabled,dialogOpen:d.open,dialogWidth:d.clientWidth,player:r?{width:r.width,height:r.height,center:r.x+r.width/2,viewport:innerWidth}:null,image:document.querySelector('.editor-preview img')?.naturalWidth}})()")
             if op=='ui_clip':
                 cid=self.clip(str(arg['id']))['id']
-                self.window.evaluate_js('state='+json.dumps(self.dispatch('state',{}))+';openClip('+json.dumps(cid)+')')
+                self.window.evaluate_js('state='+json.dumps(self._dispatch('state',{}))+';openClip('+json.dumps(cid)+')')
                 return {'ok':True}
             if op=='ui_playback':
                 return self.window.evaluate_js("({rate:$('#player')?.playbackRate,time:$('#player')?.currentTime,paused:$('#player')?.paused,fullscreen:document.fullscreenElement?.className||null,exactTime:studioEditor?.exactTime,frameHidden:$('#preciseFrame')?.hidden,frameReady:$('#preciseFrame')?.complete,timer:$('#previewTimer')?.checked,exportTimer:$('#exportTimer')?.checked,label:$('#videoTimer')?.textContent,speed:$('#playbackSpeed')?.value,windowHotkey:$('#windowHotkey')?.value,overflow:$('#dialog').scrollWidth>$('#dialog').clientWidth})")
@@ -846,7 +1048,7 @@ class Suite:
             if op=='hotkey':
                 if not self.replay or not (self.replay.hotkeys and self.replay.hotkeys.ok):raise ValueError('Горячая клавиша не зарегистрирована')
                 binding=arg.get('action','save')
-                if binding not in {'save','clip_1','clip_2','clip_3','inputs'}:raise ValueError('Unsupported shortcut')
+                if binding not in {'save','clip_1','clip_2','inputs'}:raise ValueError('Unsupported shortcut')
                 identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a==binding)
                 ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
                 return {'ok':True}
@@ -883,7 +1085,7 @@ class Suite:
                     'icon_name':getattr(self.desktop,'current_icon_name',None),
                     'icon_error':getattr(self.desktop,'icon_error','')}
         if action in {'recording_start','recording_stop'}:
-            if not self.replay:raise ValueError('Запись доступна только в AFTERPLAY')
+            if not self.replay or not self.auto:raise ValueError('Запись доступна только в AFTERPLAY')
             operation='start_recording' if action=='recording_start' else 'stop_recording'
             return self.job('Включение записи' if action=='recording_start' else 'Сохранение записи',lambda job:self.auto.manual(operation,job))
         if action.startswith('replay_'):
@@ -915,10 +1117,24 @@ class Suite:
             self.save_cfg()
             return self.cfg
         if action=='scan':
-            if any(j['status']=='running' and j['label']=='Индексация видео' for j in self.jobs.values()):
+            if any(j['status']=='running' and j['label']=='Индексация видео' for j in list(self.jobs.values())):
                 raise ValueError('Индексация уже выполняется')
             return self.job('Индексация видео',self.scan_videos)
         if action=='clip_save': return self.save_clip(arg)
+        if action=='copy_file':
+            path=Path(self.clip(str(arg.get('id','')))['path'])
+            if not path.is_file():raise ValueError('Файл не найден')
+            if os.name!='nt':raise ValueError('Копирование файла доступно в Windows')
+            # Put the file itself on the clipboard (paste into Discord or Explorer).
+            env={**os.environ,'AFTERPLAY_COPY':str(path)}
+            result=run(['powershell.exe','-NoProfile','-NonInteractive','-Command','Set-Clipboard -LiteralPath $env:AFTERPLAY_COPY'],env=env,timeout=20)
+            if result.returncode:raise ValueError('Не удалось скопировать файл: '+result.stderr.decode('utf-8','replace')[-300:])
+            return {'ok':True}
+        if action=='cache_info':
+            return {'bytes':self.cache_bytes()}
+        if action=='cache_clear':
+            before=self.cache_bytes();self.cleanup_caches(max_age_days=0)
+            return {'bytes':max(0,before-self.cache_bytes())}
         if action=='clip_delete':return self.recycle_video(arg)
         if action=='exports':
             return [{**row,'at':time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(row['mtime']))} for row in storage.exports(self)[:200]]
@@ -952,6 +1168,9 @@ def server_for(suite, token=None, port=0):
                    '.m4v':'video/mp4','.mov':'video/quicktime','.mkv':'video/x-matroska',
                    '.avi':'video/x-msvideo','.ts':'video/mp2t',
                    '.webm':'video/webm','.gif':'image/gif','.wav':'audio/wav'}
+    # Thumbnails keep their URL when regenerated, so they are reused for a few
+    # minutes and then revalidated by ETag (cheap 304 responses).
+    cache_control={'static':'private, max-age=86400','short':'private, max-age=300'}
     class Handler(BaseHTTPRequestHandler):
         protocol_version='HTTP/1.1'
         def log_message(self, *args): pass
@@ -987,23 +1206,35 @@ def server_for(suite, token=None, port=0):
         def do_GET(self):
             route=self.route()
             if route is None: return self.send_json({'error':'Forbidden'},403)
+            # Interface files never change while the app runs (the token in the
+            # URL changes every launch). Generated images are revalidated with
+            # an ETag, so re-rendering the library no longer re-downloads every
+            # thumbnail. Video streams stay uncached.
+            cache='no-store'
             try:
                 if route in {'','window-chrome.js','index.html','style.css','themes.css','ui.js','recording-size.js','replay-ui.js','preferences-ui.js','afterplay-ui.js','trim-ui.js','filmstrip-ui.js','typography.css','fonts/Inter-Regular.ttf','fonts/Inter-Medium.ttf','fonts/Inter-SemiBold.ttf','trim-viewport.js','navigation-ui.js','playback-ui.js','library-ui.js','studio-ui.js','studio.css','review-ui.js','profiles-ui.js','audio-mixer-ui.js','review.css','button-effects.css','button-effects.js','dropdowns.css','dropdowns.js','afterplay.css','afterplay.png','afterplay.ico','afterplay-recording.ico'}:
                     p=BASE/'ui'/('index.html' if route=='' else route)
-                elif route in {'settings-layout.js','scrollbars.css','sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/rysya-groom.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json'}:
+                    # The page itself is tiny and names versioned assets: never cache it.
+                    cache='no-store' if route in {'','index.html'} else 'static'
+                elif route in {'settings-layout.js','scrollbars.css','sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/rysya-groom.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json','afterglow.css','afterglow.js','ag-app.css','ag-app.js'}:
                     p=BASE/'ui'/route
+                    cache='static'
                 elif route.startswith('backgrounds/'):
                     p=safe_child(BASE/'ui',route)
+                    cache='static'
                 elif route.startswith('custom-assets/'):
                     import customization
                     p=customization.asset_path(suite,route.split('/')[-1])
+                    cache='short'
                 elif route.startswith('filmstrip/'):
                     query=parse_qs(urlparse(self.path).query)
                     p=suite.filmstrip(route.split('/')[-1],query.get('start',[0])[0],query.get('end',[None])[0],query.get('frames',[12])[0])
+                    cache='short'
                 elif route.startswith('thumb/'):
                     cid=route.split('/')[-1]
                     suite.clip(cid)
                     p=suite.data/'thumbs'/f'{cid}.jpg'
+                    cache='short'
                 elif route.startswith('media/'):
                     p=Path(suite.clip(route.split('/')[-1])['path'])
                 elif route.startswith('audio-preview/'):
@@ -1011,10 +1242,19 @@ def server_for(suite, token=None, port=0):
                     query=parse_qs(urlparse(self.path).query)
                     p=editor_media.audio_preview(suite,route.split('/')[-1],query.get('track',[0])[0])
                 else: return self.send_json({'error':'Not found'},404)
-                if not p.is_file(): return self.send_json({'error':'Not found'},404)
-                size=p.stat().st_size
+                try:info=p.stat()
+                except OSError:info=None
+                if info is None or not p.is_file(): return self.send_json({'error':'Not found'},404)
+                size=info.st_size
                 start,end=0,size-1
                 ranged=self.headers.get('Range')
+                etag=f'"{size:x}-{info.st_mtime_ns:x}"'
+                if cache!='no-store' and not ranged and self.headers.get('If-None-Match')==etag:
+                    self.send_response(304)
+                    self.send_header('ETag',etag)
+                    self.send_header('Cache-Control',cache_control[cache])
+                    self.end_headers()
+                    return
                 if ranged:
                     m=re.fullmatch(r'bytes=(\d*)-(\d*)',ranged)
                     if not m: return self.send_json({'error':'Range'},416)
@@ -1025,7 +1265,10 @@ def server_for(suite, token=None, port=0):
                     end=min(end,size-1)
                 self.send_response(206 if ranged else 200)
                 self.send_header('Content-Type',content_types.get(p.suffix.lower(),'application/octet-stream'))
-                self.send_header('Cache-Control','no-store')
+                if cache=='no-store':self.send_header('Cache-Control','no-store')
+                else:
+                    self.send_header('Cache-Control',cache_control[cache])
+                    self.send_header('ETag',etag)
                 self.send_header('Content-Length',str(end-start+1))
                 self.send_header('Accept-Ranges','bytes')
                 self.send_header('X-Content-Type-Options','nosniff')
@@ -1139,6 +1382,7 @@ def main():
                     if suite.auto:suite.auto.start()
                     threading.Thread(target=monitor_interface,args=(suite,url),daemon=True).start()
                     threading.Thread(target=suite.automatic_updates,daemon=True).start()
+                    threading.Thread(target=suite.cleanup_caches,daemon=True).start()
             webview.start(ready,gui='edgechromium',private_mode=True,
                           storage_path=str(suite.data/'webview'/args.mode),
                           icon=str(BASE/'ui'/'afterplay.ico'))
