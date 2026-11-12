@@ -69,7 +69,7 @@ def export_audio(info,args):
             if not isinstance(track,dict):raise ValueError('Некорректная дорожка')
             index=track.get('index');gain=track.get('gain',100)
             if type(index) is not int or not 0<=index<count or index in seen:raise ValueError('Дорожка не найдена или повторяется')
-            if isinstance(gain,bool) or not isinstance(gain,(int,float)) or not 0<=gain<=100:raise ValueError('Громкость: от 0 до 100%')
+            if isinstance(gain,bool) or not isinstance(gain,(int,float)) or not 0<=gain<=150:raise ValueError('Громкость дорожки: от 0 до 150%')
             seen.add(index);filters.append(f'[0:a:{index}]volume={gain/100:.6f}[a{position}]')
         if not selected:return [],['-an'],0,[]
         if len(selected)==1:

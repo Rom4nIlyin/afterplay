@@ -16,7 +16,10 @@ class UiDeliveryTests(unittest.TestCase):
                         with urllib.request.urlopen(f'http://127.0.0.1:{server.server_port}/{token}/{name}') as response:
                             self.assertEqual(response.headers.get_content_type(),expected)
                             self.assertEqual(response.version,11)
-                            self.assertEqual(response.headers['Cache-Control'],'no-store')
+                            # The page itself is never cached; assets are revalidated by ETag.
+                            if name=='index.html':self.assertEqual(response.headers['Cache-Control'],'no-store')
+                            else:self.assertTrue(response.headers['Cache-Control'].startswith('private'))
+                            self.assertTrue(name=='index.html' or response.headers.get('ETag'))
                             self.assertGreater(len(response.read()),10)
             finally:server.shutdown();server.server_close()
     def test_failed_first_load_retries_once_and_writes_diagnostics(self):

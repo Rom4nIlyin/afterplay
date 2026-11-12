@@ -5,7 +5,7 @@
  const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
  const fragments=new RegExp('(?<![А-Яа-яЁё])(?:'+Object.keys(dictionary).sort((a,b)=>b.length-a.length).map(escape).join('|')+')(?![А-Яа-яЁё])','g');
  const textMemory=new WeakMap(),attributeMemory=new WeakMap();
- let language='ru',busy=false,pending=false;
+ let language='ru',busy=false,pending=false,translatedNodes=false;
  const protectedContent='script,style,textarea,[data-i18n-ignore],.clip-name,.clip-tags,.custom-card-game,.result-path,.review-file-name,.review-dialog .dialog-head h2,[data-action="custom-preset-load"],.custom-pinned,[data-tag],#exportList .row-main b,.auto-app b';
  function translated(value){
   if(language!=='en'||!/[А-Яа-яЁё]/.test(value))return value;
@@ -19,7 +19,7 @@
  function node(node){
   const parent=node.parentElement;if(!parent||userContent(parent))return;
   const old=textMemory.get(node),source=old&&node.nodeValue===old.result?old.source:node.nodeValue;
-  const result=translated(source);textMemory.set(node,{source,result});if(node.nodeValue!==result)node.nodeValue=result;
+  const result=translated(source);textMemory.set(node,{source,result});if(result!==source)translatedNodes=true;if(node.nodeValue!==result)node.nodeValue=result;
  }
  function attributes(element){
   if(userContent(element))return;
@@ -29,12 +29,13 @@
    const value=element.getAttribute(name),previous=memory[name],source=previous&&value===previous.result?previous.source:value;
    // Paths, app names and entered profile names remain exactly as supplied.
    if(name==='title'&&(/[A-Z]:[\\/]/i.test(source)||element.closest('.clip-info')))continue;
-   const result=translated(source);memory[name]={source,result};if(value!==result)element.setAttribute(name,result);
+   const result=translated(source);memory[name]={source,result};if(result!==source)translatedNodes=true;if(value!==result)element.setAttribute(name,result);
   }
   attributeMemory.set(element,memory);
  }
- function walk(root=document.body){
-  if(!root||busy)return;busy=true;
+ function walk(root=document.body,force=false){
+  // Russian is the source language: once restored, nothing needs walking.
+  if(!root||busy||(language!=='en'&&!translatedNodes&&!force))return;busy=true;
   try{
    if(root.nodeType===Node.TEXT_NODE){node(root);return}
    if(root.nodeType!==Node.ELEMENT_NODE||root.matches('script,style,[data-i18n-ignore]'))return;
@@ -46,7 +47,9 @@
  function apply(value){
   language=value==='en'?'en':'ru';document.documentElement.lang=language;
   try{localStorage.setItem('afterplay.language',language)}catch{}
-  walk();
+  // Detached nodes translated earlier may return later, so a session that
+  // ever showed English keeps walking new nodes as before.
+  walk(document.body,true);
  }
  window.i18nLocale=()=>language==='en'?'en-US':'ru-RU';
  function untranslated(){
@@ -68,7 +71,7 @@
   beforeRender();walk();
  };
  const beforePreferences=window.updatePreferences;
- window.updatePreferences=function(){beforePreferences?.();if((state.settings.language||'ru')!==language)apply(state.settings.language);else walk()};
+ window.updatePreferences=function(){beforePreferences?.();if((state.settings.language||'ru')!==language)apply(state.settings.language)};
  const beforeSettings=window.renderDesktopExtras;
  window.renderDesktopExtras=function(){
   beforeSettings?.();

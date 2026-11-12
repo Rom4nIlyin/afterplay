@@ -116,7 +116,8 @@ class GdiVideoSource:
                 started=time.perf_counter()
                 try:grab()
                 except Exception as error:self.error=str(error);break
-                self._stop.wait(max(0,1/max(1,fps)-(time.perf_counter()-started)))
+                # Precise pacing (see MediaMux); stop is still checked each frame.
+                time.sleep(max(0,1/max(1,fps)-(time.perf_counter()-started)))
         self.thread=threading.Thread(target=capture,daemon=True);self.thread.start()
 
     def get(self):
@@ -167,6 +168,16 @@ class MediaMux:
                 timeline=AudioPackets(mux,self.audio,self.queue,self.epoch,self.offset_ms)
             mux.start_encoding()
             last_serial=0;last_pts=-1;next_video=self.epoch;first=True
+            import os
+            # AREA is the right filter for downscaling and much cheaper than
+            # LANCZOS per frame; same-size frames only convert colors.
+            scaled=(self.width,self.height)!=(self.source.width//2*2,self.source.height//2*2)
+            interpolation='AREA' if scaled else 'BILINEAR'
+            threads=max(2,min(4,(os.cpu_count() or 4)//4))
+            try:
+                import numpy as np
+                av.Packet(np.zeros(8,dtype=np.uint8));direct_buffer=True
+            except Exception:direct_buffer=False
             while not self.stop_event.is_set():
                 now=time.perf_counter()
                 if self.source.error:raise RuntimeError(self.source.error)
@@ -201,15 +212,21 @@ class MediaMux:
                         frame=av.VideoFrame.from_ndarray(pixels,format='bgra')
                         frame=converter.reformat(frame,width=self.width,height=self.height,format='yuv420p',
                                                   dst_colorspace='ITU709',src_color_range='JPEG',dst_color_range='MPEG',
-                                                  interpolation='LANCZOS',threads=2)
-                        packet=av.Packet(frame.to_ndarray().tobytes());packet.stream=video
+                                                  interpolation=interpolation,threads=threads)
+                        # The contiguous planes go straight into the packet;
+                        # .tobytes() made an extra full-frame copy per frame.
+                        planes=frame.to_ndarray()
+                        packet=av.Packet(planes if direct_buffer else planes.tobytes());packet.stream=video
                         packet.pts=packet.dts=pts;packet.time_base=VIDEO_TIME_BASE
                         packet.duration=max(1,round(1000000/self.fps));mux.mux(packet)
                         last_pts=pts;self.frames+=1
                     first=False;last_serial=serial
                     next_video+=1/self.fps
                     if next_video<now-1/self.fps:next_video=now+1/self.fps
-                self.stop_event.wait(.002)
+                # Event.wait() sleeps in whole Windows timer ticks (~15.6 ms),
+                # which capped real capture near 64 fps and added judder.
+                # time.sleep uses a high-resolution timer on Python 3.11+.
+                time.sleep(min(.004,max(0.,next_video-time.perf_counter())))
             if timeline and last_pts>=0:
                 timeline.finish(mux,round((last_pts/1000000+1/self.fps)*rate))
         except (OSError,ValueError) as error:

@@ -94,7 +94,7 @@ class Desktop:
         # and explicit tray commands hide the native window.
         native=self.suite.window.native
         hidden=not native.Visible or str(native.WindowState)=='Minimized'
-        threading.Thread(target=lambda:self.suite.window.evaluate_js('window.customNativeHidden='+str(hidden).lower()+';window.customUpdatePause?.()'),daemon=True).start()
+        threading.Thread(target=lambda:self.suite.window.evaluate_js('window.customNativeHidden='+str(hidden).lower()+';window.customUpdatePause?.()'+('' if hidden else ';window.pollState?.(true)')),daemon=True).start()
 
     def closing(self):
         settings=self.suite.cfg.get('desktop',{}).get(self.mode,{})
@@ -123,9 +123,9 @@ class Desktop:
                     self.notifications=ReplayNotifications
                 cover=''
                 if cfg['notice_cover'] and kind=='success':
-                    clips=self.suite.clips()
-                    if clips:
-                        path=self.suite.data/'thumbs'/(clips[0]['id']+'.jpg')
+                    latest=self.suite.latest_clip_id()
+                    if latest:
+                        path=self.suite.data/'thumbs'/(latest+'.jpg')
                         if path.exists():cover=str(path)
                 self.notifications.Configure(cfg['notice_position'],float(cfg['notice_size'])/100,
                                              float(cfg['notice_opacity'])/100,int(cfg['notice_duration']*1000),cover)
@@ -147,11 +147,15 @@ class Desktop:
             hotkey=self.suite.cfg.get('hotkeys',{}).get('save','Ctrl+Alt+F10')
             current_language=language(self.suite)
             modes=(replay.continuous,replay.replay_enabled,replay.saving,replay.finishing) if replay else None
+            tooltip=self._tooltip(replay,active,hotkey)
+            if tooltip!=getattr(self,'_last_tooltip',None):
+                # The tray tooltip says what is being recorded, with a live timer.
+                try:self.icon.title=tooltip[:127];self._last_tooltip=tooltip
+                except Exception as e:self.icon_error=str(e)
             if active!=last or modes!=last_modes or hotkey!=last_hotkey or current_language!=last_language:
                 im=self.recording_image if active else self.image
                 try:
                     self.icon.icon=im
-                    self.icon.title=self.title+translate(self.suite,' — ИДЁТ ЗАПИСЬ · '+hotkey if active else '')
                     self.icon.update_menu()
                     self.suite.window.set_title(self.title)
                     from System import Action
@@ -168,6 +172,20 @@ class Desktop:
                 except Exception as e:self.icon_error=str(e)
                 last=active;last_modes=modes;last_hotkey=hotkey;last_language=current_language
             time.sleep(.3)
+
+    def _tooltip(self,replay,active,hotkey):
+        if not replay or not active:
+            text='AFTERPLAY — запись выключена'
+        elif replay.phase=='starting':text='AFTERPLAY — запуск записи…'
+        elif replay.phase=='stopping' or replay.finishing:text='AFTERPLAY — сохранение записи…'
+        elif replay.continuous:
+            epoch=getattr(replay,'capture_epoch',None)
+            seconds=int(max(0,time.perf_counter()-epoch-replay.recording_start)) if epoch else int(max(0,time.monotonic()-(replay.started or time.monotonic())))
+            clock=f'{seconds//3600:02}:{seconds//60%60:02}:{seconds%60:02}'
+            text='AFTERPLAY — ● идёт запись '+clock+(' · повтор включён' if replay.replay_enabled else '')
+        else:
+            text='AFTERPLAY — ● идёт запись повтора · '+hotkey+' — сохранить'
+        return translate(self.suite,text)
 
     def shutdown(self):
         self.alive=False

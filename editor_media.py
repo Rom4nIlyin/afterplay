@@ -84,9 +84,16 @@ def waveform(suite,cid,start=0,end=None,track=0):
                 with suite.lock:suite.children.add(proc)
                 offset=0
                 while block:=proc.stdout.read(65536):
-                    values=np.abs(np.frombuffer(block,dtype='<f4'))
+                    usable=len(block)//4*4
+                    if not usable:continue
+                    values=np.abs(np.frombuffer(block[:usable],dtype='<f4'))
                     indices=np.minimum(points-1,(np.arange(len(values),dtype=np.int64)+offset)*points//expected)
-                    np.maximum.at(peaks,indices,values);offset+=len(values)
+                    # Indices are sorted, so reduce each bucket's run at once;
+                    # np.maximum.at is an order of magnitude slower.
+                    starts=np.flatnonzero(np.r_[True,indices[1:]!=indices[:-1]])
+                    buckets=indices[starts]
+                    peaks[buckets]=np.maximum(peaks[buckets],np.maximum.reduceat(values,starts))
+                    offset+=len(values)
                 if proc.wait(timeout=10):raise ValueError('Не удалось построить звуковую волну')
             result={'start':start,'end':end,'peaks':[round(float(value),5) for value in peaks],
                     'silent':bool(peaks.max()<.00003),'track':track}

@@ -20,7 +20,7 @@ class MinimizeTests(unittest.TestCase):
         desktop=self.desktop(window_state='Normal')
         with patch('desktop.threading.Thread') as thread:
             desktop._visibility_changed();thread.call_args.kwargs['target']()
-        desktop.suite.window.evaluate_js.assert_called_once_with('window.customNativeHidden=false;window.customUpdatePause?.()')
+        desktop.suite.window.evaluate_js.assert_called_once_with('window.customNativeHidden=false;window.customUpdatePause?.();window.pollState?.(true)')
         self.assertFalse(desktop.closing());desktop.suite.window.hide.assert_called_once()
         desktop=self.desktop('close');self.assertTrue(desktop.closing());desktop.suite.window.hide.assert_not_called()
 

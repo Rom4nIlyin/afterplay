@@ -94,7 +94,7 @@
   if(active&&!active.record.wrapper.getClientRects().length)closeMenu({immediate:true});if(optionsChanged&&active)paintOptions();
  });
  observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['disabled','hidden','selected','label','value']});
- setInterval(()=>{for(const record of records.values())sync(record)},250);
+ setInterval(()=>{if(document.hidden||window.customNativeHidden)return;for(const record of records.values())sync(record)},250);
  popup.addEventListener('pointermove',event=>{const row=event.target.closest('[data-index]');if(row&&row.getAttribute('aria-disabled')!=='true')highlight(Number(row.dataset.index),false)});
  popup.addEventListener('pointerdown',event=>event.preventDefault());
  popup.addEventListener('click',event=>{const row=event.target.closest('[data-index]');if(row)choose(Number(row.dataset.index))});

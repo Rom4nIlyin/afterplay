@@ -72,4 +72,17 @@ $('#dialog').addEventListener('cancel',e=>{e.preventDefault();close();refresh().
 $('#refreshBtn').innerHTML=icon('refresh');$('#refreshBtn').addEventListener('click',()=>refresh().catch(e=>toast(e.message,true)));
 document.body.classList.add('clips');$('#brandMark').innerHTML='<img src="afterplay.png" alt="">';$('#brandTitle').textContent='AFTERPLAY';document.title='AFTERPLAY';
 refresh().catch(e=>toast(e.message,true));
-setInterval(async()=>{try{const had=state.jobs.some(j=>j.status==='running');state=await api('state');renderJobs();window.updateReplay?.();window.updatePreferences?.();if(had&&!$('#dialog').open)render()}catch(e){/* A closing native window also closes its local server. */}},1800);
+// One poll at a time: a slow response no longer stacks overlapping requests.
+// A hidden (tray) or minimized window polls 5x less often but still delivers
+// job results; it refreshes immediately when shown again.
+let statePolling=false,statePollSkips=0;
+async function pollState(force=false){
+ if(statePolling)return;
+ const hidden=document.hidden||window.customNativeHidden;
+ if(hidden&&!force&&++statePollSkips<5)return;
+ statePollSkips=0;statePolling=true;
+ try{const had=state.jobs.some(j=>j.status==='running');state=await api('state');renderJobs();window.updateReplay?.();window.updatePreferences?.();if(had&&!$('#dialog').open)render()}catch(e){/* A closing native window also closes its local server. */}
+ finally{statePolling=false}
+}
+setInterval(pollState,1800);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollState(true)});

@@ -48,23 +48,69 @@ def audio_devices():
     import loopback
     return loopback.devices()
 
+_SEGMENT_NAME=re.compile(r'seg-\d{7}\.ts')
+_segment_cache={}
+_segment_lock=threading.Lock()
+
+def _segment_rows(session,path):
+    """Parse only the lines FFmpeg appended since the previous call.
+
+    segments.csv grows by one row per second for the whole session. Re-reading
+    it (and stat-ing every listed file) twice per second made long sessions
+    progressively slower.
+    """
+    key=str(session)
+    with _segment_lock:
+        entry=_segment_cache.get(key)
+        try:size=path.stat().st_size
+        except OSError:
+            _segment_cache.pop(key,None);return []
+        if entry is None or size<entry['offset']:
+            entry={'offset':0,'rows':[]}
+            if len(_segment_cache)>16:_segment_cache.clear()
+            _segment_cache[key]=entry
+        if size>entry['offset']:
+            with path.open('rb') as stream:
+                stream.seek(entry['offset']);chunk=stream.read(size-entry['offset'])
+            complete=chunk.rfind(b'\n')+1
+            if complete:
+                entry['rows'].extend(_parse_segment_lines(chunk[:complete]))
+                entry['offset']+=complete
+            entry['tail']=chunk[complete:]
+        elif size==entry['offset']:
+            entry['tail']=b''
+        # An unterminated last line is used like before but never cached: it is
+        # re-read on the next call in case FFmpeg was still writing it.
+        return list(entry['rows'])+_parse_segment_lines(entry.get('tail') or b'')
+
+def _parse_segment_lines(data):
+    rows=[]
+    for row in csv.reader(data.decode('utf-8',errors='replace').splitlines()):
+        if len(row)!=3:continue
+        name=Path(row[0]).name
+        if not _SEGMENT_NAME.fullmatch(name):continue
+        try:start,end=float(row[1]),float(row[2])
+        except ValueError:continue
+        if end>start:rows.append((name,start,end))
+    return rows
+
 def closed_segments(session):
     session=Path(session)
     path=session/'segments.csv'
-    if not path.is_file():return []
-    result=[]
+    rows=_segment_rows(session,path)
+    if not rows:return []
+    # One directory listing replaces a stat call per listed segment and also
+    # yields sizes for the disk-usage readout.
     try:
-        for row in csv.reader(path.read_text('utf-8',errors='replace').splitlines()):
-            if len(row)!=3:continue
-            name=Path(row[0]).name
-            if not re.fullmatch(r'seg-\d{7}\.ts',name):continue
-            try:
-                start,end=float(row[1]),float(row[2])
-                f=session/name
-                if f.is_file() and end>start:result.append({'path':f,'start':start,'end':end})
-            except (ValueError,OSError):pass
-    except OSError:pass
-    return result
+        with os.scandir(session) as listing:
+            sizes={}
+            for item in listing:
+                if item.name.startswith('seg-'):
+                    try:
+                        if item.is_file():sizes[item.name]=item.stat().st_size
+                    except OSError:pass
+    except OSError:return []
+    return [{'path':session/name,'start':start,'end':end,'size':sizes[name]} for name,start,end in rows if name in sizes]
 
 def select_segments(rows,cutoff,seconds,start_at=0,minimum=.5):
     start=max(0,float(start_at),float(cutoff)-float(seconds))
@@ -292,7 +338,7 @@ class Replay:
                     'input_recording':{'enabled':bool(self.suite.cfg.get('input_recording',{}).get('enabled',False)),
                                        'active':bool(self.input_recorder and self.input_recorder.thread.is_alive()),
                                        'error':self.input_error or (self.input_recorder.error if self.input_recorder else '')},
-                    'last_saved':self.last_saved,'disk_bytes':sum(r['path'].stat().st_size for r in rows if r['path'].exists())}
+                    'last_saved':self.last_saved,'disk_bytes':sum(r['size'] for r in rows)}
 
     def add_marker(self):
         import live_markers
@@ -903,7 +949,8 @@ class Replay:
             # concatf preserves TS timestamps (unlike the concat demuxer) and
             # keeps even a 30-minute buffer below Windows' command-line limit.
             listing=stage/'segments.txt'
-            listing.write_text(''.join("'file:"+row['path'].resolve().as_posix().replace("'","'\\''")+"'\n" for row in selected),encoding='utf-8')
+            folder=Path(session).resolve()  # Resolve once, not once per segment.
+            listing.write_text(''.join("'file:"+(folder/row['path'].name).as_posix().replace("'","'\\''")+"'\n" for row in selected),encoding='utf-8')
             # Keep the leading IDR and its dependent frames as hidden preroll.
             # A common negative timestamp offset and MP4 edit lists trim both
             # tracks exactly without seeking into TS or encoding either again.
