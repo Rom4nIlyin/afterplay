@@ -24,7 +24,7 @@ def retention(replay):
 
 
 def migrate(cfg):
-    """Two quick clips with ready shortcuts (version 1.14.5 Afterglow)."""
+    """Two quick clips with ready shortcuts (version 1.15.0)."""
     if cfg.get('quick_clips_version') == 2:
         return False
     try:cfg['quick_clips'] = durations(cfg.get('quick_clips'))
