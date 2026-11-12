@@ -14,6 +14,9 @@ class ClockStop:
     def __init__(self):self.now=100.
     def is_set(self):return self.now>=100.22
     def wait(self,_):self.now+=.02;return self.is_set()
+    # MediaMux paces with time.sleep for precise Windows timers; the fake
+    # clock must advance there too or the patched perf_counter never moves.
+    def sleep(self,seconds):self.now+=max(seconds,.001)
 
 class AudioShutdownTests(unittest.TestCase):
     def test_video_bridge_drains_audio_lookahead_to_final_frame(self):
@@ -21,7 +24,8 @@ class AudioShutdownTests(unittest.TestCase):
         source=SimpleNamespace(first=(100.,pixels,1),width=64,height=36,error='')
         source.get=lambda:(stop.now,pixels,round((stop.now-100)*1000))
         output=Buffer();mux=MediaMux(source,queue.Queue(),{'rate':48000,'channels':2},30,stop)
-        with patch('capture_media.time.perf_counter',side_effect=lambda:stop.now):mux.write(output)
+        with patch('capture_media.time.perf_counter',side_effect=lambda:stop.now),\
+             patch('capture_media.time.sleep',side_effect=stop.sleep):mux.write(output)
         self.assertFalse(mux.error,mux.error)
         with av.open(io.BytesIO(output.getvalue())) as media:video=list(media.decode(video=0))
         with av.open(io.BytesIO(output.getvalue())) as media:sound=list(media.decode(audio=0))
