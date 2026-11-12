@@ -15,6 +15,8 @@ class LocalFixTests(unittest.TestCase):
     def test_markers_expire_without_another_key_press_and_persist(self):
         with tempfile.TemporaryDirectory() as temp:
             suite=Suite(temp);rec=Replay(suite);rec.phase='recording';rec.session=Path(temp)/'session';rec.session.mkdir();rec.capture_epoch=100
+            # Quick-clip shortcuts (default since 1.15.0) extend marker retention; test the replay length alone.
+            suite.cfg['hotkeys'].update(clip_1='',clip_2='')
             rec.settings['seconds']=60;rec.session_marks=[1,25,60,90]
             with patch('replay.time.perf_counter',return_value=190):state=rec.state()
             self.assertEqual(rec.session_marks,[60,90]);self.assertEqual(state['marker_count'],2)
@@ -25,6 +27,7 @@ class LocalFixTests(unittest.TestCase):
     def test_marker_snapshot_survives_later_buffer_expiration(self):
         with tempfile.TemporaryDirectory() as temp:
             suite=Suite(temp);rec=Replay(suite);rec.phase='recording';rec.session=Path(temp);rec.capture_epoch=100;rec.settings['seconds']=60
+            suite.cfg['hotkeys'].update(clip_1='',clip_2='')
             rec.session_marks=[1,40,61];snapshot=tuple(rec._prune_markers(61))
             self.assertEqual(snapshot,(1,40,61));rec._prune_markers(125)
             self.assertEqual(rec.session_marks,[]);self.assertEqual(snapshot,(1,40,61))
