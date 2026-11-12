@@ -391,10 +391,17 @@ class Suite:
         buffer=self._resolved_key(self.data/'replay-buffer')
         inactive=tuple(self._resolved_key(root) for root in self.cfg.get('disconnected_roots',[]))
         active=tuple(self._resolved_key(root) for root in [*self.cfg.get('video_roots',[]),str(self.recordings_dir()),*self.cfg.get('storage',{}).get('previous_dirs',[])])
-        internal=self._internal_name;path_key=self._path_key
+        internal=self._internal_name;path_key=self._path_key;resolved=self._resolved_key;folders={}
+        def key_of(path):
+            # Roots are resolved, so clip paths must be too (8.3 short names,
+            # symlinks, junctions). Resolve each folder once, never each file.
+            folder,name=os.path.split(str(path))
+            prefix=folders.get(folder)
+            if prefix is None:prefix=folders[folder]=resolved(folder)
+            return path_key(prefix+name)
         def visible(path):
             if internal(path):return False
-            key=path_key(path)
+            key=key_of(path)
             if key.startswith(buffer):return False
             if not inactive or not key.startswith(inactive):return True
             # Keep notes for disconnected sources, and reveal them on reconnection.
