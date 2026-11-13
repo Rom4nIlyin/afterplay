@@ -78,5 +78,30 @@ class VideoDeleteTests(unittest.TestCase):
         for args in ({'export_key':'../../selected.mp4'},{'export_name':'../selected.mp4'}):
             with self.assertRaises(ValueError):self.suite.dispatch('clip_delete',{**args,'delete_mode':'permanent'})
         self.assertTrue(self.video.exists())
+    def test_deleting_entry_whose_file_was_removed_outside_afterplay(self):
+        self.video.unlink()
+        with recycle_stub() as trash:
+            result=self.suite.dispatch('clip_delete',{'id':'selected','delete_mode':'recycle'})
+        trash.assert_not_called();self.assertTrue(result['missing'])
+        with self.assertRaises(ValueError):self.suite.clip('selected')
+        self.assertEqual(self.suite.clip('neighbor')['path'],str(self.neighbor));self.assertTrue(self.neighbor.exists())
+
+    def test_library_drops_files_deleted_manually_but_keeps_disconnected_sources(self):
+        self.suite.cfg['video_roots']=[str(self.root)]
+        offline=self.root/'offline-drive'/'game.mp4';self.add('offline',offline)
+        self.suite.cfg['video_roots'].append(str(offline.parent))
+        thumb=self.suite.data/'thumbs'/'selected.jpg';thumb.parent.mkdir(exist_ok=True);thumb.write_bytes(b'jpg')
+        self.video.unlink()
+        self.assertEqual(self.suite.prune_missing(),1)
+        ids={row['id'] for row in self.suite.clips()}
+        self.assertNotIn('selected',ids);self.assertIn('neighbor',ids)
+        self.assertIn('offline',ids,'Rows on an unreachable folder must survive until it returns')
+        self.assertFalse(thumb.exists())
+
+    def test_second_export_is_rejected_while_one_is_running(self):
+        with self.suite.lock:self.suite.jobs['busy']={'id':'busy','label':'Экспорт видео','status':'running'}
+        with self.assertRaisesRegex(ValueError,'Экспорт уже идёт'):
+            self.suite.dispatch('export',{'id':'selected','start':0,'end':1})
+        self.assertEqual([job['id'] for job in self.suite.jobs.values()],['busy'])
 
 if __name__=='__main__':unittest.main()

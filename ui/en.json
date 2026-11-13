@@ -1469,5 +1469,7 @@
   "Перезапустить": "Restart",
   "Кэш очищен": "Cache cleared",
   "освобождено": "freed",
-  "Нажмите, чтобы изменить": "Click to change"
+  "Нажмите, чтобы изменить": "Click to change",
+  "Файла уже нет — запись убрана из библиотеки": "The file is already gone — the entry was removed from the library",
+  "Экспорт уже идёт. Дождитесь его завершения или отмените.": "An export is already running. Wait for it to finish or cancel it."
 }

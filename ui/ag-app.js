@@ -435,7 +435,9 @@ const editor={
  open(id){
   const c=clipById(id);if(!c){go({screen:'library'},false);return}
   const same=this.c?.id===id;
-  this.c=c;this.marks=marksOf(c);this.drag=null;this.hover=null;this.peaks=null;this.result=null;this.job=null;this.progress=0;
+  this.c=c;this.marks=marksOf(c);this.drag=null;this.hover=null;this.peaks=null;this.result=null;
+  // Reopening the editor shows an export that is still running instead of offering a second one.
+  const running=(state.jobs||[]).find(j=>j.label==='Экспорт видео'&&j.status==='running'&&watchers.has(j.id));this.job=running?.id||null;this.progress=running?.progress||0;
   if(!same||!(this.outT>this.inT)){this.inT=0;this.outT=c.duration}
   this.timer=custom().timer_default===true;
   const gif=/\.gif$/i.test(c.name);this.preset=gif?'gif':this.fits('discord')?'discord':'nitro';
@@ -651,18 +653,20 @@ const editor={
   clearTimeout(this.drift);if(!v.paused)this.drift=setTimeout(()=>this.syncTracks(),700);
  },
  async exportNow(){
+  // One click, one export: the button turns into progress before the request returns.
+  if(this.job)return;this.job='starting';this.progress=0;this.result=null;this.renderExport();
   const c=this.c,p=PRESETS.find(x=>x.id===this.preset);const name=$('#edName').value.trim()||nameOf(c);
   const audio_tracks=this.preset==='gif'?[]:this.tracks.filter(t=>t.on).map(t=>({index:t.index,gain:t.gain}));
   const args={id:c.id,start:Math.round(this.inT*1000)/1000,end:Math.round(this.outT*1000)/1000,name,timer:this.timer,show_inputs:false,...p.args};
   if(this.preset!=='gif'&&this.tracks.length)Object.assign(args,{audio_mode:'custom',audio_tracks});
-  this.progress=0;this.result=null;
   try{
-   this.job=await task('export',args,{
+   const job=await task('export',args,{
     progress:j=>{this.progress=j.progress||0;const b=$('#edBar');if(b){b.style.width=this.progress+'%';$('#edPct').textContent=this.progress+'%'}},
     done:async r=>{this.job=null;await pollState(true);const row=state.clips.find(x=>keyOf(x.path)===keyOf(r.path));this.result={...r,id:row?.id,name:r.path.split(/[\\/]/).pop()};this.renderExport();toast('Экспорт готов',false,this.result.name)},
     cancelled:()=>{this.job=null;this.renderExport();toast('Экспорт отменён')},
     error:j=>{this.job=null;this.renderExport();toast(j.message||'Экспорт не удался',true)},
    });
+   if(this.job==='starting')this.job=job;
    this.renderExport();
   }catch(e){this.job=null;this.renderExport();fail(e)}
  },
@@ -909,7 +913,7 @@ const ACT={
  async fav(el){const c=clipById(el.dataset.id);if(!c)return;await saveClipMeta(c,{favorite:!c.favorite});libUI.sig='';refreshLibrary();renderDetail(true)},
  reveal(el){if(el.dataset.id)return api('open',{target:'clip-folder',id:el.dataset.id})},
  async delete(el){const c=clipById(el.dataset.id);if(!c)return;if(!await confirmBox('Удалить запись?',`«${nameOf(c)}» будет перемещена в корзину Windows.`,'В корзину'))return;
-  await api('clip_delete',{id:c.id,delete_mode:'recycle'});if(libUI.sel===c.id)libUI.sel=null;await pollState(true);toast('Запись перемещена в корзину')},
+  const r=await api('clip_delete',{id:c.id,delete_mode:'recycle'});if(libUI.sel===c.id)libUI.sel=null;await pollState(true);toast(r.missing?'Файла уже нет — запись убрана из библиотеки':'Запись перемещена в корзину')},
  chip(el){libUI.chip=el.dataset.chip;libUI.limit=120;render()},
  more(){libUI.limit+=120;refreshLibrary()},
  async 'steps-hide'(){state.settings.onboarding=await api('onboarding_config',{status:'completed'});$('.steps')?.remove()},
@@ -930,7 +934,7 @@ const ACT={
  'ed-preset'(el){editor.preset=el.dataset.id;editor.renderPresets();editor.renderExport();editor.renderTracks()},
  'ed-track'(el){const t=editor.tracks[Number(el.dataset.i)];t.on=!t.on;editor.renderTracks();editor.syncTracks()},
  'ed-export'(){editor.exportNow()},
- async 'ed-cancel'(){if(editor.job)await api('job_cancel',{id:editor.job}).catch(fail)},
+ async 'ed-cancel'(){if(editor.job&&editor.job!=='starting')await api('job_cancel',{id:editor.job}).catch(fail)},
  async 'ed-copy'(){const id=editor.result?.id;if(!id)return;await api('copy_file',{id});const l=$('#edCopyL');if(l)l.textContent='Скопировано ✓';toast('Файл скопирован','', 'Вставьте его в Discord или проводник')},
  'ed-again'(){editor.result=null;editor.renderExport()},
  // profiles

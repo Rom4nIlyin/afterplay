@@ -470,6 +470,7 @@ class Suite:
                         db.commit()
             finally:
                 db.close()
+        self.prune_missing()
         self.log('video_scan', count=len(entries))
         return {'count': len(entries)}
 
@@ -481,6 +482,52 @@ class Suite:
         if proc.returncode:
             raise ValueError('Не удалось создать превью')
         return info
+
+    def prune_missing(self):
+        """Drop library rows whose file was deleted or moved outside AFTERPLAY.
+
+        Only rows on a reachable source are removed: a disconnected drive or
+        network share keeps its rows (and notes) until it returns.
+        """
+        roots=sorted({self._resolved_key(root):root for root in [*self.cfg.get('video_roots',[]),str(self.recordings_dir()),
+                      *self.cfg.get('storage',{}).get('previous_dirs',[])]}.items(),key=lambda item:len(item[0]),reverse=True)
+        reachable={}
+        def source_present(path):
+            key=self._path_key(path)
+            root=next((folder for prefix,folder in roots if key.startswith(prefix)),None)
+            target=Path(root) if root else Path(Path(path).anchor or path)
+            if target not in reachable:
+                try:reachable[target]=target.is_dir()
+                except OSError:reachable[target]=False
+            return reachable[target]
+        with self.db() as db:
+            rows=list(db.execute('SELECT id,path FROM clips'))
+        missing=[]
+        for row in rows:
+            path=Path(row['path'])
+            try:
+                if path.exists():continue
+            except OSError:continue
+            if source_present(path):missing.append((row['id'],row['path']))
+        if not missing:return 0
+        with self.db() as db:
+            db.executemany('DELETE FROM clips WHERE id=? AND path=?',missing)
+        for cid,_ in missing:
+            (self.data/'thumbs'/f'{cid}.jpg').unlink(missing_ok=True)
+        self.log('library_pruned',count=len(missing),paths=[path for _,path in missing[:20]])
+        return len(missing)
+
+    def prune_missing_soon(self,interval=10):
+        """Throttled background prune for the UI poll; never blocks a request."""
+        now=time.monotonic()
+        with self.lock:
+            if self.__dict__.get('_pruning') or now-self.__dict__.get('_pruned_at',-interval)<interval:return
+            self._pruning=True;self._pruned_at=now
+        def run():
+            try:self.prune_missing()
+            except Exception as error:self.log('library_prune_failed',error=str(error))
+            finally:self._pruning=False
+        threading.Thread(target=run,name='afterplay-prune',daemon=True).start()
 
     def clips(self):
         visible=self._visibility()
@@ -537,7 +584,14 @@ class Suite:
             info=self.clip(arg['id']);path=Path(info['path'])
         if path.suffix.lower() not in VIDEO_EXT or path.is_symlink() or path.is_dir() or self.internal_media(path):
             raise ValueError('Можно удалять только обычные видеофайлы из библиотеки')
-        if not path.is_file():raise ValueError('Исходный видеофайл не найден. Возможно, он уже перемещён.')
+        if not path.exists() and not path.is_symlink():
+            # Deleted or moved outside AFTERPLAY: there is nothing to recycle,
+            # only the stale library entry to remove.
+            with self.db() as db:db.execute('DELETE FROM clips WHERE path=?',(str(path),))
+            if info.get('id'):(self.data/'thumbs'/f"{info['id']}.jpg").unlink(missing_ok=True)
+            self.log('video_entry_removed',path=str(path),metadata=info)
+            return {'ok':True,'name':info['name'],'path':str(path),'recycled':False,'delete_mode':mode,'missing':True}
+        if not path.is_file():raise ValueError('Можно удалять только обычные видеофайлы из библиотеки')
         if mode=='permanent':
             path.unlink()
         else:
@@ -856,6 +910,7 @@ class Suite:
             if not self.replay:raise ValueError('Запись недоступна')
             return self.replay.add_marker()
         if action == 'state':
+            self.prune_missing_soon()
             return {'settings': self.cfg, 'jobs':list(self.jobs.values())[-15:], 'clips':self.clips(),
                     'storage':storage.state(self),'updates':self.updater.state(), 'auto_record':self.auto.state() if self.auto else None,
                     'replay':self.replay.state() if self.replay else None}
@@ -1138,7 +1193,12 @@ class Suite:
         if action=='clip_delete':return self.recycle_video(arg)
         if action=='exports':
             return [{**row,'at':time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(row['mtime']))} for row in storage.exports(self)[:200]]
-        if action=='export': return self.job('Экспорт видео',lambda j:self.export(arg,j),cancellable=True)
+        if action=='export':
+            # Each export is a full x264 encode. Parallel ones (repeated clicks)
+            # exhausted RAM on long high-resolution replays.
+            with self.lock:running=any(job.get('label')=='Экспорт видео' and job.get('status')=='running' for job in self.jobs.values())
+            if running:raise ValueError('Экспорт уже идёт. Дождитесь его завершения или отмените.')
+            return self.job('Экспорт видео',lambda j:self.export(arg,j),cancellable=True)
         if action=='job_cancel': return self.cancel_export(arg.get('id'))
         if action=='open':
             target = arg.get('target')
