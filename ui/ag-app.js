@@ -95,12 +95,16 @@ function toast(text,error=false,sub=''){
  setTimeout(()=>el.remove(),error?7000:4200);
 }
 function confirmBox(title,text,ok='Удалить',danger=true){
+ return chooseBox(title,`<p>${esc(text)}</p>`,[{v:'yes',label:ok,cls:danger?'danger solid':'primary',focus:true}]).then(v=>v==='yes');
+}
+// Modal with Cancel plus the given choices; resolves to the chosen value or null.
+function chooseBox(title,body,choices){
  return new Promise(resolve=>{
-  const d=$('#confirm');d.innerHTML=`<h2>${esc(title)}</h2><p>${esc(text)}</p><div class="row"><button class="btn" value="no" data-dlg="no">Отмена</button><button class="btn ${danger?'danger solid':'primary'}" data-dlg="yes">${esc(ok)}</button></div>`;
-  const done=v=>{d.close();resolve(v)};
-  d.onclick=e=>{const b=e.target.closest('[data-dlg]');if(b)done(b.dataset.dlg==='yes')};
-  d.oncancel=e=>{e.preventDefault();done(false)};
-  d.showModal();$('[data-dlg=yes]',d).focus();
+  const d=$('#confirm');d.innerHTML=`<h2>${esc(title)}</h2>${body}<div class="row"><button type="button" class="btn" data-dlg="">Отмена</button>${choices.map(c=>`<button type="button" class="btn ${c.cls||''}" data-dlg="${esc(c.v)}">${esc(c.label)}</button>`).join('')}</div>`;
+  const done=v=>{d.close();resolve(v||null)};
+  d.onclick=e=>{const b=e.target.closest('[data-dlg]');if(b)done(b.dataset.dlg)};
+  d.oncancel=e=>{e.preventDefault();done(null)};
+  d.showModal();const f=choices.find(c=>c.focus);$(`[data-dlg="${f?f.v:''}"]`,d).focus();
  });
 }
 const fail=e=>toast(e?.message||String(e),true);
@@ -320,7 +324,7 @@ const viewer={
  list(){const rows=libraryRows();return rows.length?rows:state.clips},
  open(id,at){
   const c=clipById(id);if(!c){go({screen:'library'},false);return}
-  this.c=c;this.on=new Set([0]);this.extras=new Map();this.userMuted=false;this.speed=1;this.menu=false;this.sprite=null;this.info=null;
+  this.c=c;this.on=new Set([0]);this.extras=new Map();this.userMuted=false;this.speed=1;this.menu=false;this.sprite=null;this.info=null;this.frame=1/60;this.shown=null;
   const list=this.list(),i=list.findIndex(x=>x.id===id),marks=marksOf(c),cust=custom();
   const stage=$('#stage');stage.className='vw';
   stage.innerHTML=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Библиотека</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc([gameOf(c),timeOf(c.mtime),i>=0?(i+1)+' из '+list.length:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
@@ -329,12 +333,12 @@ const viewer={
   <div class="vw-stage"><button type="button" class="side-nav l" data-act="vw-step" data-dir="-1" aria-label="Предыдущая запись">${ic('back')}</button><button type="button" class="side-nav r" data-act="vw-step" data-dir="1" aria-label="Следующая запись">${ic('next')}</button>
    <div class="vw-frame" id="vwFrame"><video id="vwVideo" preload="auto" playsinline src="${base}media/${encodeURIComponent(c.id)}"></video><button type="button" class="vw-hit" data-act="vw-play" aria-label="Воспроизвести или пауза"><span class="bigplay" id="vwBig" aria-hidden="true">${playIc}</span></button><span class="vw-badge" id="vwMark" style="left:14px;background:var(--accent);color:var(--on-accent)" hidden>★ Метка</span><span class="vw-badge" id="vwSpeedBadge" style="right:14px;background:rgba(11,12,15,.8)" hidden></span></div></div>
   <div class="vw-ctl"><div class="scrub" id="vwScrub" role="slider" tabindex="0" aria-label="Позиция" aria-valuemin="0" aria-valuemax="${Math.round(c.duration)}"><div class="rail"><div class="buf" id="vwBuf"></div><div class="fill" id="vwFill"></div></div>${marks.map(m=>`<span class="pin" style="left:${(m/c.duration*100).toFixed(3)}%"></span>`).join('')}<span class="knob" id="vwKnob"></span><div class="preview" id="vwPrev" hidden><div class="pic" id="vwPic"></div><span id="vwPrevT"></span></div></div>
-   <div class="ctl-row"><button type="button" class="btn icon primary" data-act="vw-play" id="vwPlay" aria-label="Воспроизвести">${playIc}</button><button type="button" class="btn ghost sm num" data-act="vw-seek" data-d="-5">−5 с</button><button type="button" class="btn ghost sm num" data-act="vw-seek" data-d="5">+5 с</button><span class="num" style="padding:0 8px;color:var(--muted)"><b id="vwTime" style="color:var(--text);font-weight:600">00:00</b> / ${short(c.duration)}</span>
+   <div class="ctl-row"><button type="button" class="btn icon" data-act="vw-frame" data-d="-1" aria-label="Кадр назад">${ic('frameBack')}</button><button type="button" class="btn icon primary" data-act="vw-play" id="vwPlay" aria-label="Воспроизвести">${playIc}</button><button type="button" class="btn icon" data-act="vw-frame" data-d="1" aria-label="Кадр вперёд">${ic('frameFwd')}</button><button type="button" class="btn ghost sm num" data-act="vw-seek" data-d="-5">−5 с</button><button type="button" class="btn ghost sm num" data-act="vw-seek" data-d="5">+5 с</button><span class="num" style="padding:0 8px;color:var(--muted)"><b id="vwTime" style="color:var(--text);font-weight:600">00:00</b> / ${short(c.duration)}</span>
     <div class="vol"><button type="button" class="btn icon ghost" data-act="vw-mute" id="vwMute" aria-label="Выключить звук">${ic('speaker')}</button><input type="range" id="vwVol" min="0" max="100" value="${Math.round((Number(localGet('ag.volume'))||0.8)*100)}" aria-label="Громкость"><span class="num hint" id="vwVolT" style="width:38px"></span></div>
     <span class="grow"></span><div class="seg" id="vwTracks" role="group" aria-label="Звуковые дорожки — можно включить несколько" hidden></div>
     <div class="menu-wrap"><button type="button" class="btn" data-act="vw-menu" aria-haspopup="true" aria-expanded="false" id="vwSpeed">Скорость 1×</button><div class="menu" id="vwMenu" role="menu" hidden>${[0.1,0.25,0.5,1,1.5,2,3,4,5].map(v=>`<button type="button" role="menuitemradio" data-act="vw-rate" data-v="${v}" aria-checked="${v===1}"><span>${String(v).replace('.',',')}×</span><span>${v===1?'✓':''}</span></button>`).join('')}</div></div>
     <button type="button" class="btn icon" data-act="vw-full" aria-label="Во весь экран">${ic('full')}</button></div>
-   <div class="ctl-row"><span class="hint">Метки</span>${marks.length?marks.map(m=>`<button type="button" class="mark" data-act="vw-to" data-t="${m}">★ ${short(m)}</button>`).join(''):'<span class="hint">нет</span>'}<span class="grow"></span><span class="hint keyhint">Пробел — пауза · ← → — 5 с · ↑ ↓ — громкость · &lt; &gt; — скорость · F или двойной клик — весь экран · Esc — назад</span></div></div>`;
+   <div class="ctl-row"><span class="hint">Метки</span>${marks.length?marks.map(m=>`<button type="button" class="mark" data-act="vw-to" data-t="${m}">★ ${short(m)}</button>`).join(''):'<span class="hint">нет</span>'}<span class="grow"></span><span class="hint keyhint">Пробел — пауза · ← → — кадр · Shift + ← → — 5 с · ↑ ↓ — громкость · &lt; &gt; — скорость · F или двойной клик — весь экран · Esc — назад</span></div></div>`;
   const v=this.v=$('#vwVideo');v.volume=clamp(Number(localGet('ag.volume'))||0.8,0,1);this.syncVol();
   v.addEventListener('play',()=>{this.paint();this.loop();this.syncExtra();this.wake()});v.addEventListener('pause',()=>{this.paint();this.syncExtra();this.wake()});
   v.addEventListener('seeked',()=>{this.paint();this.syncExtra(true)});v.addEventListener('timeupdate',()=>{if(v.paused)this.paint()});
@@ -345,15 +349,18 @@ const viewer={
   sc.addEventListener('pointermove',e=>{const f=this.frac(e);this.preview(f);if(this.scrubbing)this.seekTo(f*this.dur())});
   const end=e=>{if(this.scrubbing){this.scrubbing=false;sc.classList.remove('drag');try{sc.releasePointerCapture(e.pointerId)}catch{}}};
   sc.addEventListener('pointerup',end);sc.addEventListener('pointercancel',end);sc.addEventListener('pointerleave',()=>{if(!this.scrubbing)$('#vwPrev').hidden=true});
-  sc.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();this.seekTo(v.currentTime+(e.key==='ArrowLeft'?-5:5))}});
+  sc.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();this.arrow(e)}});
   $('#vwVol').addEventListener('input',e=>{v.volume=Number(e.target.value)/100;this.userMuted=false;localSet('ag.volume',v.volume);this.syncVol();this.syncExtra()});
   this.keys=e=>this.key(e);document.addEventListener('keydown',this.keys);
   $('#vwFrame').addEventListener('dblclick',e=>{e.preventDefault();this.fullscreen()});
   stage.addEventListener('pointermove',()=>this.wake());
   this.fsch=()=>{this.wake();this.paintFull()};document.addEventListener('fullscreenchange',this.fsch);
-  if(!/\.gif$/i.test(c.name)&&c.audio>1)loadInfo(c.id).then(info=>{if(this.c!==c)return;this.info=info;this.renderTracks()});
+  if(!/\.gif$/i.test(c.name))loadInfo(c.id).then(info=>{if(this.c!==c)return;this.info=info;if(info?.fps>0)this.frame=1/info.fps;this.renderTracks()});
   v.play().catch(()=>{});
  },
+ // ← → step one frame (like the trim editor); Shift jumps 5 s.
+ arrow(e){const dir=e.key==='ArrowLeft'?-1:1;if(e.shiftKey)this.seekTo(this.v.currentTime+dir*5);else this.stepFrame(dir)},
+ stepFrame(dir){const v=this.v;if(!v)return;if(!v.paused)v.pause();this.seekTo(v.currentTime+dir*this.frame)},
  close(){
   cancelAnimationFrame(this.raf);document.removeEventListener('keydown',this.keys);document.removeEventListener('fullscreenchange',this.fsch);clearTimeout(this.idleT);clearTimeout(this.drift);$('#stage').classList.remove('idle');
   if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
@@ -373,7 +380,10 @@ const viewer={
  paint(){
   const v=this.v;if(!v)return;const d=this.dur()||1,t=v.currentTime,p=(t/d*100).toFixed(3)+'%';
   $('#vwFill').style.width=p;$('#vwKnob').style.left=p;$('#vwTime').textContent=short(t);$('#vwScrub').setAttribute('aria-valuenow',Math.round(t));
-  const playing=!v.paused&&!v.ended;$('#vwPlay').innerHTML=playing?pauseIc:playIc;$('#vwPlay').setAttribute('aria-label',playing?'Пауза':'Воспроизвести');$('#vwBig').hidden=playing;
+  // Rebuild the play button only when the state flips: replacing its icon every
+  // animation frame swaps the node under the cursor between mousedown and mouseup,
+  // and the browser then drops the click.
+  const playing=!v.paused&&!v.ended;if(this.shown!==playing){this.shown=playing;const b=$('#vwPlay');b.innerHTML=playing?pauseIc:playIc;b.setAttribute('aria-label',playing?'Пауза':'Воспроизвести');$('#vwBig').hidden=playing}
   $('#vwMark').hidden=!marksOf(this.c).some(m=>Math.abs(m-t)<1);
  },
  paintBuffer(){const v=this.v;if(!v||!v.buffered.length)return;$('#vwBuf').style.width=(v.buffered.end(v.buffered.length-1)/(this.dur()||1)*100)+'%'},
@@ -402,7 +412,7 @@ const viewer={
   if(e.target.closest('input,select,textarea'))return;const v=this.v;if(!v)return;
   const k=e.key;
   if(k===' '||k==='k'||k==='K'){e.preventDefault();v.paused?v.play():v.pause()}
-  else if(k==='ArrowLeft'||k==='ArrowRight'){e.preventDefault();this.seekTo(v.currentTime+(k==='ArrowLeft'?-5:5))}
+  else if(k==='ArrowLeft'||k==='ArrowRight'){e.preventDefault();this.arrow(e)}
   else if(k==='ArrowUp'||k==='ArrowDown'){e.preventDefault();const el=$('#vwVol');el.value=clamp(Number(el.value)+(k==='ArrowUp'?5:-5),0,100);el.dispatchEvent(new Event('input'))}
   else if(k==='f'||k==='F'||k==='а'||k==='А'){e.preventDefault();this.fullscreen()}
   else if(k==='<'||k==='>'||k===','||k==='.'||k==='б'||k==='ю'||k==='Б'||k==='Ю'){e.preventDefault();const L=[0.1,0.25,0.5,1,1.5,2,3,4,5],i=L.indexOf(this.speed),up=k==='>'||k==='.'||k==='ю'||k==='Ю';this.rate(L[clamp((i<0?3:i)+(up?1:-1),0,L.length-1)])}
@@ -514,7 +524,7 @@ const editor={
  renderExport(){
   const box=$('#edExport');if(!box)return;
   if(this.job){box.innerHTML=`<div class="progress" role="status"><div style="display:flex;justify-content:space-between;font-size:13px"><b>Экспорт…</b><span class="num hint" id="edPct">${this.progress}%</span></div><div class="bar"><span id="edBar" style="width:${this.progress}%"></span></div><button type="button" class="btn sm" data-act="ed-cancel" style="align-self:flex-start">Отменить</button></div>`;return}
-  if(this.result){const r=this.result,c=r.id&&clipById(r.id);box.innerHTML=`<div class="result" role="status"><div style="display:flex;align-items:center;gap:10px"><i style="width:8px;height:8px;border-radius:50%;background:var(--ok)" aria-hidden="true"></i><b>Готово · <span data-i18n-ignore>${esc(r.name)}</span> · ${bytes(r.bytes||0)}</b></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button type="button" class="btn primary" data-act="ed-copy" ${c?'':'disabled'}>${ic('copy')}<span id="edCopyL">Копировать файл</span></button><button type="button" class="btn" data-act="reveal" data-id="${esc(r.id||'')}" ${c?'':'disabled'}>${ic('folder')}Показать в папке</button></div><button type="button" class="btn ghost sm" data-act="ed-again" style="align-self:flex-start">Экспортировать ещё раз</button></div>`;return}
+  if(this.result){const r=this.result,c=r.id&&clipById(r.id);box.innerHTML=`<div class="result" role="status"><div style="display:flex;align-items:center;gap:10px"><i style="width:8px;height:8px;border-radius:50%;background:var(--ok)" aria-hidden="true"></i><b>Готово · <span data-i18n-ignore>${esc(r.name)}</span> · ${bytes(r.bytes||0)}</b></div><div class="result-acts"><button type="button" class="btn primary" data-act="ed-copy" ${c?'':'disabled'}>${ic('copy')}<span id="edCopyL">Копировать файл</span></button><button type="button" class="btn" data-act="reveal" data-id="${esc(r.id||'')}" ${c?'':'disabled'}>${ic('folder')}Показать в папке</button></div><button type="button" class="btn ghost sm" data-act="ed-again" style="align-self:flex-start">Экспортировать ещё раз</button></div>`;return}
   box.innerHTML=`<button type="button" class="btn primary" data-act="ed-export" style="height:48px;font-size:15px;width:100%">${ic('save')}Экспортировать · ${this.estimate(this.preset)}</button>`;
  },
  layout(){this.drawWave();this.paintStrip();this.paintTl();this.paintTimer()},
@@ -912,8 +922,11 @@ const ACT={
  edit(el){go({screen:'editor',id:el.dataset.id,focusExport:!!el.dataset.export})},
  async fav(el){const c=clipById(el.dataset.id);if(!c)return;await saveClipMeta(c,{favorite:!c.favorite});libUI.sig='';refreshLibrary();renderDetail(true)},
  reveal(el){if(el.dataset.id)return api('open',{target:'clip-folder',id:el.dataset.id})},
- async delete(el){const c=clipById(el.dataset.id);if(!c)return;if(!await confirmBox('Удалить запись?',`«${nameOf(c)}» будет перемещена в корзину Windows.`,'В корзину'))return;
-  const r=await api('clip_delete',{id:c.id,delete_mode:'recycle'});if(libUI.sel===c.id)libUI.sel=null;await pollState(true);toast(r.missing?'Файла уже нет — запись убрана из библиотеки':'Запись перемещена в корзину')},
+ async delete(el){const c=clipById(el.dataset.id);if(!c)return;
+  const mode=await chooseBox('Удалить запись?',`<p><b data-i18n-ignore>«${esc(nameOf(c))}»</b></p><div class="dlg-notes"><p>В корзину: файл можно восстановить из корзины Windows.</p><p>Удалить навсегда: видео будет удалено с компьютера, минуя корзину. Это действие нельзя отменить в AFTERPLAY.</p></div>`,
+   [{v:'permanent',label:'Удалить навсегда',cls:'danger solid'},{v:'recycle',label:'В корзину',cls:'primary',focus:true}]);
+  if(!mode)return;
+  const r=await api('clip_delete',{id:c.id,delete_mode:mode});if(libUI.sel===c.id)libUI.sel=null;await pollState(true);toast(r.missing?'Файла уже нет — запись убрана из библиотеки':mode==='permanent'?'Запись удалена навсегда':'Запись перемещена в корзину')},
  chip(el){libUI.chip=el.dataset.chip;libUI.limit=120;render()},
  more(){libUI.limit+=120;refreshLibrary()},
  async 'steps-hide'(){state.settings.onboarding=await api('onboarding_config',{status:'completed'});$('.steps')?.remove()},
@@ -921,6 +934,7 @@ const ACT={
  // viewer
  'vw-play'(){const v=viewer.v;if(v){viewer.toggleMenu(false);v.paused||v.ended?v.play():v.pause()}},
  'vw-seek'(el){viewer.seekTo(viewer.v.currentTime+Number(el.dataset.d))},
+ 'vw-frame'(el){viewer.stepFrame(Number(el.dataset.d))},
  'vw-to'(el){viewer.seekTo(Number(el.dataset.t))},
  'vw-mute'(){viewer.userMuted=!viewer.userMuted;viewer.syncExtra();viewer.syncVol()},
  'vw-menu'(){viewer.toggleMenu()},'vw-rate'(el){viewer.rate(Number(el.dataset.v))},

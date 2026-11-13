@@ -266,7 +266,14 @@ dl.facts dt{color:var(--muted)}dl.facts dd{margin:0;text-align:right;overflow-wr
 .track{display:grid;grid-template-columns:36px minmax(0,1fr) 46px;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--panel)}
 .track .nm{font-size:13px;font-weight:600}
 .track .pct{border:0;background:transparent;font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;padding:0}
-.result{display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:10px;border:1px solid rgba(74,222,128,.35);background:rgba(74,222,128,.07)}
+.result{display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:10px;border:1px solid rgba(74,222,128,.35);background:rgba(74,222,128,.07);min-width:0}
+/* Two buttons side by side only when both labels fit; otherwise stack them so
+   "Показать в папке" never runs past the export panel on narrow windows. */
+.result-acts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:8px}
+.result-acts .btn{min-width:0}
+/* Icons inside buttons are swapped on state changes (play ⇄ pause). Let clicks
+   land on the button itself so a press on the glyph is never lost. */
+button svg,button .bigplay{pointer-events:none}
 .progress{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:10px;border:1px solid var(--line);background:var(--panel)}
 .progress .bar{height:6px}
 
@@ -341,7 +348,9 @@ dialog{border:1px solid var(--line2);border-radius:14px;background:var(--panel);
 dialog::backdrop{background:rgba(0,0,0,.6)}
 dialog h2{margin:0 0 8px;font-size:18px}
 dialog p{margin:0 0 18px;color:var(--muted)}
-dialog .row{display:flex;justify-content:flex-end;gap:8px}
+dialog .row{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+dialog .dlg-notes{display:flex;flex-direction:column;gap:6px;margin:0 0 18px;font-size:13px;color:var(--muted)}
+dialog .dlg-notes p{margin:0}
 
 /* Fullscreen viewer: the whole stage goes fullscreen, controls float over the picture */
 #stage.vw:fullscreen{background:#000}
