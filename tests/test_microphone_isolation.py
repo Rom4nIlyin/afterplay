@@ -100,4 +100,32 @@ os._exit(0)
         self.assertFalse(process_audio.is_alive(pid),'Microphone worker outlived recorder')
 
 
+class WorkerHostTests(unittest.TestCase):
+    def layout(self,launcher):
+        temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
+        app=Path(temp.name)/'app';(app/'runtime').mkdir(parents=True)
+        (app/'runtime/python313.dll').write_bytes(b'dll')
+        (Path(temp.name)/'AFTERPLAY.exe').write_bytes(b'MZ'+launcher+b'\0')
+        return app
+
+    def command(self,app,cls):
+        microphone._worker_host.cache_clear()
+        with patch.object(microphone,'__file__',str(app/'microphone.py')):
+            return cls._command(object.__new__(cls))
+
+    def test_portable_workers_run_inside_afterplay_exe(self):
+        import loopback
+        app=self.layout('--audio-worker'.encode('utf-16-le'))
+        host=str(app.resolve().parent/'AFTERPLAY.exe')
+        self.assertEqual(self.command(app,microphone.OptionalInput),[host,'--audio-worker','microphone_worker.py'])
+        self.assertEqual(self.command(app,loopback.OptionalOutput),[host,'--audio-worker','loopback_worker.py'])
+
+    def test_older_launcher_keeps_python_worker(self):
+        import loopback
+        app=self.layout(b'launcher without worker mode')
+        command=self.command(app,loopback.OptionalOutput)
+        self.assertEqual(command[1:],['-u',str(app.resolve()/'loopback_worker.py')])
+        self.assertNotIn('AFTERPLAY.exe',command[0])
+
+
 if __name__=='__main__':unittest.main()

@@ -17,6 +17,30 @@ class Launcher {
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] static extern IntPtr LoadLibrary(string path);
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr CreateFile(string path,uint access,uint share,IntPtr security,uint creation,uint flags,IntPtr template);
  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+ [DllImport("kernel32.dll",CharSet=CharSet.Ansi,ExactSpelling=true)] static extern IntPtr GetProcAddress(IntPtr module,string name);
+ [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int PyMain(int argc,[MarshalAs(UnmanagedType.LPArray,ArraySubType=UnmanagedType.LPWStr)] string[] argv);
+ // Audio capture stays in its own supervised process so a hung or crashing
+ // driver cannot stop the video. Running it inside AFTERPLAY.exe instead of
+ // python.exe keeps it grouped under AFTERPLAY in Task Manager and avoids a
+ // console host per worker. Only the bundled worker scripts can be started.
+ static int AudioWorker(string app,string name) {
+  if(name!="microphone_worker.py"&&name!="loopback_worker.py")return 2;
+  try {
+   string runtime=Path.Combine(app,"runtime");
+   Environment.SetEnvironmentVariable("PATH",runtime+";"+Environment.GetEnvironmentVariable("PATH"));
+   IntPtr python=LoadLibrary(Path.Combine(runtime,"python313.dll"));if(python==IntPtr.Zero)return 3;
+   IntPtr entry=GetProcAddress(python,"Py_Main");if(entry==IntPtr.Zero)return 3;
+   var main=(PyMain)Marshal.GetDelegateForFunctionPointer(entry,typeof(PyMain));
+   string[] argv={Path.Combine(runtime,"python.exe"),"-u",Path.Combine(app,name)};
+   // Like python.exe: the interpreter does not run on the host's STA thread.
+   int code=1;var thread=new System.Threading.Thread(()=>{code=main(argv.Length,argv);},8*1024*1024);
+   thread.SetApartmentState(System.Threading.ApartmentState.MTA);thread.Start();thread.Join();
+   GC.KeepAlive(main);return code;
+  }catch(Exception error) {
+   try{string logs=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,@"data\logs");Directory.CreateDirectory(logs);File.AppendAllText(Path.Combine(logs,"audio-worker-error.log"),DateTime.Now.ToString("s")+" "+name+": "+error+Environment.NewLine);}catch{}
+   return 1;
+  }
+ }
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool DeleteFile(string path);
  static bool HasWebView(string root) {
   string loader=Path.Combine(root,@"runtime\Lib\site-packages\webview\lib\runtimes\win-x64\native\WebView2Loader.dll");
@@ -47,6 +71,7 @@ class Launcher {
  [STAThread] static void Main(string[] args) {
   string root=AppDomain.CurrentDomain.BaseDirectory;
   string app=Path.Combine(root,"app");
+  if(args.Length==2&&args[0]=="--audio-worker"){Environment.Exit(AudioWorker(app,args[1]));return;}
   try {
    if(!Environment.Is64BitOperatingSystem)throw new Exception("Требуется Windows x64.");
    if(!File.Exists(Path.Combine(app,"app.py")))throw new Exception("Не найден app/app.py. Сохраните папку программы целиком.");

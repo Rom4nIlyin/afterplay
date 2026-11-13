@@ -1,6 +1,5 @@
 """Optional, reconnecting output-device capture isolated from the recorder."""
 import queue
-from pathlib import Path
 import time
 from microphone import OptionalInput
 
@@ -19,13 +18,10 @@ def devices():
 
 class OptionalOutput(OptionalInput):
     SOURCE_NAME='output audio'
+    WORKER='loopback_worker.py'
 
     def _configuration(self,settings):
         return {'audio':str(settings.get('audio','default'))}
-
-    def _command(self):
-        cmd=super()._command();cmd[-1]=str(Path(__file__).with_name('loopback_worker.py'))
-        return cmd
 
 
 class Capture:

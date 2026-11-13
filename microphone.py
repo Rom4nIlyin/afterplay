@@ -7,6 +7,7 @@ import struct
 import subprocess
 import sys
 import threading
+from functools import lru_cache
 
 PACKET_HEADER=struct.Struct('<BI')
 AUDIO_PACKET=1
@@ -38,6 +39,17 @@ def _child_job(process):
     return job
 
 
+@lru_cache(maxsize=4)
+def _worker_host(app):
+    """AFTERPLAY.exe that can host audio workers, or None (source runs, older launcher)."""
+    host=Path(app).parent/'AFTERPLAY.exe'
+    try:
+        if not (Path(app)/'runtime/python313.dll').is_file() or not host.is_file():return None
+        # A launcher from before this mode would start a second app instead.
+        return str(host) if '--audio-worker'.encode('utf-16-le') in host.read_bytes() else None
+    except OSError:return None
+
+
 def _close_job(job):
     if job is not None:
         import ctypes
@@ -50,6 +62,7 @@ class OptionalInput:
     HEARTBEAT_TIMEOUT=8.
     RETRY_SECONDS=2.
     SOURCE_NAME='microphone'
+    WORKER='microphone_worker.py'
 
     def __init__(self,settings,destination,on_state=None):
         self.config=self._configuration(settings)
@@ -65,9 +78,14 @@ class OptionalInput:
             ('microphone_gain',100),('microphone_voice_cleanup',True))}
 
     def _command(self):
-        runtime=Path(__file__).parent/'runtime/python.exe'
+        app=Path(__file__).resolve().parent
+        # The portable build hosts the worker in AFTERPLAY.exe: Task Manager shows
+        # it as AFTERPLAY under the app and no python.exe/console host appears.
+        host=_worker_host(str(app))
+        if host:return [host,'--audio-worker',self.WORKER]
+        runtime=app/'runtime/python.exe'
         python=runtime if runtime.is_file() else Path(sys.executable)
-        return [str(python),'-u',str(Path(__file__).with_name('microphone_worker.py'))]
+        return [str(python),'-u',str(app/self.WORKER)]
 
     def _state(self,event,error=''):
         self.error=error
@@ -110,8 +128,12 @@ class OptionalInput:
         while not self.stop_event.is_set():
             process=None;reader=None;job=None
             try:
+                extra={}
+                if sys.platform=='win32':
+                    # STARTF_FORCEOFFFEEDBACK: a GUI-subsystem worker must not show the busy cursor.
+                    startup=subprocess.STARTUPINFO();startup.dwFlags|=0x80;extra['startupinfo']=startup
                 process=subprocess.Popen(self._command(),stdin=subprocess.PIPE,stdout=subprocess.PIPE,
-                                         stderr=subprocess.DEVNULL,creationflags=0x08000000 if sys.platform=='win32' else 0)
+                                         stderr=subprocess.DEVNULL,creationflags=0x08000000 if sys.platform=='win32' else 0,**extra)
                 job=_child_job(process)
                 self.process=process;self.last_message=time.monotonic()
                 process.stdin.write(json.dumps(self.config).encode('utf-8')+b'\n');process.stdin.flush()
