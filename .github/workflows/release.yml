@@ -5,7 +5,11 @@ on:
       version:
         description: Version without v
         required: true
-        default: '1.15.0'
+        default: '1.15.1'
+      prerelease:
+        description: Publish as a pre-release for testing (the in-app updater ignores pre-releases)
+        type: boolean
+        default: false
   push:
     branches: ['main']
     paths: ['version.py']
@@ -98,6 +102,7 @@ jobs:
         shell: pwsh
         run: |
           $assets = @(Get-ChildItem dist/*.zip, dist/*.sha256 | ForEach-Object FullName)
-          gh release create $env:RELEASE_TAG @assets --target $env:GITHUB_SHA --title "AFTERPLAY $env:RELEASE_TAG" --notes-file docs/RELEASE.md --latest
+          $channel = if ('${{ inputs.prerelease }}' -eq 'true') { '--prerelease' } else { '--latest' }
+          gh release create $env:RELEASE_TAG @assets --target $env:GITHUB_SHA --title "AFTERPLAY $env:RELEASE_TAG" --notes-file docs/RELEASE.md $channel
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
 
