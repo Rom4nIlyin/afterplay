@@ -498,9 +498,15 @@ class Suite:
         """
         roots=sorted({self._resolved_key(root):root for root in [*self.cfg.get('video_roots',[]),str(self.recordings_dir()),
                       *self.cfg.get('storage',{}).get('previous_dirs',[])]}.items(),key=lambda item:len(item[0]),reverse=True)
-        reachable={}
+        reachable={};folders={}
         def source_present(path):
-            key=self._path_key(path)
+            # Roots are resolved, so the row's folder must be too (8.3 short
+            # names such as C:\Users\RUNNER~1, symlinks, junctions); otherwise a
+            # row on a disconnected source matches no root and gets pruned.
+            folder,name=os.path.split(str(path))
+            prefix=folders.get(folder)
+            if prefix is None:prefix=folders[folder]=self._resolved_key(folder)
+            key=self._path_key(prefix+name)
             root=next((folder for prefix,folder in roots if key.startswith(prefix)),None)
             target=Path(root) if root else Path(Path(path).anchor or path)
             if target not in reachable:
