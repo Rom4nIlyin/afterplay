@@ -8,6 +8,8 @@ window.addEventListener('unhandledrejection',e=>{window.afterplayErrors.push(Str
 const token=location.pathname.split('/')[1],base=`/${token}/`;
 const $=(s,r=document)=>r.querySelector(s),$$=(s,r=document)=>[...r.querySelectorAll(s)];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Interface text goes through the English catalog when it is enabled (ui/i18n.js).
+const tr=s=>window.afterplayI18n?.text(s)??s;
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 const pad=(n,w=2)=>String(n).padStart(w,'0');
 var state={clips:[],jobs:[],settings:{},replay:null,updates:null,auto_record:null,storage:null};
@@ -72,7 +74,7 @@ const kindLabel={replay:'Повтор',record:'Запись',clip:'Клип',vid
 function nameOf(c){
  const stem=c.name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|ts|gif)$/i,'');
  const m=stem.match(/^(Повтор|Запись)-(\d{4})-(\d\d)-(\d\d)_(\d\d)-(\d\d)-\d\d-[0-9a-f]{4}$/i);
- if(m)return m[1]+' · '+Number(m[4])+' '+months[Number(m[3])-1]+', '+m[5]+':'+m[6];
+ if(m)return tr(m[1]+' · '+Number(m[4])+' '+months[Number(m[3])-1]+', '+m[5]+':'+m[6]);
  return stem;
 }
 const gameOf=c=>state.settings.clip_games?.[c.id]||'';
@@ -196,8 +198,8 @@ function selectedProfile(){
 }
 function renderProfileChip(){
  const auto=!!state.auto_record?.active&&['starting','recording','stopping'].includes(state.replay?.phase);
- const name=(auto?state.replay?.active_profile:selectedProfile()?.name)||'Не выбран';
- const html=`<button type="button" class="chip-profile" data-act="go" data-screen="profiles" title="${esc((auto?'Автозапись: ':'Профиль: ')+name)}"><span class="ini" aria-hidden="true">${esc(initials(name))}</span><span><small>${auto?'Автозапись':'Профиль'}</small><b>${esc(name)}</b></span></button>`;
+ const name=(auto?state.replay?.active_profile:selectedProfile()?.name)||tr('Не выбран');
+ const html=`<button type="button" class="chip-profile" data-act="go" data-screen="profiles" title="${esc((auto?'Автозапись: ':'Профиль: ')+name)}"><span class="ini" aria-hidden="true" data-i18n-ignore>${esc(initials(name))}</span><span><small>${auto?'Автозапись':'Профиль'}</small><b data-i18n-ignore>${esc(name)}</b></span></button>`;
  const host=$('#chip');if(host.dataset.html!==html){host.dataset.html=html;host.innerHTML=html}
 }
 let polledReplay=null,polledAt=0;
@@ -256,7 +258,7 @@ function stepsHTML(){
 function cardHTML(c){
  const k=kindOf(c),m=marksOf(c).length,sel=libUI.sel===c.id;
  const meta=[gameOf(c),timeOf(c.mtime),bytes(c.size)].filter(Boolean).join(' · ');
- return `<button type="button" class="clip ${sel?'sel':''}" data-act="select" data-id="${esc(c.id)}" aria-pressed="${sel}" aria-label="${esc(nameOf(c)+', '+short(c.duration))}"><div class="thumb"><img src="${esc(thumbUrl(c))}" loading="lazy" alt=""><span class="badge kind ${k}">${kindLabel[k]}</span>${m?`<span class="badge marks">★ ${m}</span>`:''}${c.favorite?`<span class="badge fav" aria-label="В избранном">♥</span>`:''}<span class="badge dur">${short(c.duration)}</span></div><div class="meta"><b>${esc(nameOf(c))}</b><small>${esc(meta)}</small></div></button>`;
+ return `<button type="button" class="clip ${sel?'sel':''}" data-act="select" data-id="${esc(c.id)}" aria-pressed="${sel}" aria-label="${esc(nameOf(c)+', '+short(c.duration))}"><div class="thumb"><img src="${esc(thumbUrl(c))}" loading="lazy" alt=""><span class="badge kind ${k}">${kindLabel[k]}</span>${m?`<span class="badge marks">★ ${m}</span>`:''}${c.favorite?`<span class="badge fav" aria-label="В избранном">♥</span>`:''}<span class="badge dur">${short(c.duration)}</span></div><div class="meta"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc(meta)}</small></div></button>`;
 }
 function gridHTML(rows){
  const shown=rows.slice(0,libUI.limit);const groups=new Map();
@@ -298,7 +300,7 @@ function renderDetail(force=false){
  const k=kindOf(c),marks=marksOf(c);
  box.innerHTML=`<div class="row"><h2 class="sec">О записи</h2><button type="button" class="btn icon ghost" data-act="fav" data-id="${esc(c.id)}" aria-pressed="${!!c.favorite}" aria-label="${c.favorite?'Убрать из избранного':'В избранное'}" style="color:${c.favorite?'var(--accent)':'inherit'}">${ic('heart',c.favorite?'fill="currentColor"':'')}</button></div>
  <button type="button" class="big" data-act="watch" data-id="${esc(c.id)}" aria-label="Смотреть"><img src="${esc(thumbUrl(c))}" alt=""><span class="play" aria-hidden="true">${playIc}</span><span class="badge dur">${short(c.duration)}</span></button>
- <div><h3>${esc(nameOf(c))}</h3><div class="sub">${esc([gameOf(c),kindLabel[k]].filter(Boolean).join(' · '))}</div></div>
+ <div><h3 data-i18n-ignore>${esc(nameOf(c))}</h3><div class="sub">${esc([gameOf(c),kindLabel[k]].filter(Boolean).join(' · '))}</div></div>
  <div class="acts"><button type="button" class="btn primary" data-act="watch" data-id="${esc(c.id)}">Смотреть</button><button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}">${/\.gif$/i.test(c.name)?'Открыть':'Обрезать'}</button><button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}" data-export="1">Экспорт</button></div>
  <dl class="facts"><dt>Дата</dt><dd>${esc(timeOf(c.mtime))}</dd><dt>Длительность</dt><dd>${clock(c.duration)}</dd><dt>Размер</dt><dd>${bytes(c.size)}</dd><dt>Видео</dt><dd id="dtVideo">${c.width?c.width+' × '+c.height:'—'}</dd><dt>Звук</dt><dd>${c.audio?c.audio+' '+(c.audio===1?'дорожка':c.audio<5?'дорожки':'дорожек'):'нет'}</dd></dl>
  <div class="field"><span class="lbl">Метки</span><div class="marks">${marks.length?marks.map(m=>`<button type="button" class="mark" data-act="watch" data-id="${esc(c.id)}" data-at="${m}">★ ${short(m)}</button>`).join(''):'<span class="hint">Нет меток. Во время записи нажмите клавишу метки — она появится здесь.</span>'}</div></div>
@@ -321,7 +323,7 @@ const viewer={
   this.c=c;this.on=new Set([0]);this.extras=new Map();this.userMuted=false;this.speed=1;this.menu=false;this.sprite=null;this.info=null;
   const list=this.list(),i=list.findIndex(x=>x.id===id),marks=marksOf(c),cust=custom();
   const stage=$('#stage');stage.className='vw';
-  stage.innerHTML=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Библиотека</button><div class="ttl"><b>${esc(nameOf(c))}</b><small>${esc([gameOf(c),timeOf(c.mtime),i>=0?(i+1)+' из '+list.length:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
+  stage.innerHTML=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Библиотека</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc([gameOf(c),timeOf(c.mtime),i>=0?(i+1)+' из '+list.length:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
   <button type="button" class="btn icon ghost" data-act="vw-fav" aria-pressed="${!!c.favorite}" aria-label="В избранное" style="color:${c.favorite?'var(--accent)':'inherit'}">${ic('heart',c.favorite?'fill="currentColor"':'')}</button>
   <button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}">${ic('scissors')}Обрезать</button><button type="button" class="btn primary" data-act="edit" data-id="${esc(c.id)}" data-export="1">Экспорт</button></header>
   <div class="vw-stage"><button type="button" class="side-nav l" data-act="vw-step" data-dir="-1" aria-label="Предыдущая запись">${ic('back')}</button><button type="button" class="side-nav r" data-act="vw-step" data-dir="1" aria-label="Следующая запись">${ic('next')}</button>
@@ -439,7 +441,7 @@ const editor={
   const gif=/\.gif$/i.test(c.name);this.preset=gif?'gif':this.fits('discord')?'discord':'nitro';
   this.tracks=[];this.info={fps:60,audio:[]};
   const stage=$('#stage');stage.className='ed';
-  stage.innerHTML=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Назад</button><div class="ttl"><b>${esc(nameOf(c))}</b><small id="edSub">${esc([gameOf(c),kindLabel[kindOf(c)],c.width?c.width+' × '+c.height:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
+  stage.innerHTML=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Назад</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small id="edSub">${esc([gameOf(c),kindLabel[kindOf(c)],c.width?c.width+' × '+c.height:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
   <div class="keys">${[['Пробел','пауза'],['J K L','перемотка'],['← →','кадр'],['I','начало'],['O','конец'],['M','метка']].map(([k,l])=>`<span><kbd>${k}</kbd>${l}</span>`).join('')}</div></header>
   <div class="ed-body"><section class="ed-main" aria-label="Просмотр и обрезка">
    <div class="ed-frame" id="edFrame"><video id="edVideo" preload="auto" playsinline src="${base}media/${encodeURIComponent(c.id)}"></video><span class="drag-note" id="edNote" hidden></span><span class="timer-ov" id="edTimer" hidden></span></div>
@@ -510,7 +512,7 @@ const editor={
  renderExport(){
   const box=$('#edExport');if(!box)return;
   if(this.job){box.innerHTML=`<div class="progress" role="status"><div style="display:flex;justify-content:space-between;font-size:13px"><b>Экспорт…</b><span class="num hint" id="edPct">${this.progress}%</span></div><div class="bar"><span id="edBar" style="width:${this.progress}%"></span></div><button type="button" class="btn sm" data-act="ed-cancel" style="align-self:flex-start">Отменить</button></div>`;return}
-  if(this.result){const r=this.result,c=r.id&&clipById(r.id);box.innerHTML=`<div class="result" role="status"><div style="display:flex;align-items:center;gap:10px"><i style="width:8px;height:8px;border-radius:50%;background:var(--ok)" aria-hidden="true"></i><b>Готово · ${esc(r.name)} · ${bytes(r.bytes||0)}</b></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button type="button" class="btn primary" data-act="ed-copy" ${c?'':'disabled'}>${ic('copy')}<span id="edCopyL">Копировать файл</span></button><button type="button" class="btn" data-act="reveal" data-id="${esc(r.id||'')}" ${c?'':'disabled'}>${ic('folder')}Показать в папке</button></div><button type="button" class="btn ghost sm" data-act="ed-again" style="align-self:flex-start">Экспортировать ещё раз</button></div>`;return}
+  if(this.result){const r=this.result,c=r.id&&clipById(r.id);box.innerHTML=`<div class="result" role="status"><div style="display:flex;align-items:center;gap:10px"><i style="width:8px;height:8px;border-radius:50%;background:var(--ok)" aria-hidden="true"></i><b>Готово · <span data-i18n-ignore>${esc(r.name)}</span> · ${bytes(r.bytes||0)}</b></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><button type="button" class="btn primary" data-act="ed-copy" ${c?'':'disabled'}>${ic('copy')}<span id="edCopyL">Копировать файл</span></button><button type="button" class="btn" data-act="reveal" data-id="${esc(r.id||'')}" ${c?'':'disabled'}>${ic('folder')}Показать в папке</button></div><button type="button" class="btn ghost sm" data-act="ed-again" style="align-self:flex-start">Экспортировать ещё раз</button></div>`;return}
   box.innerHTML=`<button type="button" class="btn primary" data-act="ed-export" style="height:48px;font-size:15px;width:100%">${ic('save')}Экспортировать · ${this.estimate(this.preset)}</button>`;
  },
  layout(){this.drawWave();this.paintStrip();this.paintTl();this.paintTimer()},
@@ -733,7 +735,7 @@ const profiles={
   <p class="hint" style="margin-top:-8px">${isDefault?'Профиль по умолчанию записывает весь экран. Он используется для ручной записи и когда не запущена игра со своим профилем.':this.autoOn(p)?'Когда игра запустится, AFTERPLAY сам включит повтор с этим профилем. Так можно настроить сразу несколько игр.':p.path?'Включите «Включать при запуске игры», чтобы повтор запускался сам.':'Выберите окно игры ниже и сохраните профиль — тогда можно будет включить автозапуск.'}</p>
   <div class="pf-grid">
    <section class="card box wide"><div class="box-head"><h3>Что записывать</h3>${this.seg('capture_mode',[['monitor','Весь экран'],['window','Окно приложения']],{disabled:v=>isDefault&&v==='window'})}</div>
-    ${win?`<div class="apps" role="radiogroup" aria-label="Окно приложения">${known?`<button type="button" class="app" role="radio" aria-checked="true" data-act="noop"><span class="ini">${esc(initials(d.path.split(/[\\/]/).pop()))}</span><span><b>${esc(d.path.split(/[\\/]/).pop())}</b><small>сейчас не запущено</small></span></button>`:''}${apps.map(a=>`<button type="button" class="app" role="radio" aria-checked="${keyOf(a.path)===keyOf(d.path)}" data-act="pf-app" data-path="${esc(a.path)}" data-hwnd="${a.hwnd}" data-name="${esc(a.title||a.name)}"><span class="ini">${esc(initials(a.name.replace(/\.exe$/i,'')))}</span><span><b>${esc(a.title||a.name)}</b><small>${esc(a.name)}</small></span></button>`).join('')}</div>
+    ${win?`<div class="apps" role="radiogroup" aria-label="Окно приложения">${known?`<button type="button" class="app" role="radio" aria-checked="true" data-act="noop"><span class="ini">${esc(initials(d.path.split(/[\\/]/).pop()))}</span><span><b>${esc(d.path.split(/[\\/]/).pop())}</b><small>сейчас не запущено</small></span></button>`:''}${apps.map(a=>`<button type="button" class="app" role="radio" aria-checked="${keyOf(a.path)===keyOf(d.path)}" data-act="pf-app" data-path="${esc(a.path)}" data-hwnd="${a.hwnd}" data-name="${esc(a.title||a.name)}"><span class="ini">${esc(initials(a.name.replace(/\.exe$/i,'')))}</span><span data-i18n-ignore><b>${esc(a.title||a.name)}</b><small>${esc(a.name)}</small></span></button>`).join('')}</div>
      <div style="display:flex;gap:8px;align-items:center"><button type="button" class="btn sm" data-act="pf-browse">${ic('folder')}Выбрать .exe</button><button type="button" class="btn sm" data-act="pf-devices">${ic('refresh')}Обновить список</button><span class="hint">${apps.length?'Запустите игру, если её нет в списке.':dev?'Открытых окон не найдено. Запустите игру и обновите список.':'Загрузка…'}</span></div>`
     :`<div class="mons" role="radiogroup" aria-label="Монитор">${monTiles.map((m,i)=>`<button type="button" class="mon" role="radio" aria-checked="${s.monitor===m.id}" data-act="pf-set" data-k="monitor" data-v='${esc(JSON.stringify(m.id))}'><span class="scr" style="width:${m.w}px;height:${m.h}px">${i===0?'★':i}</span><b>${esc(m.label)}</b><small>${esc(m.detail)}</small></button>`).join('')}</div>`}
    </section>
@@ -759,11 +761,11 @@ const profiles={
    </section>
    <section class="card box wide"><div class="box-head"><h3>Звук</h3>${this.seg('audio_mode',[['system','Весь звук'],['game','Только игра'],['exclude','Всё кроме игры'],['multitrack','Игра и чат отдельно'],['none','Без звука']],{disabled:audioDisabled})}</div>
     <p class="hint">${hints[s.audio_mode]||''}${!procOk&&dev?' Звук отдельных приложений требует Windows 11.':isDefault||!win?' Звук отдельной игры доступен в профиле окна игры.':''}</p>
-    ${s.audio_mode==='multitrack'?`<div class="field" style="max-width:420px"><label for="pfChat">Приложение чата</label><select class="input" id="pfChat" data-pf-select="chat_path"><option value="">Discord · найти автоматически</option>${chats.map(a=>`<option value="${esc(a.path)}" ${keyOf(a.path)===keyOf(s.chat_path)?'selected':''}>${esc(a.name)}</option>`).join('')}${s.chat_path&&!chats.some(a=>keyOf(a.path)===keyOf(s.chat_path))?`<option value="${esc(s.chat_path)}" selected>${esc(s.chat_path.split(/[\\/]/).pop())}</option>`:''}</select></div>`:''}
+    ${s.audio_mode==='multitrack'?`<div class="field" style="max-width:420px"><label for="pfChat">Приложение чата</label><select class="input" id="pfChat" data-pf-select="chat_path"><option value="">Discord · найти автоматически</option>${chats.map(a=>`<option value="${esc(a.path)}" ${keyOf(a.path)===keyOf(s.chat_path)?'selected':''} data-i18n-ignore>${esc(a.name)}</option>`).join('')}${s.chat_path&&!chats.some(a=>keyOf(a.path)===keyOf(s.chat_path))?`<option value="${esc(s.chat_path)}" selected>${esc(s.chat_path.split(/[\\/]/).pop())}</option>`:''}</select></div>`:''}
     ${s.audio_mode!=='none'?`<div class="field"><span class="lbl">Качество звука</span>${this.seg('audio_bitrate',[[128,'128 кбит/с'],[192,'192'],[256,'256'],[320,'320']])}</div>`:''}
     <div style="display:grid;grid-template-columns:auto minmax(0,260px) minmax(0,1fr) 50px;align-items:center;gap:14px;padding:12px;border-radius:10px;background:var(--side)">
      ${this.sw('microphone_enabled','Микрофон','Отдельная дорожка')}
-     <select class="input" data-pf-select="microphone_device" aria-label="Микрофон" ${s.microphone_enabled?'':'disabled'}><option value="default">По умолчанию в Windows</option>${mics.map(m=>`<option value="${esc(m.id)}" data-name="${esc(m.name)}" ${String(s.microphone_device)===String(m.id)||(s.microphone_name&&s.microphone_name===m.name&&s.microphone_device!=='default')?'selected':''}>${esc(m.name)}</option>`).join('')}</select>
+     <select class="input" data-pf-select="microphone_device" aria-label="Микрофон" ${s.microphone_enabled?'':'disabled'}><option value="default">По умолчанию в Windows</option>${mics.map(m=>`<option value="${esc(m.id)}" data-name="${esc(m.name)}" ${String(s.microphone_device)===String(m.id)||(s.microphone_name&&s.microphone_name===m.name&&s.microphone_device!=='default')?'selected':''} data-i18n-ignore>${esc(m.name)}</option>`).join('')}</select>
      <input type="range" min="0" max="100" value="${s.microphone_gain}" data-pf-range="microphone_gain" aria-label="Громкость микрофона" ${s.microphone_enabled?'':'disabled'}>
      <span class="num" style="text-align:right;font-weight:600" data-out="microphone_gain">${s.microphone_enabled?s.microphone_gain+'%':'—'}</span>
     </div>
@@ -819,6 +821,7 @@ const settingsUI={
   const sw=(act,on,label,sub,disabled=false)=>`<div class="st-row"><span class="t"><b>${label}</b>${sub?`<small>${sub}</small>`:''}</span><button type="button" class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-act="${act}" ${disabled?'disabled':''}><span class="tr"><span></span></span></button></div>`;
   const used=Object.entries(hk).filter(([,v])=>v);
   box.innerHTML=`<section class="card st-sec" id="st-general"><h2>Общие</h2>
+   <div class="st-row"><span class="t"><b>Язык интерфейса</b><small>Переключение применяется сразу и сохраняется между запусками.</small></span><select class="input" id="interfaceLanguage" aria-label="Язык интерфейса" style="width:auto;min-width:160px"><option value="ru" data-i18n-ignore ${state.settings.language==='en'?'':'selected'}>Русский</option><option value="en" data-i18n-ignore ${state.settings.language==='en'?'selected':''}>English</option></select></div>
    ${sw('st-autostart',d.autostart,'Запускать вместе с Windows','AFTERPLAY стартует свёрнутым в трей')}
    <div class="st-row"><span class="t"><b>Кнопка «Закрыть» в окне</b><small>Полный выход всегда есть в меню значка в трее</small></span><div class="seg" role="radiogroup" aria-label="Кнопка «Закрыть»">${[['tray','Свернуть в трей'],['close','Закрыть программу']].map(([v,l])=>`<button type="button" role="radio" data-act="st-close" data-v="${v}" aria-checked="${(d.close_action||'tray')===v}">${l}</button>`).join('')}</div></div>
    ${sw('st-exit-save',auto.save_on_exit,'Сохранять повтор при закрытии игры','Для профилей, которые включаются сами при запуске игры')}
@@ -830,9 +833,9 @@ const settingsUI={
     return `<div class="st-row"><span class="t"><b>${label}</b>${quick>=0?`<small>Сохраняет последние секунды записи</small>`:''}${dup?'<small style="color:#FFB4B5">Это сочетание занято другим действием</small>':''}</span>${quick>=0?`<label class="field" style="flex-direction:row;align-items:center;gap:8px"><input class="input num" type="number" min="5" max="1800" step="5" value="${q[quick]}" data-quick="${quick}" style="width:90px" aria-label="Длительность, секунд"><span class="hint">сек</span></label>`:''}<button type="button" class="keybtn ${listen?'listen':''} ${dup?'bad':''}" data-act="st-key" data-hk="${k}" aria-label="${esc(label)}: ${v?esc(v):'не задано'}. Нажмите, чтобы изменить">${listen?'Нажмите сочетание…':v?v.split('+').map(p=>`<kbd>${esc(p)}</kbd>`).join(''):'<span class="hint">Не задано</span>'}</button></div>`}).join('')}
   </section>
   <section class="card st-sec" id="st-folders"><h2>Папки</h2>
-   <div class="st-row"><span class="t"><b>Новые повторы, записи и клипы</b><small style="overflow-wrap:anywhere">${esc(state.storage?.recordings_dir||'')}</small></span><button type="button" class="btn" data-act="st-recdir">Изменить</button><button type="button" class="btn" data-act="st-open" data-target="exports">Открыть</button></div>
+   <div class="st-row"><span class="t"><b>Новые повторы, записи и клипы</b><small style="overflow-wrap:anywhere" data-i18n-ignore>${esc(state.storage?.recordings_dir||'')}</small></span><button type="button" class="btn" data-act="st-recdir">Изменить</button><button type="button" class="btn" data-act="st-open" data-target="exports">Открыть</button></div>
    <div class="st-row" style="flex-direction:column;align-items:stretch"><span class="t"><b>Дополнительные папки с видео</b><small>Видео из них появляются в библиотеке. Файлы остаются на месте.</small></span>
-    ${(state.settings.video_roots||[]).map(p=>`<div class="folder"><span title="${esc(p)}">${esc(p)}</span><button type="button" class="btn sm ghost" data-act="st-root-off" data-path="${esc(p)}">Отключить</button></div>`).join('')||'<span class="hint">Папки не добавлены.</span>'}
+    ${(state.settings.video_roots||[]).map(p=>`<div class="folder"><span title="${esc(p)}" data-i18n-ignore>${esc(p)}</span><button type="button" class="btn sm ghost" data-act="st-root-off" data-path="${esc(p)}">Отключить</button></div>`).join('')||'<span class="hint">Папки не добавлены.</span>'}
     <div style="display:flex;gap:8px"><button type="button" class="btn sm" data-act="st-root-add">${ic('plus')}Добавить папку</button><button type="button" class="btn sm" data-act="st-scan">${ic('refresh')}Обновить библиотеку</button></div></div>
   </section>
   <section class="card st-sec" id="st-look"><h2>Оформление</h2>

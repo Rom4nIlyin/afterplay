@@ -67,7 +67,8 @@
  window.afterplayI18n={get language(){return language},text:translated,apply,translate:walk,untranslated};
  const beforeRender=render;
  render=function(){
-  const value=state.settings.language||'ru';language=value==='en'?'en':'ru';document.documentElement.lang=language;
+  // Until the first state poll arrives keep the language remembered locally.
+  const value=state.settings.language||language;language=value==='en'?'en':'ru';document.documentElement.lang=language;
   beforeRender();walk();
  };
  const beforePreferences=window.updatePreferences;
