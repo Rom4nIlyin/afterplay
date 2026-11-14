@@ -12,7 +12,7 @@ on:
         default: false
   push:
     branches: ['main']
-    paths: ['version.py']
+    paths: ['src/version.py']
     tags: ['v*']
 permissions:
   contents: write
@@ -39,17 +39,23 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:RELEASE_VERSION -replace '^v', ''
-          if (-not $version) { $version = python -c 'from version import VERSION; print(VERSION)' }
+          if (-not $version) { $version = [regex]::Match((Get-Content src/version.py -Raw), "VERSION = '([^']+)'").Groups[1].Value }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid version' }
+          # A push that only moves or touches version.py must not publish the same release twice:
+          # build and test as usual, but skip signing and publishing when the tag already exists.
+          gh release view "v$version" --repo $env:GITHUB_REPOSITORY *> $null
+          $exists = ($LASTEXITCODE -eq 0)
+          "RELEASE_EXISTS=$($exists.ToString().ToLower())" >> $env:GITHUB_ENV
+          if ($exists) { Write-Host "Release v$version already exists; verifying the build without publishing." }
           python -m pip install -r requirements-lock.txt
           python scripts/build_translations.py --check
           if ($LASTEXITCODE -ne 0) { throw 'Translation catalog failed' }
-          Get-ChildItem ui -Filter *.js -Recurse | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE -ne 0) { throw "UI syntax failed: $($_.Name)" } }
+          Get-ChildItem src/ui -Filter *.js -Recurse | ForEach-Object { node --check $_.FullName; if ($LASTEXITCODE -ne 0) { throw "UI syntax failed: $($_.Name)" } }
           Get-ChildItem tests -Filter test_*.js | Sort-Object Name | ForEach-Object {
             node $_.FullName
             if ($LASTEXITCODE -ne 0) { throw "JavaScript tests failed: $($_.Name)" }
           }
-          python -m unittest discover -s tests
+          python -m unittest discover -s tests -t .
           if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
           python scripts/build_portable.py --version $version
           if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
@@ -59,7 +65,7 @@ jobs:
           "RELEASE_TAG=v$version" >> $env:GITHUB_ENV
           "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
       - name: Upload application binaries for verified signing
-        if: vars.SIGNPATH_ENABLED == 'true'
+        if: vars.SIGNPATH_ENABLED == 'true' && env.RELEASE_EXISTS != 'true'
         id: unsigned-binaries
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -71,7 +77,7 @@ jobs:
             build/portable-${{ env.RELEASE_VERSION }}/AFTERPLAY Portable/app/ProcessAudio.dll
             build/portable-${{ env.RELEASE_VERSION }}/AFTERPLAY Portable/app/ReplayNotification.dll
       - name: Request SignPath signature and wait for maintainer approval
-        if: vars.SIGNPATH_ENABLED == 'true'
+        if: vars.SIGNPATH_ENABLED == 'true' && env.RELEASE_EXISTS != 'true'
         uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -85,7 +91,7 @@ jobs:
           parameters: |
             version: "${{ env.RELEASE_VERSION }}.0"
       - name: Verify signed files and regenerate portable checksums
-        if: vars.SIGNPATH_ENABLED == 'true'
+        if: vars.SIGNPATH_ENABLED == 'true' && env.RELEASE_EXISTS != 'true'
         shell: pwsh
         run: |
           $bundle = "build/portable-$env:RELEASE_VERSION/AFTERPLAY Portable"
@@ -99,6 +105,7 @@ jobs:
           python scripts/repackage_portable.py --bundle $bundle --output dist --version $env:RELEASE_VERSION
           if ($LASTEXITCODE -ne 0) { throw 'Signed bundle verification failed' }
       - name: Publish ZIP and SHA-256
+        if: env.RELEASE_EXISTS != 'true'
         shell: pwsh
         run: |
           $assets = @(Get-ChildItem dist/*.zip, dist/*.sha256 | ForEach-Object FullName)

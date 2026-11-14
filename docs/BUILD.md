@@ -1,106 +1,89 @@
-# Сборка на Windows
+# Сборка и разработка
 
 Нужны Windows x64, **Python 3.13 x64** с pip, .NET Framework 4.8 и интернет.
-Для разработки интерфейса нужен установленный WebView2 Runtime.
-Visual Studio не требуется: C#-компоненты компилируются штатным компилятором .NET Framework.
+Для запуска интерфейса из исходников нужен установленный WebView2 Runtime.
+Visual Studio не требуется: C#-компоненты собирает штатный компилятор .NET Framework.
 
-## Готовая портативная сборка
+## Структура репозитория
 
-В корне клонированного репозитория:
+| Папка | Что внутри | В сборке |
+| :--- | :--- | :--- |
+| `src/` | Python-модули, интерфейс `src/ui`, модель шумоподавления `src/models`, PowerShell-помощники | `app/` |
+| `native/` | `Launcher.cs` (AFTERPLAY.exe), `Updater.cs`, `ProcessAudio.cs`, `ReplayNotification.cs`, `RuntimeExit.cs`, `app.manifest` | собранные `.exe` / `.dll` |
+| `scripts/` | `build_portable.py`, `build_translations.py`, `repackage_portable.py` | — |
+| `tests/` | Тесты Python (`test_*.py`) и JavaScript (`test_*.js`), C#-пробы | — |
+| `docs/` | Руководство, сборка, проверки; `legal/` — лицензии, `archive/` — старые заметки | `docs/` без `archive` |
 
-```powershell
-python scripts/build_portable.py
-```
+`src/` повторяет папку `app/` готовой программы, поэтому пути внутри кода (`ui/`, `models/`) одинаковы при разработке и в сборке.
 
-Результат: `dist/AFTERPLAY-1.10.0-Portable-Win64.zip` и файл `.sha256`.
-Сборка содержит Python, закреплённые зависимости, FFmpeg и автономный
-подписанный установщик WebView2. Личные файлы из `data` не копируются.
-Загруженные установщики кэшируются в `build/downloads`.
-Для зависимостей используются готовые wheels; небольшой чисто Python-пакет
-`proxy_tools` собирается pip из исходного дистрибутива и не требует C/C++-компилятора.
-Скрипт не перезаписывает существующую папку сборки. Для другой версии:
-
-```powershell
-python scripts/build_portable.py --version 1.10.0
-```
-
-При повторной сборке той же версии переименуйте предыдущую папку `build/portable-1.3.0`
-и предыдущий ZIP в `dist`, либо выберите другой номер версии.
-Не собирайте программу в папку с личными записями.
-
-## Запуск для разработки
+## Запуск из исходников
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements-lock.txt
-```
-
-Скомпилируйте библиотеки в корень репозитория:
-
-```powershell
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-& $compiler /nologo /target:library /platform:x64 /out:ProcessAudio.dll ProcessAudio.cs
-& $compiler /nologo /target:library /platform:x64 /r:System.Windows.Forms.dll /r:System.Drawing.dll /out:ReplayNotification.dll ReplayNotification.cs
-.venv\Scripts\python.exe app.py
+& $compiler /nologo /target:library /platform:x64 /out:src\ProcessAudio.dll native\ProcessAudio.cs
+& $compiler /nologo /target:library /platform:x64 /r:System.Windows.Forms.dll /r:System.Drawing.dll /out:src\ReplayNotification.dll native\ReplayNotification.cs
+.venv\Scripts\python.exe src\app.py
 ```
 
-Без консольного окна:
+Без консольного окна — `pythonw.exe src\app.py`. Собранные `.dll` в Git не попадают.
+
+`requirements.txt` перечисляет прямые зависимости, `requirements-lock.txt` закрепляет и транзитивные зависимости проверенной сборки.
+
+## Тесты и проверки
+
+Из корня репозитория:
 
 ```powershell
-.venv\Scripts\pythonw.exe app.py
+python -m unittest discover -s tests -t .          # Python
+Get-ChildItem tests -Filter test_*.js | ForEach-Object { node $_.FullName }   # JavaScript
+python scripts/build_translations.py --check       # словари EN и KO
 ```
 
-`requirements.txt` перечисляет прямые зависимости. `requirements-lock.txt` закрепляет
-также транзитивные зависимости проверенной сборки. Драйвер видеокарты и системные
-компоненты Windows не включаются в Python-зависимости.
+`tests/__init__.py` сам добавляет `src/` в путь импорта, поэтому нужен ключ `-t .`.
 
-## Проверка окна и элементов управления
+Проверка окна без записи экрана:
 
 ```powershell
-.venv\Scripts\python.exe app.py --smoke --data build\smoke-data
+.venv\Scripts\python.exe src\app.py --smoke --data build\smoke-data
 ```
 
-Проверка создаёт скрытое окно WebView2, открывает раздел повтора и проверяет наличие
-семи вариантов длительности, четырёх режимов звука, двух источников картинки,
-пяти частот кадров и трёх режимов качества. Результат:
-`build/smoke-data/verification-native-clips.json`, поле `ok` должно быть `true`.
-Запись экрана этим режимом не включается.
+Результат — `build/smoke-data/verification-native-clips.json`, поле `ok` должно быть `true`. Эта проверка не заменяет настоящую запись: включите буфер, сохраните клип и проверьте готовый MP4.
 
-Эта проверка не заменяет реальную запись: включите буфер, сохраните клип и проверьте
-готовый MP4. Для аудиоизоляции воспроизводите разные звуки в двух независимых
-приложениях, захватите одно и убедитесь, что второе не слышно в сохранённом файле.
+## Переводы
 
-## Что хранить в Git
+Русский — исходный язык. `src/ui/en.json` и `src/ui/ko.json` переводят русские строки по ключу. Ключ с `{0}` совпадает с целой фразой, где `{0}` — любое значение. Ключ с `{#0}` — только число, и такая фраза находится и внутри длинного текста, например даты.
 
-Исходники Python/C#, интерфейс, иконки, документацию и списки зависимостей.
-`data`, `runtime`, `build`, `dist`, скачанные установщики, видео и собранные EXE/DLL
-исключены через `.gitignore`. Готовые архивы публикуются как **GitHub Release assets**.
+После правки словарей пересоберите браузерные каталоги:
 
-## Сборка релиза на GitHub
+```powershell
+python scripts/build_translations.py
+```
 
-Actions → Portable release → Run workflow, укажите версию без `v`.
-Сборка Windows проверяет тесты, создаёт ZIP/SHA-256 и публикует релиз. То же
-задание запускается при push тега `v*`. Повторная публикация существующего релиза
-останавливается; уже опубликованные файлы не перезаписываются.
+Проверка `--check` падает, если в корейском словаре не хватает строк английского или не совпадают места для чисел.
 
-Номер в исходном `version.py` и версия сборки должны соответствовать релизу.
-При упаковке `version.py` генерируется из аргумента `--version`. Для автопроверки
-используется только последний стабильный GitHub Release и архив вида
-`AFTERPLAY-VERSION-Portable-Win64.zip`; Source code не устанавливается.
+## Портативная сборка
 
-Тесты `tests/test_updates.py` проверяют установщик на временных каталогах:
-реальная .NET-программа копирует файлы и восстанавливает их при блокировке одного
-из файлов. Проверки ярлыков и автозапуска используют временные папки и не меняют
-рабочий стол или реальную автозагрузку компьютера сборки.
+```powershell
+python scripts/build_portable.py                 # версия из src/version.py
+python scripts/build_portable.py --version 1.16.0
+```
 
-Сборщик также загружает FFmpeg 9.0.2 по закреплённому URL, проверяет SHA-256 и кладёт его в `app/runtime/ffmpeg.exe`. GPU-путь использует фильтр `gfxcapture`; тесты без NVIDIA проверяют построение команд, а реальная запись проверяется на машине с NVENC.
+Результат — `dist/AFTERPLAY-<версия>-Portable-Win64.zip` и `.sha256`. Сборка кладёт внутрь Python, закреплённые зависимости, FFmpeg (закреплённый URL и SHA-256) и подписанный установщик WebView2. Загрузки кэшируются в `build/downloads`. Скрипт не перезаписывает существующую папку сборки: для повторной сборки той же версии переименуйте прежние `build/portable-<версия>` и ZIP в `dist`.
 
-## Структура portable 1.10.0
+Раскладка архива: в корне `AFTERPLAY.exe` и `README.md` (из `docs/PORTABLE.md`), программа в `app/`, справка и лицензии в `docs/`. Каталог контрольных сумм — `app/SHA256SUMS.json`, ключи относительны к корню portable-папки.
 
-Разработческие исходники остаются в репозитории; сборщик раскладывает установленные
-компоненты в `app`, справку и лицензии в `docs`. В корне архива лежат только
-`AFTERPLAY.exe` и `README.md`. Каталог контрольных сумм: `app/SHA256SUMS.json`,
-его ключи остаются относительными к корню portable-папки.
-Для перехода со старых установок используется `app/Update-Existing.ps1` из нового
-архива. Старый встроенный обновлятор не принимает новую структуру.
-После миграции последующие встроенные обновления поддерживают новую раскладку.
+## Выпуск на GitHub
+
+Выпуск собирает workflow **Portable release** (`.github/workflows/release.yml`). Он запускается, когда в `main` меняется `src/version.py`, при push тега `v*` или вручную. Workflow проверяет переводы и тесты, собирает архив и публикует выпуск с текстом из `docs/RELEASE.md`. Если выпуск с этой версией уже есть, workflow всё проверяет и собирает, но ничего не публикует.
+
+Workflow **Tests** (`.github/workflows/tests.yml`) прогоняет те же проверки на других ветках и в pull request.
+
+Порядок выпуска:
+
+1. Поднимите `VERSION` в `src/version.py`.
+2. Добавьте раздел в `CHANGELOG.md` и обновите `docs/RELEASE.md`.
+3. Влейте изменения в `main`.
+
+Встроенный обновлятор берёт только последний стабильный выпуск с архивом вида `AFTERPLAY-<версия>-Portable-Win64.zip`. Для перехода со старых установок (1.8.3 и раньше) служит `app/Update-Existing.ps1` из нового архива.

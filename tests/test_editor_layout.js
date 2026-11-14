@@ -1,6 +1,6 @@
 'use strict';
-const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),Seq=require('../ui/sequence-model.js');
-const review=fs.readFileSync(require.resolve('../ui/review-ui.js'),'utf8'),sequence=fs.readFileSync(require.resolve('../ui/sequence-ui.js'),'utf8');
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),Seq=require('../src/ui/sequence-model.js');
+const review=fs.readFileSync(require.resolve('../src/ui/review-ui.js'),'utf8'),sequence=fs.readFileSync(require.resolve('../src/ui/sequence-ui.js'),'utf8');
 const c={};vm.createContext(c);vm.runInContext(review.slice(review.indexOf('function reviewTimelineHeight('),review.indexOf('function reviewInstallSplitter(')),c);
 assert.equal(c.reviewTimelineHeight(300,700),300);assert.equal(c.reviewTimelineHeight(900,500),290);assert.equal(c.reviewTimelineHeight(50,700),110);
 let seek=null,select=null,remember=0;

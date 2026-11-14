@@ -40,7 +40,7 @@ class NativeProcessAudioTests(unittest.TestCase):
         source=Path(__file__).resolve().parents[1]
         cls.exe=cls.root/'ProcessAudioProbe.exe'
         compiler=Path(os.environ['WINDIR'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-        subprocess.run([str(compiler),'/nologo','/platform:x64','/out:'+str(cls.exe),str(source/'ProcessAudio.cs'),str(source/'tests/ProcessAudioProbe.cs')],check=True,capture_output=True,timeout=30)
+        subprocess.run([str(compiler),'/nologo','/platform:x64','/out:'+str(cls.exe),str(source/'native/ProcessAudio.cs'),str(source/'tests/ProcessAudioProbe.cs')],check=True,capture_output=True,timeout=30)
 
     @classmethod
     def tearDownClass(cls):cls.temp.cleanup()

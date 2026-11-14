@@ -143,7 +143,7 @@ class NativeUpdaterTests(unittest.TestCase):
         cls.workspace=tempfile.TemporaryDirectory();cls.home=Path(cls.workspace.name)
         cls.helper=cls.home/'Updater.exe'
         compiler=Path(os.environ['WINDIR'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-        source=Path(__file__).resolve().parents[1]/'Updater.cs'
+        source=Path(__file__).resolve().parents[1]/'native/Updater.cs'
         subprocess.run([str(compiler),'/nologo','/target:winexe','/platform:x64','/r:System.Web.Extensions.dll','/r:System.Windows.Forms.dll',
                         '/out:'+str(cls.helper),str(source)],check=True,capture_output=True)
 

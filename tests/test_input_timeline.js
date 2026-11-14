@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const InputTimeline=require('../ui/input-timeline.js');
+const InputTimeline=require('../src/ui/input-timeline.js');
 const events=[[0,'K87',true],[.5,'M1',true],[1,'M1',false],[2,'K87',false]];
 const track=new InputTimeline(events);
 assert.deepEqual([...track.at(.75)].sort(),['K87','M1']);

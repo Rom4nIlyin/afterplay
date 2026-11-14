@@ -1,5 +1,9 @@
-# Скрипты сборки
+# Скрипты
 
-`build_portable.py` создаёт портативную сборку Windows x64 и ZIP с контрольной суммой SHA-256.
-Запускайте из корня репозитория: `python scripts/build_portable.py`.
-Требования и подробности — в [инструкции сборки](../docs/BUILD.md).
+| Скрипт | Что делает |
+| :--- | :--- |
+| `build_portable.py` | Собирает portable-архив Windows x64 и `.sha256` в `dist/` |
+| `build_translations.py` | Собирает `src/ui/en-catalog.js` и `ko-catalog.js`; с `--check` проверяет полноту словарей |
+| `repackage_portable.py` | Переупаковывает архив после подписи файлов |
+
+Запускайте из корня репозитория. Подробности — в [docs/BUILD.md](../docs/BUILD.md).

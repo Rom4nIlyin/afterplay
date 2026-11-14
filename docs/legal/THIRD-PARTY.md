@@ -43,7 +43,7 @@ dependencies retain distribution metadata and licenses under app/runtime/Lib/sit
 
 Process-specific audio uses the public Windows WASAPI process loopback API:
 https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_process_loopback_params
-Source: https://github.com/Rom4nIlyin/afterplay/blob/main/ProcessAudio.cs and app/process_audio.py in the portable bundle.
+Source: https://github.com/Rom4nIlyin/afterplay/blob/main/native/ProcessAudio.cs and app/process_audio.py in the portable bundle.
 
 Windows Capture 2.0.1 (MIT): https://github.com/NiiightmareXD/windows-capture
 PyAV 19.0.2 (BSD-3-Clause): https://github.com/PyAV-Org/PyAV

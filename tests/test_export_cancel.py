@@ -2,7 +2,7 @@ import sys,threading,time,tempfile,unittest
 from pathlib import Path
 from unittest.mock import Mock,patch
 sys.dont_write_bytecode=True
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from export_control import ExportControl,ExportCancelled
 from app import Suite
 

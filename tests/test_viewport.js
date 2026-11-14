@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-require('../ui/trim-viewport.js');
+require('../src/ui/trim-viewport.js');
 const v=globalThis.TrimViewport,s={duration:300,start:189.373,end:194.373,viewStart:0,viewEnd:300};
 const zoom=v.zoom(s,10,.64);
 assert.equal(zoom.viewEnd-zoom.viewStart,30);

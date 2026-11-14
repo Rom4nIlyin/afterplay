@@ -14,7 +14,7 @@ class RuntimeExitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             executable=Path(temp)/'ShutdownProbe.exe'
             compiler=Path(os.environ['WINDIR'])/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-            built=subprocess.run([str(compiler),'/nologo','/platform:x64','/out:'+str(executable),str(root/'RuntimeExit.cs'),str(root/'tests/ShutdownProbe.cs')],capture_output=True,timeout=30)
+            built=subprocess.run([str(compiler),'/nologo','/platform:x64','/out:'+str(executable),str(root/'native/RuntimeExit.cs'),str(root/'tests/ShutdownProbe.cs')],capture_output=True,timeout=30)
             self.assertEqual(built.returncode,0,built.stdout+built.stderr)
             baseline=subprocess.run([str(executable),str(runtime),'baseline'],capture_output=True,timeout=30)
             self.assertEqual(baseline.returncode,2,baseline.stdout+baseline.stderr)

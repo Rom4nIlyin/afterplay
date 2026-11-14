@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const root=path.join(__dirname,'..'),profiles=fs.readFileSync(path.join(root,'ui/profiles-ui.js'),'utf8'),replay=fs.readFileSync(path.join(root,'ui/replay-ui.js'),'utf8');
+const root=path.join(__dirname,'..'),profiles=fs.readFileSync(path.join(root,'src/ui/profiles-ui.js'),'utf8'),replay=fs.readFileSync(path.join(root,'src/ui/replay-ui.js'),'utf8');
 async function run(){
  const game='C:\\Games\\Gloria Victis\\gv.exe',calls=[];
  const fields={'.studio-profiles':{dataset:{profileId:game}},'#captureProfile':{value:game},'#profilePath':{value:game},'#profileName':{value:'Gloria Victis'},'#replayWindow':{selectedOptions:[{dataset:{path:game}}]},'#replayConfigStatus':{dataset:{}}};

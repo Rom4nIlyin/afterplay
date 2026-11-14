@@ -1,5 +1,5 @@
 'use strict';
-const assert=require('node:assert/strict'),M=require('../ui/sequence-model.js');
+const assert=require('node:assert/strict'),M=require('../src/ui/sequence-model.js');
 const p=M.normalize({segments:[{id:'a',start:10,end:20,audio:{audio_mode:'none'},show_inputs:true},{id:'b',start:1,end:4}]});
 assert.equal(M.total(p),13);
 const first=p.segments[0].uid,right=M.split(p,first,4);

@@ -1,8 +1,8 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const root=path.join(__dirname,'..');
-const studio=fs.readFileSync(path.join(root,'ui/studio-ui.js'),'utf8');
-const review=fs.readFileSync(path.join(root,'ui/review-ui.js'),'utf8');
+const studio=fs.readFileSync(path.join(root,'src/ui/studio-ui.js'),'utf8');
+const review=fs.readFileSync(path.join(root,'src/ui/review-ui.js'),'utf8');
 async function run(){
  const listeners={},player={paused:true},button={click(){player.paused=!player.paused;this.clicks++},clicks:0};
  const fullscreen={clicks:0,click(){this.clicks++}};

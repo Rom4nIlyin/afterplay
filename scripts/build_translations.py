@@ -5,7 +5,7 @@ Every catalog must translate exactly the same Russian keys as English, with the 
 """
 from pathlib import Path
 import argparse,json,re
-root=Path(__file__).resolve().parents[1]
+root=Path(__file__).resolve().parents[1]/'src'
 parser=argparse.ArgumentParser();parser.add_argument('--check',action='store_true');args=parser.parse_args()
 english=json.loads((root/'ui/en.json').read_text('utf-8'))
 problems=[]

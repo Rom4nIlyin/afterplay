@@ -1,136 +1,150 @@
-<p align="center"><img src="docs/media/banner.svg" alt="AFTERPLAY — сохраняй лучшее" width="100%"></p>
+<p align="center"><img src="docs/media/banner.svg" alt="AFTERPLAY — сохрани момент, который уже случился" width="100%"></p>
 
 <p align="center">
-  <a href="https://github.com/Rom4nIlyin/afterplay/releases/latest"><img alt="Последний релиз" src="https://img.shields.io/github/v/release/Rom4nIlyin/afterplay?style=flat-square&amp;color=76dccb&amp;label=release"></a>
-  <a href="https://github.com/Rom4nIlyin/afterplay/actions/workflows/release.yml"><img alt="Сборка Windows" src="https://github.com/Rom4nIlyin/afterplay/actions/workflows/release.yml/badge.svg"></a>
-  <img alt="Windows x64" src="https://img.shields.io/badge/Windows-x64-94bcfa?style=flat-square">
-  <img alt="Русский и English" src="https://img.shields.io/badge/languages-RU%20%2F%20EN-c5bdff?style=flat-square">
-  <a href="LICENSE"><img alt="Лицензия MIT" src="https://img.shields.io/badge/license-MIT-d7bd83?style=flat-square"></a>
+  <a href="https://github.com/Rom4nIlyin/afterplay/releases/latest"><img alt="Последний выпуск" src="https://img.shields.io/github/v/release/Rom4nIlyin/afterplay?style=flat-square&amp;color=FF8A3D&amp;labelColor=131519&amp;label=release"></a>
+  <a href="https://github.com/Rom4nIlyin/afterplay/actions/workflows/release.yml"><img alt="Сборка" src="https://img.shields.io/github/actions/workflow/status/Rom4nIlyin/afterplay/release.yml?style=flat-square&amp;labelColor=131519&amp;label=build"></a>
+  <img alt="Windows 10 и 11, x64" src="https://img.shields.io/badge/Windows-10%20%7C%2011%20x64-C4C9D1?style=flat-square&amp;labelColor=131519">
+  <img alt="Русский, English, 한국어" src="https://img.shields.io/badge/UI-RU%20%C2%B7%20EN%20%C2%B7%20KO-C4C9D1?style=flat-square&amp;labelColor=131519">
+  <a href="LICENSE"><img alt="Лицензия MIT" src="https://img.shields.io/badge/license-MIT-C4C9D1?style=flat-square&amp;labelColor=131519"></a>
 </p>
 
-<p align="center"><b>Сохрани момент, который уже случился.</b><br>Мгновенный повтор, личная видеотека и монтаж для Windows — в одном portable-приложении.</p>
+<p align="center">
+  <a href="https://github.com/Rom4nIlyin/afterplay/releases/latest"><b>⬇ Скачать для Windows</b></a>
+  &nbsp;·&nbsp; <a href="#как-это-работает">Как это работает</a>
+  &nbsp;·&nbsp; <a href="#экспорт">Экспорт</a>
+  &nbsp;·&nbsp; <a href="docs/USER-GUIDE.md">Руководство</a>
+  &nbsp;·&nbsp; <a href="#english">English</a>
+  &nbsp;·&nbsp; <a href="#한국어">한국어</a>
+</p>
 
-<p align="center"><a href="https://github.com/Rom4nIlyin/afterplay/releases/latest"><b>Скачать AFTERPLAY для Windows</b></a> · <a href="#быстрый-старт">Быстрый старт</a> · <a href="docs/CUSTOMIZATION.md">Оформление</a> · <a href="docs/STUDIO.md">Монтаж</a> · <a href="#english">English</a></p>
+---
 
-<img src="docs/media/library.jpg" alt="Библиотека AFTERPLAY в теме Aurora с демонстрационными записями" width="100%">
+**AFTERPLAY** держит в памяти последние минуты игры. Случилось что-то стоящее — нажимаешь клавишу, и момент уже сохранён. Дальше его можно посмотреть, обрезать мышкой и выгрузить под Discord, TikTok, YouTube или в GIF. Всё работает на твоём компьютере: без аккаунтов, облака и рекламы.
 
-## Играй. Отмечай. Сохраняй.
+## Возможности
 
-Нажми **«Включить запись»**, чтобы начать, и **«Отключить запись»**, чтобы сохранить всё видео с начала сессии. Можно записывать час и дольше, пока хватает места на диске. **«Включить повтор»** отдельно запускает буфер последних **1–30 минут**. Оба режима могут работать одновременно: сохранение повтора не прерывает обычную запись. Дальше можно выбрать точный отрезок, настроить звук и экспортировать клип.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-| Момент | Что умеет AFTERPLAY |
+### ⏺ Запись
+- **Мгновенный повтор** — буфер последних 1–30 минут, сохранение по клавише.
+- **Обычная запись** — от старта до остановки, хоть час и дольше.
+- **Быстрые клипы** — последние 30 секунд или 2 минуты одной клавишей.
+- Экран целиком или одно окно, H.264 через **NVIDIA NVENC** или процессор.
+- **Профили игр** включают повтор сами, когда запускается игра.
+
+</td>
+<td width="50%" valign="top">
+
+### 🔊 Звук
+- Весь звук компьютера, только выбранная игра или всё, кроме неё.
+- **Отдельные дорожки**: общий звук, игра, Discord / чат, микрофон.
+- Шумоподавление микрофона — локально, без интернета.
+- При просмотре и экспорте дорожки сочетаются как угодно, громкость каждой — до 150 %.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### 🎞 Библиотека и просмотр
+- Записи сгруппированы по дням, есть поиск, избранное и метки моментов.
+- Просмотр на всё окно: превью кадра при перемотке, скорость 0,1–5×.
+- **← →** — по кадру, **Shift + ← →** — на 5 секунд. GIF тоже листается по кадрам.
+- Можно подключить свои папки с видео: файлы остаются на месте.
+
+</td>
+<td valign="top">
+
+### ✂ Обрезка и экспорт
+- Края отрезка тянутся мышкой, таймер на видео — по галочке.
+- Готовые варианты: Discord, Nitro, TikTok / Shorts, YouTube, GIF.
+- У каждого варианта свой переключатель качества с подсказкой, что он даёт.
+- «Копировать файл» — и клип сразу вставляется в Discord.
+
+</td>
+</tr>
+</table>
+
+## Как это работает
+
+1. **Включи повтор** кнопкой в шапке или настрой профиль игры, чтобы он включался сам.
+2. **Играй.** AFTERPLAY тихо держит в буфере последние минуты.
+3. **Нажми `Ctrl` + `Alt` + `F10`**, когда случилось что-то стоящее. Момент сохранён.
+4. **Обрежь и выгрузи**: открой запись, выдели отрезок и выбери, куда экспортировать.
+
+| Действие | Клавиши по умолчанию |
 | :--- | :--- |
-| **Запись** | Экран или окно, H.264, NVIDIA NVENC при наличии поддержки и CPU-путь, профили и необязательный автозапуск по приложению. |
-| **Звук** | Устройство, выбранный процесс, исключение приложения, отдельные игра / чат и необязательная дорожка микрофона. |
-| **Видеотека** | Поиск, теги, избранное, заметки, обложка из кадра и живые превью по наведению. |
-| **Монтаж** | Общий таймлайн до 50 фрагментов: нарезка, порядок, свободное размещение, история и экспорт MP4 / GIF. |
-| **Нажатия** | Необязательная запись клавиатуры и мыши без оверлея в игре; включаемый слой в монтаже и экспорте. |
-| **Быстрые клипы** | Три дополнительные клавиши с собственной длительностью от 5 секунд до 30 минут. |
-| **Твой стиль** | Onyx Cinema с пятью палитрами и иллюстрациями; классические темы, фоны, звуки и переносимые наборы оформления. |
+| Сохранить повтор | `Ctrl` + `Alt` + `F10` |
+| Быстрый клип: 30 секунд / 2 минуты | `Ctrl` + `Alt` + `F6` / `F7` |
+| Показать или спрятать окно | `Ctrl` + `Alt` + `F8` |
+| Начать / остановить запись, поставить метку | назначаются в настройках |
 
-При первом открытии короткое обучение показывает вкладки и основные настройки. Его можно пропустить или повторить через **Настройки → Пройти обучение**. Для новой установки включены автозапуск с Windows в трее и закрытие крестиком в трей; кнопка «Свернуть» оставляет окно на панели задач. Существующие настройки сохраняются.
+## Экспорт
 
-## Onyx Cinema
+| Вариант | Качество на выбор | Для чего |
+| :--- | :--- | :--- |
+| **Discord · до 10 МБ** | Чётче · 30 fps / Плавнее · 60 fps | Без Nitro. Два прохода сжатия, разрешение подбирается по длине: короткий клип — 1080p, длинный — меньше, но без «квадратов». |
+| **Discord Nitro · до 500 МБ** | Стандарт / Высокое / Исходник | Исходное разрешение и fps. |
+| **TikTok / Shorts · 9:16** | 720p / 1080p / 1080p макс. | Вертикальное видео с обрезкой по центру. |
+| **YouTube** | Высокое / Исходник | «Исходник» копирует видео без перекодирования: качество как в записи, экспорт за секунды. |
+| **GIF** | Лёгкий / Хорошее / Высокое | 2–15 секунд, до 1080 px и 30 fps, своя палитра на каждый кадр. |
 
-Верхняя панель и тонкие полосы прокрутки следуют выбранной палитре. В редакторе перетаскиваемый разделитель регулирует высоту просмотра и дорожки; положение сохраняется.
+## Установка
 
-Новый интерфейс: крупное превью, сведения о записи, пять палитр, свои цвета и четыре иллюстрации бокового меню. Выбранный профиль видно справа вверху. **Ctrl+K** открывает команды, **Ctrl+Z / Ctrl+Shift+Z** — историю обрезки, **I / O** — её границы. Экспорт MP4 или GIF можно отменить в панели прогресса. Классический интерфейс остаётся доступен в «Оформлении».
+1. Скачай `AFTERPLAY-…-Portable-Win64.zip` со [страницы выпуска](https://github.com/Rom4nIlyin/afterplay/releases/latest) и сверь его с файлом `.sha256`.
+2. Распакуй архив целиком в любую папку, например `C:\AFTERPLAY Portable`.
+3. Запусти **`AFTERPLAY.exe`**. Python, FFmpeg и установщик WebView2 уже внутри.
 
-## Классическое оформление
+Обновления приходят через **Настройки → Обновления**: записи, профили и настройки сохраняются, старые файлы программы уходят в резервную копию.
 
-**Obsidian · Frosted Glass · Aurora · Ember · Mist · Paper** — шесть заметно разных тем без близких дублей.
-Меняй цвета, масштаб, карточки, расположение разделов, таймер и рабочее пространство. Сохраняй сочетания в наборы, переноси их вместе со своими ресурсами и удаляй ненужные с подтверждением.
-
-<img src="docs/media/themes.gif" alt="Смена тем Aurora, Frosted Glass, Paper и Ember в настоящем интерфейсе AFTERPLAY" width="100%">
-
-*Короткая анимация смены оформления в приложении. Скриншоты ниже можно открыть в полном размере.*
+**Нужно:** Windows 10 или 11 x64. Звук отдельной игры — Windows 11 (или сборка 20348+). NVENC — видеокарта NVIDIA; без неё запись идёт через процессор.
 
 <details>
-<summary><b>Посмотреть экран оформления</b></summary>
+<summary><b>Где что хранится</b></summary>
 
-<img src="docs/media/appearance.jpg" alt="Темы и настройки фона AFTERPLAY" width="100%">
+| Папка | Что внутри |
+| :--- | :--- |
+| `AFTERPLAY.exe` | Запуск программы |
+| `app` | Программа: Python, интерфейс, FFmpeg, обновлятор |
+| `data` | Настройки, библиотека, журналы; появляется при первом запуске |
+| `docs` | Руководство, список изменений, лицензии |
+| `backups` | Прошлые файлы программы; появляется при обновлении |
 
+Записи лежат в папке, которую ты выберешь в настройках. Удаление программы их не трогает.
 </details>
 
-Свой PNG, JPG, GIF, MP4 или WebM можно сделать фоном. Видео остаётся без звука; анимация может останавливаться при записи и экспорте и автоматически останавливается при скрытии окна. Сигналы метки, сохранения и ошибки настраиваются отдельно. [Все настройки оформления →](docs/CUSTOMIZATION.md)
-
-## От большого повтора к нужному клипу
-
-Открой запись или выбери несколько карточек кнопкой **+**, затем нажми **Монтаж** / **Собрать подборку**. Добавляй несколько нарезок одного видео, меняй порядок перетаскиванием, обрезай края, разрезай и размещай фрагменты на общей дорожке. Колесо прокручивает дорожку, Ctrl + колесо меняет масштаб; верхняя полоса быстро перематывает весь проект. Черновик сохраняется автоматически. Выбери звук, таймер и отображение нажатий для каждого фрагмента, затем экспортируй монтаж. Исходные записи остаются на месте.
-
-**F** переключает полный экран, **пробел** и клик по видео — воспроизведение и паузу. Полноэкранные кнопки, перемотка и курсор скрываются через 1,5 секунды бездействия; движение мыши возвращает управление.
-
-<img src="docs/media/editor.jpg" alt="Монтаж AFTERPLAY: просмотр, точные границы отрезка и дорожка миниатюр" width="100%">
-
-**Микрофон — по желанию.** Он включается в параметрах профиля, сохраняется отдельной дорожкой и может быть исключён из прослушивания или экспорта. Опция **«Чистый и ровный голос»** подавляет фоновый шум нейросетью RNNoise, выравнивает громкость речи и ограничивает пики. Обработка работает локально и применяется к новым записям; её можно отключить для каждого профиля. [Руководство по записи и монтажу →](docs/STUDIO.md)
-
-## Быстрый старт
-
-1. Скачай **`AFTERPLAY-1.15.3-Portable-Win64.zip`** со [страницы релиза](https://github.com/Rom4nIlyin/afterplay/releases/latest) и распакуй архив целиком.
-2. Запусти **`AFTERPLAY.exe`**. Python и FFmpeg входят в комплект; при необходимости программа предложит установить WebView2.
-3. На странице **Запись и повтор** выбери профиль, источник и звук. Изменения профиля сохрани зелёной кнопкой.
-4. Включи обычную запись, повтор или оба режима. Прежняя горячая клавиша сохраняет последние X минут; обычная запись сохраняется целиком при отключении. Для неё можно назначить отдельное сочетание.
-
-**Язык:** Настройки → Общие → Язык интерфейса → Русский / English. Выбор сохраняется после перезапуска.
-
-На странице записи карточка **«Примерный размер файла»** пересчитывается сразу при изменении параметров. Для CBR/VBR используются длительность и битрейт видео/аудиодорожек; для CQ/CRF — диапазон с учётом разрешения, FPS, качества, кодировщика и пресета. [Как считается оценка →](docs/FILE-SIZE-ESTIMATE.md)
-
-Кнопка **GitHub** рядом с обновлением открывает репозиторий AFTERPLAY в браузере. В настройках справа от неё находится поле со ссылкой на репозиторий и значком копирования внутри поля.
-
-Справа снизу на каждой карточке видео есть значок корзины. Перед удалением можно выбрать **«В корзину»** или **«Удалить навсегда»**: второй вариант удаляет исходный видеофайл с компьютера, минуя корзину. Карточки настроек занимают высоту по содержимому и заполняют свободные места в двух колонках.
-
-При сохранении клипа, GIF или монтажа используется введённое название без даты и случайных символов. При совпадении имени создаётся файл **«Название (2)»**, сохраняя существующий файл.
-
-### Обновление
-
-Используй проверку обновлений в настройках. Для ручного обновления полностью выйди из AFTERPLAY и запусти из **новой распакованной папки**:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\app\Update-Existing.ps1 -Target "C:\AFTERPLAY Portable"
-```
-
-Обновлятор создаёт резервную копию и сохраняет текущие настройки, наборы, горячие клавиши и библиотеку. Если программа находится в другой папке, укажи её через `-Target`.
-
-### Требования и данные
-
-Windows x64 с установленным WebView2. Запись звука отдельного процесса требует **Windows 11 или build 20348+**. GPU-кодирование зависит от видеокарты и драйвера; доступен CPU-путь. Микрофон и автозапись включаются отдельно.
-
-Настройки и библиотека находятся рядом с приложением в `data`. Видео сохраняются в выбранной тобой папке. Для записи и редактирования учётная запись не нужна. Проверка обновлений обращается к GitHub.
-
-<details>
-<summary><b>Что лежит в portable-папке</b></summary>
+## Для разработчиков
 
 ```text
-AFTERPLAY Portable/
-├── AFTERPLAY.exe     запуск
-├── README.md         краткая инструкция
-├── app/              интерфейс, компоненты, Python и FFmpeg
-├── docs/             руководства и лицензии
-├── data/             создаётся при запуске: твои настройки и библиотека
-└── backups/          создаётся при обновлении
+src/        программа — то же, что попадает в папку app/ сборки: Python, интерфейс (src/ui), модели
+native/     C#-лаунчер, обновлятор и помощники для звука и уведомлений
+scripts/    сборка portable-архива, словари переводов, переупаковка после подписи
+tests/      тесты Python и JavaScript
+docs/       руководство, сборка, проверки, лицензии, архив старых заметок
 ```
 
-Не копируй новый архив поверх работающей программы. [Подробнее об установке и обновлении →](docs/PORTABLE.md)
+```powershell
+python -m unittest discover -s tests -t .     # тесты Python
+python scripts/build_translations.py --check  # словари EN и KO полные
+python scripts/build_portable.py              # архив в dist/
+```
 
-</details>
-
-## Документация и разработка
-
-| | |
-| :--- | :--- |
-| [Оформление и наборы](docs/CUSTOMIZATION.md) | Темы, фоны, звуки, превью, уведомления и язык. |
-| [Запись и монтаж](docs/STUDIO.md) | Профили, звук, метки, точные кадры и экспорт. |
-| [Сборка из исходников](docs/BUILD.md) | Windows, Python 3.13 x64 и закреплённые зависимости. |
-| [Проверки](docs/VERIFICATION.md) | Автоматические и нативные проверки, ограничения результатов. |
-| [История изменений](CHANGELOG.md) | Возможности и исправления по версиям. |
-| [Сообщить о проблеме](https://github.com/Rom4nIlyin/afterplay/issues/new/choose) | Укажи версию, источник захвата и шаги воспроизведения. |
-
-Исходники приложения распространяются по [MIT](LICENSE). Лицензии включённых компонентов перечислены в [THIRD-PARTY.md](THIRD-PARTY.md), политика подписи — в [CODE-SIGNING.md](docs/CODE-SIGNING.md).
-
-Скриншоты показывают настоящий интерфейс 1.10.0 с специально созданными демонстрационными записями. Личные видео и настройки в репозиторий и portable-архив не включаются.
+Подробно — в [docs/BUILD.md](docs/BUILD.md). Выпуск собирается в GitHub Actions, когда меняется `src/version.py`. Изменения по версиям — в [CHANGELOG.md](CHANGELOG.md).
 
 ## English
 
-**AFTERPLAY is a portable video recorder, instant replay buffer, video library and clip editor for Windows.** Record a complete session or keep the last 1–30 minutes; both modes can run together. Your replay hotkey saves the last X minutes without stopping manual recording. Build a montage with up to 50 segments: split, trim, reorder, duplicate, place freely, undo and export MP4 or GIF. Three optional hotkeys save clips of independent lengths. Optional keyboard and mouse recording stays invisible during gameplay; show or hide the input layer when editing or exporting. F toggles fullscreen; Space and a click on the video toggle playback. Fullscreen controls hide after 1.5 seconds of inactivity. Customize six distinct themes, image/GIF/video backgrounds, reusable appearance presets, sound cues and notifications. Optional microphone audio is saved as a separate track.
+**AFTERPLAY** keeps the last minutes of your game in memory. Press a key when something great happens, and the moment is saved. Trim it with the mouse and export it for Discord (including a clean 10 MB mode), Nitro, TikTok / Shorts, YouTube or GIF. It records the screen or a single window with NVENC or the CPU, and keeps game, chat and microphone audio on separate tracks. Everything stays on your PC.
 
-[Download for Windows](https://github.com/Rom4nIlyin/afterplay/releases/latest) → extract the entire archive → run **AFTERPLAY.exe**. Switch to English in **Settings → Interface language**. User recordings and settings stay on your computer; an account is not required for capture or editing.
+Download the portable ZIP from [Releases](https://github.com/Rom4nIlyin/afterplay/releases/latest), extract it and run `AFTERPLAY.exe`. Switch the interface language in **Settings → General**.
+
+## 한국어
+
+**AFTERPLAY**는 게임의 마지막 몇 분을 기억해 둡니다. 멋진 순간이 오면 키 하나로 저장하고, 마우스로 잘라서 Discord(10 MB 모드 포함), Nitro, TikTok / Shorts, YouTube, GIF로 내보낼 수 있습니다. 화면 전체나 창 하나를 NVENC 또는 CPU로 녹화하고, 게임·채팅·마이크 소리를 별도 트랙으로 저장합니다. 모든 데이터는 내 PC에만 남습니다.
+
+[Releases](https://github.com/Rom4nIlyin/afterplay/releases/latest)에서 포터블 ZIP을 받아 압축을 풀고 `AFTERPLAY.exe`를 실행하세요. 언어는 **설정 → 일반**에서 바꿀 수 있습니다.
+
+---
+
+<p align="center"><sub>MIT License · FFmpeg — GPLv3, see <a href="docs/legal/THIRD-PARTY.md">third-party notices</a></sub></p>

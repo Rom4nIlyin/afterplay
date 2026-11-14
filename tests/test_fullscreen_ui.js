@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
-const source=fs.readFileSync(path.join(__dirname,'../ui/review-ui.js'),'utf8');
+const source=fs.readFileSync(path.join(__dirname,'../src/ui/review-ui.js'),'utf8');
 let now=0,serial=0;const timers=new Map();
 function advance(ms){now+=ms;for(const [id,timer] of [...timers])if(timer.at<=now){timers.delete(id);timer.callback()}}
 const document=new EventTarget(),window=new EventTarget();

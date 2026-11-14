@@ -14,7 +14,7 @@ class WindowChromeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             dll=Path(d)/'ReplayNotification.dll';probe=Path(d)/'ChromeProbe.exe'
             common=[str(compiler),'/nologo','/platform:x64','/r:System.Windows.Forms.dll','/r:System.Drawing.dll']
-            for args in ([*common,'/target:library','/out:'+str(dll),str(root/'ReplayNotification.cs')],[*common,'/target:exe','/r:'+str(dll),'/out:'+str(probe),str(root/'tests/WindowChromeProbe.cs')]):
+            for args in ([*common,'/target:library','/out:'+str(dll),str(root/'native/ReplayNotification.cs')],[*common,'/target:exe','/r:'+str(dll),'/out:'+str(probe),str(root/'tests/WindowChromeProbe.cs')]):
                 result=subprocess.run(args,capture_output=True,timeout=30)
                 self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             result=subprocess.run([str(probe)],capture_output=True,timeout=20)

@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const source=fs.readFileSync(require.resolve('../ui/backgrounds/studio-polish.js'),'utf8');
+const source=fs.readFileSync(require.resolve('../src/ui/backgrounds/studio-polish.js'),'utf8');
 const wrapper=source.slice(source.indexOf(' const oldOpen=openClip;'),source.indexOf(' const oldMode=reviewSetMode;'));
 const dialog={open:false};let entrances=0,cancelled=0,opens=0;
 const context={$:()=>dialog,reviewState:null,searchTimer:null,clearTimeout(){},snapshot:()=>({start:0,end:3}),notes:()=>'',decorateEditor(){},

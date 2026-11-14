@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {estimate}=require('../ui/recording-size.js');
+const {estimate}=require('../src/ui/recording-size.js');
 const cfg={seconds:600,fps:90,mbps:60,max_mbps:80,quality_mode:'cbr',audio_mode:'none',audio_bitrate:192};
 assert.equal(estimate(cfg).bytes,4500000000);
 assert.equal(estimate(cfg).gigabytes,4.5);
