@@ -26,6 +26,31 @@ from urllib.parse import urlparse, parse_qs
 BASE = Path(__file__).resolve().parent
 ROOT = install_root(BASE)
 NO_WINDOW = 0x08000000 if os.name == 'nt' else 0
+def discord_plan(duration, audio_tracks, source_height, fps=30, height='auto'):
+    """Bitrate and resolution that fit Discord's 10 MB without Nitro.
+
+    The budget is fixed, so a long clip gets few bits per second. Spreading them over
+    1080p turns the picture into blocks; a smaller frame stays clean. 'auto' takes the
+    largest height that still gets ~0.07 bits per pixel: 0.035 turned 720p60 fights
+    (crowds, grass, particles) into mush, 0.07 keeps them readable.
+    """
+    duration = max(float(duration), .1)
+    audio_kbps = 96 if duration <= 60 else 64
+    kbps = int((9.4e6*8/duration - audio_kbps*1000*audio_tracks - 50000)/1000)
+    if kbps < 200:
+        raise ValueError('Для Discord до 10 МБ отрезок слишком длинный. Укоротите его или выберите Discord Nitro.')
+    kbps = min(kbps, 8000)
+    source_height = int(source_height or 1080)
+    if height == 'auto':
+        options = [h for h in (1080, 720, 540, 480, 360) if h <= source_height] or [source_height//2*2]
+        height = next((h for h in options if kbps*1000/((h*16/9)*h*fps) >= .07), options[-1])
+    else:
+        height = int(height)
+        if height not in (360, 480, 540, 720, 1080):raise ValueError('Высота кадра для Discord: от 360 до 1080')
+        height = min(height, source_height//2*2)
+    return {'kbps': kbps, 'audio_kbps': audio_kbps, 'height': height}
+
+
 VIDEO_EXT = {'.mp4', '.mkv', '.mov', '.avi', '.webm', '.m4v', '.ts', '.gif'}
 
 
@@ -659,7 +684,7 @@ class Suite:
         if arg.get('format') not in (None, 'original', 'vertical', 'gif'):
             raise ValueError('Неизвестный формат экспорта')
         quality = arg.get('quality') or 'standard'
-        if quality not in ('standard', 'discord', 'high'):
+        if quality not in ('standard', 'discord', 'high', 'max', 'copy'):
             raise ValueError('Неизвестное качество экспорта')
         timer = arg.get('timer', False)
         if not isinstance(timer, bool):
@@ -673,13 +698,13 @@ class Suite:
         if arg.get('format') == 'gif':
             import gif_media
             gif_media.validate_duration(end-start)
-            width=int(arg.get('gif_width',720));ass=None;extra=''
+            width=int(arg.get('gif_width',720));gif_quality=arg.get('gif_quality') or 'standard';ass=None;extra=''
             try:
                 if show_inputs:
                     ass=self.data/'logs'/('input-'+uuid.uuid4().hex+'.ass')
                     ow=min(width,info['width']);oh=max(2,round(info['height']*ow/info['width']/2)*2)
                     extra=input_overlay.render_ass(ass,input_data,start,end-start,ow,oh,overlay_cfg)
-                result = gif_media.encode(self, src, dest, start, end-start, job, width, timer=timer,control=control,extra_filter=extra)
+                result = gif_media.encode(self, src, dest, start, end-start, job, width, timer=timer,control=control,extra_filter=extra,quality=gif_quality)
             finally:
                 if ass:ass.unlink(missing_ok=True)
             if not show_inputs:input_capture.copy_trim(src,dest,start,result['duration'])
@@ -688,65 +713,90 @@ class Suite:
             return result
         vertical = arg.get('format') == 'vertical'
         partial = dest.with_suffix('.partial.mp4')
-        vf = 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1' if vertical else 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1'
+        vertical_size = str(arg.get('vertical_size') or '720')
+        if vertical_size not in ('720', '1080'):
+            raise ValueError('Размер вертикального видео: 720 × 1280 или 1080 × 1920')
+        vw, vh = (720, 1280) if vertical_size == '720' else (1080, 1920)
+        vf = f'scale={vw}:{vh}:force_original_aspect_ratio=increase:flags=lanczos,crop={vw}:{vh},setsar=1' if vertical else 'scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1'
+        discord=None
         if quality == 'discord' and not vertical:
-            # Fit Discord's 10 MB limit: 720p, 30 fps and a bitrate from the length.
-            vf = "fps=30,scale='min(1280,iw)':-2:flags=lanczos,setsar=1"
+            from audio_tracks import export_audio as _audio_count
+            discord_fps = int(arg.get('discord_fps') or 30)
+            if discord_fps not in (30, 60):raise ValueError('Discord: 30 или 60 fps')
+            discord = discord_plan(end-start, _audio_count(info,arg)[2], info['height'], discord_fps, arg.get('discord_height') or 'auto')
+            vf = f"fps={discord_fps},scale=-2:{discord['height']}:flags=lanczos,setsar=1"
         if timer:
             from timer_overlay import video_filter
             vf += ',' + video_filter(self.cfg.get('customization'),info.get('fps',60),self.cfg.get('language','ru'))
         ass=None
         if show_inputs:
             ass=self.data/'logs'/('input-'+uuid.uuid4().hex+'.ass')
-            ow,oh=(720,1280) if vertical else (info['width']//2*2,info['height']//2*2)
+            ow,oh=(vw,vh) if vertical else (info['width']//2*2,info['height']//2*2)
             vf+=',setpts=PTS-STARTPTS,'+input_overlay.render_ass(ass,input_data,start,end-start,ow,oh,overlay_cfg)
         from audio_tracks import export_audio
         audio_filters,audio_maps,expected_audio,titles=export_audio(info,arg)
         video_rate = ['-preset', 'fast', '-crf', '20']
         audio_rate = '192k'
-        if quality == 'high':
+        copy_video = quality == 'copy'
+        if copy_video:
+            # "Как в исходнике": the video stream is copied untouched (no quality loss,
+            # same bitrate as the recording). Only the chosen audio is re-encoded.
+            if vertical:raise ValueError('Вертикальное видео нельзя сделать без перекодирования')
+            if timer or show_inputs:raise ValueError('Таймер и нажатия нельзя наложить без перекодирования — выберите «Высокое»')
+            video_rate = ['copy']
+            audio_rate = '320k'
+            try:
+                import av
+                with av.open(str(src)) as media:codec=media.streams.video[0].codec_context.name
+            except Exception:codec=''
+            if codec in ('hevc','h265'):video_rate+=['-tag:v','hvc1']
+        elif quality == 'high':
             video_rate = ['-preset', 'medium', '-crf', '17']
-        elif quality == 'discord':
-            audio_rate = '96k'
-            budget = 9.4 * 1000 * 1000 * 8 / max(end - start, .1)  # bits per second for 9.4 MB
-            kbps = int((budget - 96000 * expected_audio - 60000) / 1000)
-            if kbps < 250:
-                raise ValueError('Для Discord до 10 МБ отрезок слишком длинный. Укоротите его или выберите Discord Nitro.')
-            kbps = min(kbps, 8000)
-            video_rate = ['-preset', 'fast', '-b:v', f'{kbps}k', '-maxrate', f'{int(kbps*1.3)}k', '-bufsize', f'{kbps*2}k']
+            audio_rate = '256k'
+        elif quality == 'max':
+            # Visually lossless: slower encode and a much bigger file.
+            video_rate = ['-preset', 'slow', '-crf', '14']
+            audio_rate = '320k'
+        elif discord:
+            # Two passes spread the tiny 10 MB budget over the clip far better than one:
+            # static moments give their bits to fights and fast camera turns.
+            kbps = discord['kbps'];audio_rate = f"{discord['audio_kbps']}k"
+            video_rate = ['-preset', 'slow', '-b:v', f'{kbps}k', '-maxrate', f'{int(kbps*1.5)}k', '-bufsize', f'{kbps*2}k',
+                          '-x264-params', 'aq-mode=3']
         cmd = [self.ff(), '-hide_banner', '-loglevel', 'error', '-ss', str(start), '-i', src,
-               '-t', str(end-start), *audio_filters, '-map', '0:v:0', *audio_maps, '-vf', vf,
-               '-c:v', 'libx264', *video_rate, '-pix_fmt', 'yuv420p',
+               '-t', str(end-start), *audio_filters, '-map', '0:v:0', *audio_maps,
+               *(['-c:v', *video_rate] if copy_video else ['-vf', vf, '-c:v', 'libx264', *video_rate, '-pix_fmt', 'yuv420p']),
                '-c:a', 'aac', '-b:a', audio_rate, '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', '-y', partial]
         for index,title in enumerate(titles):cmd[-2:-2]=[f'-metadata:s:a:{index}','title='+title,f'-metadata:s:a:{index}','handler_name='+title,f'-disposition:a:{index}','default' if index==0 else '0']
         log_path = self.data/'logs'/f'export-{uuid.uuid4().hex[:12]}.log'
+        passlog = self.data/'logs'/f'x264-{uuid.uuid4().hex[:12]}' if discord else None
         proc = None
         try:
-            with open(log_path,'wb') as err:
-                spawn = control.start if control else subprocess.Popen
-                proc = spawn([str(x) for x in cmd], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err, creationflags=NO_WINDOW)
-                with self.lock:
-                    self.children.add(proc)
-                for line in iter(proc.stdout.readline, b''):
-                    if control:control.check()
-                    if line.startswith(b'out_time_us='):
-                        try:
-                            elapsed = int(line.strip().split(b'=')[1])/1000000
-                            job.update(progress=min(96,int(elapsed/(end-start)*96)),message=f'Экспорт · {elapsed:.0f} / {end-start:.0f} с')
-                        except ValueError:
-                            pass
-                proc.wait()
+            if passlog:
+                # Pass 1 only analyses the video; pass 2 writes the file with the same filters.
+                at=cmd.index('-c:a')
+                first=[*cmd[:at],'-pass','1','-passlogfile',passlog,'-an','-f','null','-progress','pipe:1','-nostats','-y','NUL' if os.name=='nt' else '/dev/null']
+                first=self._strip_audio(first)
+                if self._ffmpeg_progress(first,log_path,control,job,end-start,0,45,'Discord · анализ'):
+                    raise ValueError('FFmpeg не завершил экспорт. Подробности в data/logs.')
+                at=cmd.index('-c:a');cmd[at:at]=['-pass','2','-passlogfile',passlog]
+            code=self._ffmpeg_progress(cmd,log_path,control,job,end-start,45 if passlog else 0,96,'Discord · сжатие' if passlog else 'Экспорт')
             if control:control.check()
-            if proc.returncode or not partial.is_file() or partial.stat().st_size < 1000:
+            if code or not partial.is_file() or partial.stat().st_size < 1000:
                 raise ValueError('FFmpeg не завершил экспорт. Подробности в data/logs.')
             result = self.probe(partial)
             if control:control.check()
-            if abs(result['duration']-(end-start)) > max(.6, (end-start)*.02):
+            # A copied stream has to start on a keyframe, so it may begin a little earlier.
+            if copy_video and not (end-start)-.6 <= result['duration'] <= (end-start)+10:
+                raise ValueError('Длительность экспорта не прошла проверку')
+            if not copy_video and abs(result['duration']-(end-start)) > max(.6, (end-start)*.02):
                 raise ValueError('Длительность экспорта не прошла проверку')
             if result['audio']!=expected_audio:
                 raise ValueError('Экспорт потерял аудиодорожку')
-            if vertical and (result['width'],result['height']) != (720,1280):
+            if vertical and (result['width'],result['height']) != (vw,vh):
                 raise ValueError('Размер вертикального видео не прошёл проверку')
+            if discord and partial.stat().st_size > 10*1000*1000:
+                raise ValueError('Файл получился больше 10 МБ. Укоротите отрезок или выберите Discord Nitro.')
             if control:control.commit()
             from output_names import commit_output
             commit_output(partial,dest)
@@ -765,6 +815,49 @@ class Suite:
                 if control:control.release(proc)
             partial.unlink(missing_ok=True)
             if ass:ass.unlink(missing_ok=True)
+            if passlog:
+                for leftover in passlog.parent.glob(passlog.name+'*'):leftover.unlink(missing_ok=True)
+
+    @staticmethod
+    def _strip_audio(command):
+        """Pass 1 needs only the video: drop the audio graph and its maps."""
+        out=[];skip=False
+        for i,x in enumerate(command):
+            if skip:skip=False;continue
+            if x=='-filter_complex':skip=True;continue
+            if x=='-map' and i+1<len(command) and str(command[i+1])!='0:v:0':skip=True;continue
+            if str(x).startswith(('-metadata:s:a','-disposition:a')):skip=True;continue
+            out.append(x)
+        return out
+
+    def _ffmpeg_progress(self,cmd,log_path,control,job,duration,p0,p1,label):
+        """Run one FFmpeg command, map its progress onto p0..p1 % and return the exit code."""
+        proc=None
+        try:
+            with open(log_path,'ab') as err:
+                spawn = control.start if control else subprocess.Popen
+                proc = spawn([str(x) for x in cmd], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=err, creationflags=NO_WINDOW)
+                with self.lock:
+                    self.children.add(proc)
+                for line in iter(proc.stdout.readline, b''):
+                    if control:control.check()
+                    if line.startswith(b'out_time_us='):
+                        try:
+                            elapsed = int(line.strip().split(b'=')[1])/1000000
+                            job.update(progress=min(p1,int(p0+elapsed/max(duration,.1)*(p1-p0))),message=f'{label} · {elapsed:.0f} / {duration:.0f} с')
+                        except ValueError:
+                            pass
+                proc.wait()
+            return proc.returncode
+        finally:
+            if proc:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+                if proc.stdout:proc.stdout.close()
+                with self.lock:
+                    self.children.discard(proc)
+                if control:control.release(proc)
 
     def recordings_dir(self):
         return storage.recording_dir(self)

@@ -71,6 +71,9 @@ function kindOf(c){
  return dir&&keyOf(c.path).startsWith(dir)?'clip':'video';
 }
 const kindLabel={replay:'Повтор',record:'Запись',clip:'Клип',video:'Видео'};
+const isGif=c=>/\.gif$/i.test(c?.name||'');
+// A GIF is labelled as GIF everywhere, never as "Видео".
+const kindText=c=>{const k=kindOf(c);return isGif(c)?(k==='video'?'GIF':kindLabel[k]+' · GIF'):kindLabel[k]};
 function nameOf(c){
  const stem=c.name.replace(/\.(mp4|mkv|mov|avi|webm|m4v|ts|gif)$/i,'');
  const m=stem.match(/^(Повтор|Запись)-(\d{4})-(\d\d)-(\d\d)_(\d\d)-(\d\d)-\d\d-[0-9a-f]{4}$/i);
@@ -262,7 +265,7 @@ function stepsHTML(){
 function cardHTML(c){
  const k=kindOf(c),m=marksOf(c).length,sel=libUI.sel===c.id;
  const meta=[gameOf(c),timeOf(c.mtime),bytes(c.size)].filter(Boolean).join(' · ');
- return `<button type="button" class="clip ${sel?'sel':''}" data-act="select" data-id="${esc(c.id)}" aria-pressed="${sel}" aria-label="${esc(nameOf(c)+', '+short(c.duration))}"><div class="thumb"><img src="${esc(thumbUrl(c))}" loading="lazy" alt=""><span class="badge kind ${k}">${kindLabel[k]}</span>${m?`<span class="badge marks">★ ${m}</span>`:''}${c.favorite?`<span class="badge fav" aria-label="В избранном">♥</span>`:''}<span class="badge dur">${short(c.duration)}</span></div><div class="meta"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc(meta)}</small></div></button>`;
+ return `<button type="button" class="clip ${sel?'sel':''}" data-act="select" data-id="${esc(c.id)}" aria-pressed="${sel}" aria-label="${esc(nameOf(c)+', '+short(c.duration))}"><div class="thumb"><img src="${esc(thumbUrl(c))}" loading="lazy" alt=""><span class="badge kind ${k}${isGif(c)?' gif':''}">${kindText(c)}</span>${m?`<span class="badge marks">★ ${m}</span>`:''}${c.favorite?`<span class="badge fav" aria-label="В избранном">♥</span>`:''}<span class="badge dur">${short(c.duration)}</span></div><div class="meta"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc(meta)}</small></div></button>`;
 }
 function gridHTML(rows){
  const shown=rows.slice(0,libUI.limit);const groups=new Map();
@@ -304,9 +307,9 @@ function renderDetail(force=false){
  const k=kindOf(c),marks=marksOf(c);
  box.innerHTML=`<div class="row"><h2 class="sec">О записи</h2><button type="button" class="btn icon ghost" data-act="fav" data-id="${esc(c.id)}" aria-pressed="${!!c.favorite}" aria-label="${c.favorite?'Убрать из избранного':'В избранное'}" style="color:${c.favorite?'var(--accent)':'inherit'}">${ic('heart',c.favorite?'fill="currentColor"':'')}</button></div>
  <button type="button" class="big" data-act="watch" data-id="${esc(c.id)}" aria-label="Смотреть"><img src="${esc(thumbUrl(c))}" alt=""><span class="play" aria-hidden="true">${playIc}</span><span class="badge dur">${short(c.duration)}</span></button>
- <div><h3 data-i18n-ignore>${esc(nameOf(c))}</h3><div class="sub">${esc([gameOf(c),kindLabel[k]].filter(Boolean).join(' · '))}</div></div>
- <div class="acts"><button type="button" class="btn primary" data-act="watch" data-id="${esc(c.id)}">Смотреть</button><button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}">${/\.gif$/i.test(c.name)?'Открыть':'Обрезать'}</button><button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}" data-export="1">Экспорт</button></div>
- <dl class="facts"><dt>Дата</dt><dd>${esc(timeOf(c.mtime))}</dd><dt>Длительность</dt><dd>${clock(c.duration)}</dd><dt>Размер</dt><dd>${bytes(c.size)}</dd><dt>Видео</dt><dd id="dtVideo">${c.width?c.width+' × '+c.height:'—'}</dd><dt>Звук</dt><dd>${c.audio?c.audio+' '+(c.audio===1?'дорожка':c.audio<5?'дорожки':'дорожек'):'нет'}</dd></dl>
+ <div><h3 data-i18n-ignore>${esc(nameOf(c))}</h3><div class="sub">${esc([gameOf(c),kindText(c)].filter(Boolean).join(' · '))}</div></div>
+ <div class="acts"><button type="button" class="btn primary" data-act="watch" data-id="${esc(c.id)}">Смотреть</button>${isGif(c)?'':`<button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}">Обрезать</button>`}<button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}" data-export="1">Экспорт</button></div>
+ <dl class="facts"><dt>Формат</dt><dd>${isGif(c)?'GIF-анимация':'Видео '+esc((c.name.match(/\.(\w+)$/)?.[1]||'').toUpperCase())}</dd><dt>Дата</dt><dd>${esc(timeOf(c.mtime))}</dd><dt>Длительность</dt><dd>${clock(c.duration)}</dd><dt>Размер</dt><dd>${bytes(c.size)}</dd><dt>${isGif(c)?'Кадр':'Видео'}</dt><dd id="dtVideo">${c.width?c.width+' × '+c.height:'—'}</dd><dt>Звук</dt><dd>${isGif(c)?'нет (GIF без звука)':c.audio?c.audio+' '+(c.audio===1?'дорожка':c.audio<5?'дорожки':'дорожек'):'нет'}</dd></dl>
  <div class="field"><span class="lbl">Метки</span><div class="marks">${marks.length?marks.map(m=>`<button type="button" class="mark" data-act="watch" data-id="${esc(c.id)}" data-at="${m}">★ ${short(m)}</button>`).join(''):'<span class="hint">Нет меток. Во время записи нажмите клавишу метки — она появится здесь.</span>'}</div></div>
  ${c.error?`<p class="hint" style="color:#FFB4B5">${esc(c.error)}</p>`:''}
  <span class="grow"></span>
@@ -327,10 +330,25 @@ const viewer={
   this.c=c;this.on=new Set([0]);this.extras=new Map();this.userMuted=false;this.speed=1;this.menu=false;this.sprite=null;this.info=null;this.frame=1/60;this.shown=null;
   const list=this.list(),i=list.findIndex(x=>x.id===id),marks=marksOf(c),cust=custom();
   const stage=$('#stage');stage.className='vw';
-  stage.innerHTML=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Библиотека</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc([gameOf(c),timeOf(c.mtime),i>=0?(i+1)+' из '+list.length:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
+  const gif=this.gif=isGif(c);
+  const hd=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Библиотека</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc([gif?'GIF':'',gameOf(c),timeOf(c.mtime),i>=0?(i+1)+' из '+list.length:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
   <button type="button" class="btn icon ghost" data-act="vw-fav" aria-pressed="${!!c.favorite}" aria-label="В избранное" style="color:${c.favorite?'var(--accent)':'inherit'}">${ic('heart',c.favorite?'fill="currentColor"':'')}</button>
-  <button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}">${ic('scissors')}Обрезать</button><button type="button" class="btn primary" data-act="edit" data-id="${esc(c.id)}" data-export="1">Экспорт</button></header>
-  <div class="vw-stage"><button type="button" class="side-nav l" data-act="vw-step" data-dir="-1" aria-label="Предыдущая запись">${ic('back')}</button><button type="button" class="side-nav r" data-act="vw-step" data-dir="1" aria-label="Следующая запись">${ic('next')}</button>
+  ${gif?'':`<button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}">${ic('scissors')}Обрезать</button>`}<button type="button" class="btn primary" data-act="edit" data-id="${esc(c.id)}" data-export="1">Экспорт</button></header>`;
+  const nav=`<button type="button" class="side-nav l" data-act="vw-step" data-dir="-1" aria-label="Предыдущая запись">${ic('back')}</button><button type="button" class="side-nav r" data-act="vw-step" data-dir="1" aria-label="Следующая запись">${ic('next')}</button>`;
+  if(gif){
+   // GIF is an image, not a video: <video> cannot play it. Frames are decoded with
+   // ImageDecoder and drawn on a canvas so the GIF can pause and step frame by frame.
+   this.v=null;const src=`${base}media/${encodeURIComponent(c.id)}`;
+   stage.innerHTML=hd+`<div class="vw-stage">${nav}<div class="vw-frame" id="vwFrame"><canvas class="vw-gif" id="vwGif"></canvas><button type="button" class="vw-hit" data-act="vw-gif-play" aria-label="Воспроизвести или пауза"></button></div></div>
+   <div class="vw-ctl"><div class="ctl-row"><button type="button" class="btn icon" data-act="vw-gif-frame" data-d="-1" aria-label="Кадр назад">${ic('frameBack')}</button><button type="button" class="btn icon primary" data-act="vw-gif-play" id="vwPlay" aria-label="Пауза">${pauseIc}</button><button type="button" class="btn icon" data-act="vw-gif-frame" data-d="1" aria-label="Кадр вперёд">${ic('frameFwd')}</button><button type="button" class="btn ghost sm num" data-act="vw-gif-jump" data-d="-5">−5 с</button><button type="button" class="btn ghost sm num" data-act="vw-gif-jump" data-d="5">+5 с</button>
+    <span class="num" style="padding:0 8px;color:var(--muted)" id="vwGifPos">Загрузка…</span><span class="fmt-badge">GIF</span><span class="hint">без звука${c.width?' · '+c.width+' × '+c.height:''}</span><span class="grow"></span><span class="hint keyhint">Пробел — пауза · ← → — кадр · Shift + ← → — 5 с · F или двойной клик — весь экран · Esc — назад</span><button type="button" class="btn icon" data-act="vw-full" aria-label="Во весь экран">${ic('full')}</button></div></div>`;
+   this.keys=e=>this.key(e);document.addEventListener('keydown',this.keys);
+   $('#vwFrame').addEventListener('dblclick',e=>{e.preventDefault();this.fullscreen()});
+   this.fsch=()=>{this.wake();this.paintFull()};document.addEventListener('fullscreenchange',this.fsch);
+   this.gifOpen(c,src);
+   return;
+  }
+  stage.innerHTML=hd+`<div class="vw-stage">${nav}
    <div class="vw-frame" id="vwFrame"><video id="vwVideo" preload="auto" playsinline src="${base}media/${encodeURIComponent(c.id)}"></video><button type="button" class="vw-hit" data-act="vw-play" aria-label="Воспроизвести или пауза"><span class="bigplay" id="vwBig" aria-hidden="true">${playIc}</span></button><span class="vw-badge" id="vwMark" style="left:14px;background:var(--accent);color:var(--on-accent)" hidden>★ Метка</span><span class="vw-badge" id="vwSpeedBadge" style="right:14px;background:rgba(11,12,15,.8)" hidden></span></div></div>
   <div class="vw-ctl"><div class="scrub" id="vwScrub" role="slider" tabindex="0" aria-label="Позиция" aria-valuemin="0" aria-valuemax="${Math.round(c.duration)}"><div class="rail"><div class="buf" id="vwBuf"></div><div class="fill" id="vwFill"></div></div>${marks.map(m=>`<span class="pin" style="left:${(m/c.duration*100).toFixed(3)}%"></span>`).join('')}<span class="knob" id="vwKnob"></span><div class="preview" id="vwPrev" hidden><div class="pic" id="vwPic"></div><span id="vwPrevT"></span></div></div>
    <div class="ctl-row"><button type="button" class="btn icon" data-act="vw-frame" data-d="-1" aria-label="Кадр назад">${ic('frameBack')}</button><button type="button" class="btn icon primary" data-act="vw-play" id="vwPlay" aria-label="Воспроизвести">${playIc}</button><button type="button" class="btn icon" data-act="vw-frame" data-d="1" aria-label="Кадр вперёд">${ic('frameFwd')}</button><button type="button" class="btn ghost sm num" data-act="vw-seek" data-d="-5">−5 с</button><button type="button" class="btn ghost sm num" data-act="vw-seek" data-d="5">+5 с</button><span class="num" style="padding:0 8px;color:var(--muted)"><b id="vwTime" style="color:var(--text);font-weight:600">00:00</b> / ${short(c.duration)}</span>
@@ -361,7 +379,53 @@ const viewer={
  // ← → step one frame (like the trim editor); Shift jumps 5 s.
  arrow(e){const dir=e.key==='ArrowLeft'?-1:1;if(e.shiftKey)this.seekTo(this.v.currentTime+dir*5);else this.stepFrame(dir)},
  stepFrame(dir){const v=this.v;if(!v)return;if(!v.paused)v.pause();this.seekTo(v.currentTime+dir*this.frame)},
+ // ---- GIF playback: decoded frames on a canvas, so pause and frame stepping work.
+ async gifOpen(c,src){
+  const g=this.g={c,dec:null,n:0,i:0,playing:true,timer:0,busy:false,closed:false};
+  const pos=()=>$('#vwGifPos');
+  try{
+   if(!window.ImageDecoder)throw Error('no decoder');
+   const r=await fetch(src);if(!r.ok)throw Error('load');
+   const dec=new ImageDecoder({data:await r.arrayBuffer(),type:'image/gif'});
+   await dec.tracks.ready;await dec.completed;
+   if(g.closed){dec.close();return}
+   g.dec=dec;g.n=dec.tracks.selectedTrack.frameCount||1;
+   await this.gifDraw(0);if(g.playing)this.gifSchedule();
+  }catch{
+   // No decoder: fall back to a plain animated image (plays, but cannot be stepped).
+   if(g.closed)return;const cv=$('#vwGif');if(!cv)return;
+   const img=document.createElement('img');img.className='vw-gif';img.src=src;img.alt='';cv.replaceWith(img);
+   const p=pos();if(p)p.textContent='Покадровый просмотр недоступен';
+   for(const b of $$('[data-act=vw-gif-frame],[data-act=vw-gif-play],[data-act=vw-gif-jump]'))b.disabled=true;
+  }
+ },
+ async gifDraw(i){
+  const g=this.g;if(!g?.dec||g.closed)return 0;
+  g.i=((i%g.n)+g.n)%g.n;
+  const {image}=await g.dec.decode({frameIndex:g.i});
+  const cv=$('#vwGif');let ms=100;
+  if(cv&&!g.closed){
+   if(cv.width!==image.displayWidth||cv.height!==image.displayHeight){cv.width=image.displayWidth;cv.height=image.displayHeight}
+   cv.getContext('2d').drawImage(image,0,0);
+  }
+  if(image.duration)ms=image.duration/1000;image.close();
+  const p=$('#vwGifPos');if(p)p.textContent='Кадр '+(g.i+1)+' / '+g.n;
+  return ms<20?100:ms; // browsers treat near-zero GIF delays as 100 ms
+ },
+ gifSchedule(){
+  const g=this.g;if(!g?.dec||g.closed)return;clearTimeout(g.timer);
+  const run=async()=>{if(!g.playing||g.closed)return;const ms=await this.gifDraw(g.i);if(!g.playing||g.closed)return;g.timer=setTimeout(()=>{g.i++;run()},ms)};
+  run();
+ },
+ gifPaintPlay(){const g=this.g,b=$('#vwPlay');if(!g||!b)return;b.innerHTML=g.playing?pauseIc:playIc;b.setAttribute('aria-label',g.playing?'Пауза':'Воспроизвести')},
+ gifToggle(){const g=this.g;if(!g?.dec)return;g.playing=!g.playing;clearTimeout(g.timer);if(g.playing){g.i++;this.gifSchedule()}this.gifPaintPlay()},
+ // Shift + ← → jumps 5 s like in video: convert seconds to frames by the average frame length.
+ // Unlike single-frame steps it does not wrap around: a GIF is often shorter than 5 s,
+ // so wrapping would land on the same frame. It stops at the first or last frame, like video.
+ gifJump(sec){const g=this.g;if(!g?.dec)return;const per=(this.c?.duration>0?this.c.duration:g.n/10)/g.n;const d=Math.round(sec/(per||.1))||Math.sign(sec);this.gifStep(clamp(g.i+d,0,g.n-1)-g.i)},
+ async gifStep(d){const g=this.g;if(!g?.dec||g.busy||!d)return;if(g.playing){g.playing=false;clearTimeout(g.timer);this.gifPaintPlay()}g.busy=true;try{await this.gifDraw(g.i+d)}finally{g.busy=false}},
  close(){
+  if(this.g){this.g.closed=true;clearTimeout(this.g.timer);try{this.g.dec?.close()}catch{}this.g=null}
   cancelAnimationFrame(this.raf);document.removeEventListener('keydown',this.keys);document.removeEventListener('fullscreenchange',this.fsch);clearTimeout(this.idleT);clearTimeout(this.drift);$('#stage').classList.remove('idle');
   if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
   if(this.v){this.v.pause();this.v.removeAttribute('src');this.v.load()}
@@ -393,7 +457,8 @@ const viewer={
   box.innerHTML=audio.map((a,i)=>`<button type="button" data-act="vw-track" data-i="${i}" aria-pressed="${this.on.has(i)}"${i===0?' title="Общий звук уже содержит все источники"':''}>${this.on.has(i)?'✓ ':''}${esc(a.title||'Дорожка '+(i+1))}</button>`).join('');
  },
  setTrack(i){
-  if(this.on.has(i)){if(this.on.size>1)this.on.delete(i)}else this.on.add(i);
+  const n=this.info?.audio?.length||0,on=toggleTrack(Array.from({length:n},(_,j)=>this.on.has(j)),i);
+  this.on=new Set(on.flatMap((v,j)=>v?[j]:[]));
   this.syncExtra(true);this.renderTracks();
  },
  syncExtra(seek=false){
@@ -409,8 +474,15 @@ const viewer={
   clearTimeout(this.drift);if(!v.paused&&this.extras.size)this.drift=setTimeout(()=>this.syncExtra(),700);
  },
  key(e){
-  if(e.target.closest('input,select,textarea'))return;const v=this.v;if(!v)return;
-  const k=e.key;
+  if(e.target.closest('input,select,textarea'))return;const k=e.key;
+  if(this.gif&&this.c){
+   if(k===' '||k==='k'||k==='K'){e.preventDefault();this.gifToggle()}
+   else if(k==='ArrowLeft'||k==='ArrowRight'){e.preventDefault();const d=k==='ArrowLeft'?-1:1;e.shiftKey?this.gifJump(d*5):this.gifStep(d)}
+   else if(k==='f'||k==='F'||k==='а'||k==='А'){e.preventDefault();this.fullscreen()}
+   else if(k==='Escape'&&!document.fullscreenElement){e.preventDefault();historyDirection(-1)}
+   return;
+  }
+  const v=this.v;if(!v)return;
   if(k===' '||k==='k'||k==='K'){e.preventDefault();v.paused?v.play():v.pause()}
   else if(k==='ArrowLeft'||k==='ArrowRight'){e.preventDefault();this.arrow(e)}
   else if(k==='ArrowUp'||k==='ArrowDown'){e.preventDefault();const el=$('#vwVol');el.value=clamp(Number(el.value)+(k==='ArrowUp'?5:-5),0,100);el.dispatchEvent(new Event('input'))}
@@ -432,15 +504,69 @@ function localGet(k){try{return localStorage.getItem(k)}catch{return null}}
 function localSet(k,v){try{localStorage.setItem(k,String(v))}catch{}}
 
 // ---------- Editor: trim with the mouse, mix tracks, export
-const PRESETS=[
- {id:'discord',label:'Discord · до 10 МБ',detail:'720p · 30 fps · размер подбирается сам',args:{format:'original',quality:'discord'}},
- {id:'nitro',label:'Discord Nitro · до 500 МБ',detail:'Исходное качество · H.264',args:{format:'original'}},
- {id:'vertical',label:'TikTok / Shorts · 9:16',detail:'720 × 1280 · обрезка по центру',args:{format:'vertical'}},
- {id:'youtube',label:'YouTube · высокое качество',detail:'Исходное разрешение · без заметных потерь',args:{format:'original',quality:'high'}},
- {id:'gif',label:'GIF · без звука',detail:'От 2 до 15 секунд · 720 px',args:{format:'gif',gif_width:720}},
+const isGifPreset=id=>id==='gif';
+// Track 0 is the general mix that already contains every source. Turning it on turns
+// the separate tracks off and vice versa; separate tracks can still be combined.
+function toggleTrack(on,i){
+ on=[...on];if(on.length<2){on[i]=!on[i];return on}
+ if(i===0){const v=!on[0];return on.map((_,j)=>j===0?v:!v)}
+ on[i]=!on[i];if(on[i])on[0]=false;else if(!on.slice(1).some(Boolean))on[0]=true;
+ return on;
+}
+// Every preset has its own quality choice: a short label for the switch and a hint
+// that says what the choice gives. est(len,rate) is a rough size in bytes.
+const CRF_LEVELS=cap=>[
+ {id:'standard',short:'Стандарт',hint:'Хорошее качество, файл меньше',args:{quality:'standard'},est:(l,r)=>l*Math.min(r*.8,cap*.6)},
+ {id:'high',short:'Высокое',hint:'Без заметных потерь — подходит почти всегда',args:{quality:'high'},est:(l,r)=>l*Math.min(r,cap)},
+ // No re-encoding: the recorded video is copied as is, so it can never beat or bloat the source.
+ {id:'copy',short:'Исходник',hint:'Без перекодирования: качество и битрейт как в записи, экспорт за секунды · таймер не накладывается',args:{quality:'copy'},est:(l,r)=>l*r},
 ];
+// Same rule as discord_plan() in app.py: 10 MB is a fixed budget, so the frame size
+// follows the clip length. A long clip in 1080p turns into blocks; a smaller frame stays clean.
+// Bits per pixel a frame needs to stay clean in busy game scenes (crowds, grass, particles).
+// 0.035 looked fine on paper but turned 720p60 fights into mush; 0.07 keeps them readable.
+const DISCORD_BPP=.07;
+function discordPlan(len,srcH,fps){
+ len=Math.max(len,.1);const audio=len<=60?96:64;
+ const kbps=Math.min(8000,Math.floor((9.4e6*8/len-audio*1000-50000)/1000));
+ const opts=[1080,720,540,480,360].filter(h=>h<=(srcH||1080));if(!opts.length)opts.push(Math.floor((srcH||360)/2)*2);
+ const height=opts.find(h=>kbps*1000/((h*16/9)*h*fps)>=DISCORD_BPP)||opts[opts.length-1];
+ return {kbps,height};
+}
+// Longest clip that still gets the given height.
+function discordMaxLen(h,fps){const need=DISCORD_BPP*(h*16/9)*h*fps/1000;let len=9.4e6*8/1000/(need+96+50);if(len>60)len=9.4e6*8/1000/(need+64+50);return Math.floor(len)}
+function discordHint(fps){return (len,c)=>{
+ const pl=discordPlan(len,c?.height,fps);if(pl.kbps<200)return 'Отрезок слишком длинный для 10 МБ — укоротите его или выберите Nitro';
+ const now=`Получится ${pl.height}p · ${fps} fps`;
+ // 60 fps splits the same 10 MB over twice as many frames: say so when it costs resolution.
+ const at30=fps===60?discordPlan(len,c?.height,30).height:0;
+ const smooth=at30>pl.height?` При 60 fps картинка размажется в динамике — в «Чётче · 30 fps» будет ${at30}p.`:'';
+ if(pl.height>=1080)return now+' — максимум для этого лимита'+smooth;
+ if(pl.height>=720)return now+' — чётко.'+smooth+(fps===30&&(c?.height||1080)>=1080?` Для 1080p укоротите до ~${discordMaxLen(1080,30)} с.`:'');
+ const target=discordMaxLen(720,fps);
+ return now+(pl.height>=540?' — картинка мягче':' — картинка мелкая')+`. Для 720p укоротите до ~${target} с или выберите Nitro.`+smooth;
+}}
+const PRESETS=[
+ {id:'discord',label:'Discord · до 10 МБ',detail:'Влезает в лимит Discord без Nitro',args:{format:'original',quality:'discord'},q:'30',qualities:[
+  {id:'30',short:'Чётче · 30 fps',hint:discordHint(30),args:{discord_height:'auto',discord_fps:30},est:l=>Math.min(9.2e6,l*8.1e6/8)},
+  {id:'60',short:'Плавнее · 60 fps',hint:discordHint(60),args:{discord_height:'auto',discord_fps:60},est:l=>Math.min(9.2e6,l*8.1e6/8)}]},
+ {id:'nitro',label:'Discord Nitro · до 500 МБ',detail:'Исходное разрешение и fps',args:{format:'original'},q:'high',qualities:CRF_LEVELS(4e6)},
+ {id:'vertical',label:'TikTok / Shorts · 9:16',detail:'Вертикальное видео, обрезка по центру',args:{format:'vertical'},q:'1080-high',qualities:[
+  {id:'720-std',short:'720p',hint:'720 × 1280 · лёгкий файл',args:{vertical_size:'720',quality:'standard'},est:(l,r)=>l*Math.min(r*.35,1e6)},
+  {id:'1080-high',short:'1080p',hint:'1080 × 1920 · рекомендуем для TikTok и Shorts',args:{vertical_size:'1080',quality:'high'},est:(l,r)=>l*Math.min(r*.8,3e6)},
+  {id:'1080-max',short:'1080p макс.',hint:'1080 × 1920 · почти без потерь, файл больше',args:{vertical_size:'1080',quality:'max'},est:(l,r)=>l*Math.min(r*1.2,5e6)}]},
+ {id:'youtube',label:'YouTube',detail:'Исходное разрешение и fps',args:{format:'original'},q:'high',qualities:CRF_LEVELS(4.5e6).slice(1)},
+ {id:'gif',label:'GIF · без звука',detail:'Анимация от 2 до 15 секунд',args:{format:'gif'},q:'high',qualities:[
+  {id:'light',short:'Лёгкий',hint:'720 px · 15 fps · маленький файл',args:{gif_width:720,gif_quality:'standard'},est:l=>l*.55e6},
+  {id:'good',short:'Хорошее',hint:'960 px · 30 fps',args:{gif_width:960,gif_quality:'high'},est:l=>l*1.5e6},
+  {id:'high',short:'Высокое',hint:'1080 px · 30 fps · своя палитра на каждый кадр',args:{gif_width:1080,gif_quality:'high'},est:l=>l*2.2e6}]},
+];
+// The chosen quality of each preset is remembered between exports.
+const exportQ=(()=>{try{return JSON.parse(localGet('ag.exportQ')||'{}')||{}}catch{return {}}})();
+function hintOf(q,len,c){return typeof q.hint==='function'?q.hint(len,c):q.hint}
+function presetQuality(p){return p.qualities.find(x=>x.id===exportQ[p.id])||p.qualities.find(x=>x.id===p.q)||p.qualities[0]}
 const editor={
- c:null,v:null,info:null,inT:0,outT:0,marks:[],snap:true,drag:null,hover:null,raf:0,peaks:null,preset:'discord',tracks:[],timer:false,
+ c:null,v:null,info:null,inT:0,outT:0,marks:[],snap:false,drag:null,hover:null,raf:0,peaks:null,preset:'discord',tracks:[],timer:false,
  job:null,result:null,progress:0,ctx:null,nodes:null,keys:null,frame:1/60,pending:0,
  open(id){
   const c=clipById(id);if(!c){go({screen:'library'},false);return}
@@ -453,13 +579,13 @@ const editor={
   const gif=/\.gif$/i.test(c.name);this.preset=gif?'gif':this.fits('discord')?'discord':'nitro';
   this.tracks=[];this.info={fps:60,audio:[]};
   const stage=$('#stage');stage.className='ed';
-  stage.innerHTML=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Назад</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small id="edSub">${esc([gameOf(c),kindLabel[kindOf(c)],c.width?c.width+' × '+c.height:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
+  stage.innerHTML=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Назад</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small id="edSub">${esc([gameOf(c),kindText(c),c.width?c.width+' × '+c.height:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
   <div class="keys">${[['Пробел','пауза'],['J K L','перемотка'],['← →','кадр'],['I','начало'],['O','конец'],['M','метка']].map(([k,l])=>`<span><kbd>${k}</kbd>${l}</span>`).join('')}</div></header>
   <div class="ed-body"><section class="ed-main" aria-label="Просмотр и обрезка">
-   <div class="ed-frame" id="edFrame"><video id="edVideo" preload="auto" playsinline src="${base}media/${encodeURIComponent(c.id)}"></video><span class="drag-note" id="edNote" hidden></span><span class="timer-ov" id="edTimer" hidden></span></div>
+   <div class="ed-frame" id="edFrame"><video id="edVideo" preload="auto" playsinline src="${base}media/${encodeURIComponent(c.id)}"></video>${gif?`<img class="ed-gif" src="${base}media/${encodeURIComponent(c.id)}" alt="">`:""}<span class="drag-note" id="edNote" hidden></span><span class="timer-ov" id="edTimer" hidden></span></div>
    <div class="ctl-row"><button type="button" class="btn icon" data-act="ed-frame" data-d="-1" aria-label="Кадр назад">${ic('frameBack')}</button><button type="button" class="btn icon primary" data-act="ed-play" id="edPlay" aria-label="Воспроизвести">${playIc}</button><button type="button" class="btn icon" data-act="ed-frame" data-d="1" aria-label="Кадр вперёд">${ic('frameFwd')}</button>
     <span class="num" style="padding:0 10px;color:var(--muted)"><b id="edTime" style="color:var(--text);font-weight:600">00:00:00.000</b> / ${precise(c.duration)}</span><span class="grow"></span>
-    <button type="button" class="btn" data-act="ed-snap" id="edSnap" aria-pressed="true">Притягивать к меткам</button><button type="button" class="btn" data-act="ed-in">Начало здесь</button><button type="button" class="btn" data-act="ed-out">Конец здесь</button><button type="button" class="btn" data-act="ed-mark">★ Метка</button></div>
+    <button type="button" class="btn" data-act="ed-in">Начало здесь</button><button type="button" class="btn" data-act="ed-out">Конец здесь</button><button type="button" class="btn" data-act="ed-mark">★ Метка</button></div>
    <div class="card tl-card"><div class="tl-info"><span>Отрезок <b id="edRange"></b> · длительность <b id="edLen"></b></span><span>Тяните края отрезка, сам отрезок за кадры или шкалу под ними</span></div>
     <div class="tl" id="edTl"><div class="strip" id="edStrip"></div><canvas id="edWave" aria-hidden="true"></canvas><div class="dim" id="edDimL" style="left:0;border-radius:6px 0 0 6px"></div><div class="dim" id="edDimR" style="right:0;border-radius:0 6px 6px 0"></div><div class="sel" id="edSel"></div>
      <button type="button" class="handle in" id="edIn" aria-label="Начало отрезка">${grip()}</button><button type="button" class="handle out" id="edOut" aria-label="Конец отрезка">${grip()}</button>
@@ -486,7 +612,7 @@ const editor={
   this.renderPresets();this.renderExport();this.paintTl();this.paintTimer();
   if(!gif)loadInfo(c.id).then(info=>{if(this.c!==c)return;this.info=info||{fps:60,audio:[]};this.frame=1/(info?.fps||60);
    this.tracks=(info?.audio||[]).map((a,i)=>({index:a.index,title:a.title||'Дорожка '+(i+1),on:i===0,gain:100}));this.renderTracks();
-   const sub=$('#edSub');if(sub&&info?.fps)sub.textContent=[gameOf(c),kindLabel[kindOf(c)],c.width?c.width+' × '+c.height:'',Math.round(info.fps)+' fps'].filter(Boolean).join(' · ');
+   const sub=$('#edSub');if(sub&&info?.fps)sub.textContent=[gameOf(c),kindText(c),c.width?c.width+' × '+c.height:'',Math.round(info.fps)+' fps'].filter(Boolean).join(' · ');
   });else{this.renderTracks()}
   if(!gif&&c.audio)api('clip_waveform',{id:c.id,start:0,end:c.duration,track:0}).then(w=>{if(this.c===c){this.peaks=w.peaks||[];this.drawWave()}}).catch(()=>{});
   if(view.focusExport)setTimeout(()=>$('#edName')?.focus(),50);
@@ -500,24 +626,27 @@ const editor={
  D(){return this.c?.duration||0},
  fits(id){
   const len=this.outT-this.inT||this.c?.duration||0;
-  if(id==='gif')return len>=2&&len<=15;
+  if(isGifPreset(id))return len>=2&&len<=15;
   if(id==='discord')return len<=200;
   return true;
  },
  estimate(id){
   const len=this.outT-this.inT,c=this.c,rate=c.size&&c.duration?c.size/c.duration:2e6;
-  const v={discord:Math.min(9.4e6,len*1e6),nitro:len*Math.min(rate*.8,3e6),vertical:len*Math.min(rate*.35,1e6),youtube:len*Math.min(rate,4.5e6),gif:len*.55e6}[id];
+  const p=PRESETS.find(x=>x.id===id);const v=p?presetQuality(p).est(len,rate):0;
   return '≈ '+bytes(v);
  },
  renderPresets(){
   const box=$('#edPresets');if(!box)return;const gif=/\.gif$/i.test(this.c.name);
   if(!this.fits(this.preset)&&!gif)this.preset=this.fits('discord')?'discord':'nitro';
-  box.innerHTML=PRESETS.map(p=>{const ok=gif?p.id==='gif':this.fits(p.id);const why=p.id==='gif'&&!ok&&!gif?'Выделите от 2 до 15 секунд':p.id==='discord'&&!ok?'Отрезок длиннее 3 минут — выберите Nitro':gif&&p.id!=='gif'?'Для GIF-файла доступен только GIF':'';
-   return `<button type="button" role="radio" class="preset" data-act="ed-preset" data-id="${p.id}" aria-checked="${this.preset===p.id}" ${ok?'':'disabled'}><span class="r" aria-hidden="true"></span><span class="tx"><b>${p.label}</b><small>${esc(why||p.detail)}</small></span><span class="sz">${ok?this.estimate(p.id):''}</span></button>`}).join('');
+  box.innerHTML=PRESETS.map(p=>{const ok=gif?isGifPreset(p.id):this.fits(p.id);const why=isGifPreset(p.id)&&!ok&&!gif?'Выделите от 2 до 15 секунд':p.id==='discord'&&!ok?'Отрезок длиннее 3 минут — выберите Nitro':gif&&!isGifPreset(p.id)?'Для GIF-файла доступен только GIF':'';
+   const on=this.preset===p.id&&ok,q=presetQuality(p);
+   // Only the chosen preset shows its quality switch, so the list stays short.
+   const quality=on&&p.qualities.length>1?`<div class="pq"><div class="seg pq-seg" role="radiogroup" aria-label="Качество: ${esc(p.label)}">${p.qualities.map(x=>`<button type="button" role="radio" aria-checked="${x.id===q.id}" data-act="ed-q" data-p="${p.id}" data-q="${x.id}">${esc(x.short)}</button>`).join('')}</div><small class="pq-hint">${esc(hintOf(q,this.outT-this.inT,this.c))}</small></div>`:'';
+   return `<div class="preset-item ${on?'on':''} ${ok?'':'off'}"><button type="button" role="radio" class="preset" data-act="ed-preset" data-id="${p.id}" aria-checked="${on}" ${ok?'':'disabled'}><span class="r" aria-hidden="true"></span><span class="tx"><b>${p.label}</b><small>${esc(why||(on?p.detail:p.detail+(p.qualities.length>1?' · '+q.short:'')))}</small></span><span class="sz">${ok?this.estimate(p.id):''}</span></button>${quality}</div>`}).join('');
  },
  renderTracks(){
   const box=$('#edTracks');if(!box)return;
-  if(!this.tracks.length){box.innerHTML=`<span class="hint">${/\.gif$/i.test(this.c.name)||this.preset==='gif'?'GIF сохраняется без звука.':'В этом видео нет звуковых дорожек.'}</span>`;return}
+  if(!this.tracks.length){box.innerHTML=`<span class="hint">${/\.gif$/i.test(this.c.name)||isGifPreset(this.preset)?'GIF сохраняется без звука.':'В этом видео нет звуковых дорожек.'}</span>`;return}
   const multi=this.tracks.length>1;
   box.innerHTML=(multi?`<p class="hint">«Общий звук» уже содержит все источники. Чтобы менять громкость игры и чата по отдельности, выключите его и включите нужные дорожки.</p>`:'')+this.tracks.map((t,i)=>`<div class="track"><button type="button" class="switch" role="switch" aria-checked="${t.on}" data-act="ed-track" data-i="${i}" aria-label="${t.on?'Выключить':'Включить'} дорожку: ${esc(t.title)}"><span class="tr"><span></span></span></button><div style="display:flex;flex-direction:column;gap:4px;min-width:0"><span class="nm" style="color:${t.on?'var(--text)':'var(--muted)'}">${esc(t.title)}</span><input type="range" min="0" max="150" step="1" value="${t.gain}" data-gain="${i}" aria-label="Громкость: ${esc(t.title)}" ${t.on?'':'disabled'}></div><button type="button" class="pct" data-act="ed-gain-reset" data-i="${i}" title="Двойной клик — 100%" style="color:${t.gain>100?'var(--accent)':t.on?'var(--text)':'var(--muted)'}">${t.on?t.gain+'%':'—'}</button></div>`).join('');
  },
@@ -525,7 +654,18 @@ const editor={
   const box=$('#edExport');if(!box)return;
   if(this.job){box.innerHTML=`<div class="progress" role="status"><div style="display:flex;justify-content:space-between;font-size:13px"><b>Экспорт…</b><span class="num hint" id="edPct">${this.progress}%</span></div><div class="bar"><span id="edBar" style="width:${this.progress}%"></span></div><button type="button" class="btn sm" data-act="ed-cancel" style="align-self:flex-start">Отменить</button></div>`;return}
   if(this.result){const r=this.result,c=r.id&&clipById(r.id);box.innerHTML=`<div class="result" role="status"><div style="display:flex;align-items:center;gap:10px"><i style="width:8px;height:8px;border-radius:50%;background:var(--ok)" aria-hidden="true"></i><b>Готово · <span data-i18n-ignore>${esc(r.name)}</span> · ${bytes(r.bytes||0)}</b></div><div class="result-acts"><button type="button" class="btn primary" data-act="ed-copy" ${c?'':'disabled'}>${ic('copy')}<span id="edCopyL">Копировать файл</span></button><button type="button" class="btn" data-act="reveal" data-id="${esc(r.id||'')}" ${c?'':'disabled'}>${ic('folder')}Показать в папке</button></div><button type="button" class="btn ghost sm" data-act="ed-again" style="align-self:flex-start">Экспортировать ещё раз</button></div>`;return}
-  box.innerHTML=`<button type="button" class="btn primary" data-act="ed-export" style="height:48px;font-size:15px;width:100%">${ic('save')}Экспортировать · ${this.estimate(this.preset)}</button>`;
+  box.innerHTML=`<button type="button" class="btn primary" data-act="ed-export" style="height:48px;font-size:15px;width:100%">${ic('save')}Экспортировать · <span id="edExpSz">${this.estimate(this.preset)}</span></button>`;
+ },
+ // Changing quality updates the open card in place: rebuilding the whole list
+ // made the card flash and dropped the hover state.
+ updateQuality(pid){
+  const p=PRESETS.find(x=>x.id===pid),card=$(`#edPresets .preset[data-id="${pid}"]`)?.closest('.preset-item');
+  if(!p||!card||this.preset!==pid)return this.renderPresets(),this.renderExport();
+  const q=presetQuality(p);
+  for(const b of card.querySelectorAll('[data-act=ed-q]'))b.setAttribute('aria-checked',String(b.dataset.q===q.id));
+  const hint=card.querySelector('.pq-hint');if(hint)hint.textContent=hintOf(q,this.outT-this.inT,this.c);
+  const sz=card.querySelector('.sz');if(sz)sz.textContent=this.estimate(pid);
+  const exp=$('#edExpSz');if(exp)exp.textContent=this.estimate(pid);else this.renderExport();
  },
  layout(){this.drawWave();this.paintStrip();this.paintTl();this.paintTimer()},
  paintStrip(){
@@ -666,9 +806,10 @@ const editor={
   // One click, one export: the button turns into progress before the request returns.
   if(this.job)return;this.job='starting';this.progress=0;this.result=null;this.renderExport();
   const c=this.c,p=PRESETS.find(x=>x.id===this.preset);const name=$('#edName').value.trim()||nameOf(c);
-  const audio_tracks=this.preset==='gif'?[]:this.tracks.filter(t=>t.on).map(t=>({index:t.index,gain:t.gain}));
-  const args={id:c.id,start:Math.round(this.inT*1000)/1000,end:Math.round(this.outT*1000)/1000,name,timer:this.timer,show_inputs:false,...p.args};
-  if(this.preset!=='gif'&&this.tracks.length)Object.assign(args,{audio_mode:'custom',audio_tracks});
+  const audio_tracks=isGifPreset(this.preset)?[]:this.tracks.filter(t=>t.on).map(t=>({index:t.index,gain:t.gain}));
+  const args={id:c.id,start:Math.round(this.inT*1000)/1000,end:Math.round(this.outT*1000)/1000,name,timer:this.timer,show_inputs:false,...p.args,...presetQuality(p).args};
+  if(args.quality==='copy')args.timer=false; // a copied stream cannot get an overlay
+  if(!isGifPreset(this.preset)&&this.tracks.length)Object.assign(args,{audio_mode:'custom',audio_tracks});
   try{
    const job=await task('export',args,{
     progress:j=>{this.progress=j.progress||0;const b=$('#edBar');if(b){b.style.width=this.progress+'%';$('#edPct').textContent=this.progress+'%'}},
@@ -940,13 +1081,15 @@ const ACT={
  'vw-menu'(){viewer.toggleMenu()},'vw-rate'(el){viewer.rate(Number(el.dataset.v))},
  'vw-full'(){viewer.fullscreen()},'vw-track'(el){viewer.setTrack(Number(el.dataset.i))},
  'vw-step'(el){viewer.step(Number(el.dataset.dir))},
+ 'vw-gif-play'(){viewer.gifToggle()},'vw-gif-frame'(el){viewer.gifStep(Number(el.dataset.d))},'vw-gif-jump'(el){viewer.gifJump(Number(el.dataset.d))},
  async 'vw-fav'(el){const c=viewer.c;await saveClipMeta(c,{favorite:!c.favorite});el.setAttribute('aria-pressed',!!c.favorite);el.style.color=c.favorite?'var(--accent)':'inherit';el.innerHTML=ic('heart',c.favorite?'fill="currentColor"':'')},
  // editor
  'ed-play'(){const v=editor.v;v.paused?v.play():v.pause()},'ed-frame'(el){editor.step(Number(el.dataset.d))},
- 'ed-snap'(el){editor.snap=!editor.snap;el.setAttribute('aria-pressed',editor.snap);el.style.borderColor=editor.snap?'var(--accent)':''},
+
  'ed-in'(){editor.setIn()},'ed-out'(){editor.setOut()},'ed-mark'(){editor.addMark()},
+ 'ed-q'(el){exportQ[el.dataset.p]=el.dataset.q;localSet('ag.exportQ',JSON.stringify(exportQ));editor.updateQuality(el.dataset.p)},
  'ed-preset'(el){editor.preset=el.dataset.id;editor.renderPresets();editor.renderExport();editor.renderTracks()},
- 'ed-track'(el){const t=editor.tracks[Number(el.dataset.i)];t.on=!t.on;editor.renderTracks();editor.syncTracks()},
+ 'ed-track'(el){const on=toggleTrack(editor.tracks.map(t=>t.on),Number(el.dataset.i));editor.tracks.forEach((t,j)=>t.on=on[j]);editor.renderTracks();editor.syncTracks()},
  'ed-export'(){editor.exportNow()},
  async 'ed-cancel'(){if(editor.job&&editor.job!=='starting')await api('job_cancel',{id:editor.job}).catch(fail)},
  async 'ed-copy'(){const id=editor.result?.id;if(!id)return;await api('copy_file',{id});const l=$('#edCopyL');if(l)l.textContent='Скопировано ✓';toast('Файл скопирован','', 'Вставьте его в Discord или проводник')},

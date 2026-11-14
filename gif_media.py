@@ -13,11 +13,24 @@ def validate_duration(value):
     return value
 
 
-def encode(suite, source, target, start, duration, job, width=720, timer=False, control=None,extra_filter=''):
+# standard: small file, 15 fps, one palette for the whole clip.
+# high: 30 fps, up to 1080 px, a fresh 256-colour palette per frame so game
+# footage keeps its colours and gradients without heavy banding (bigger file).
+GIF_QUALITY = {
+    'standard': {'fps': 15, 'palette': 'palettegen=stats_mode=diff', 'use': 'paletteuse=dither=sierra2_4a'},
+    'high': {'fps': 30, 'palette': 'palettegen=stats_mode=single:max_colors=256',
+             'use': 'paletteuse=new=1:dither=sierra2_4a:diff_mode=rectangle'},
+}
+
+
+def encode(suite, source, target, start, duration, job, width=720, timer=False, control=None,extra_filter='',quality='standard'):
     if control:control.check()
     duration = validate_duration(duration)
-    if width not in (480, 720, 960):
-        raise ValueError('Ширина GIF: 480, 720 или 960 пикселей')
+    if width not in (480, 720, 960, 1080):
+        raise ValueError('Ширина GIF: 480, 720, 960 или 1080 пикселей')
+    if quality not in GIF_QUALITY:
+        raise ValueError('Неизвестное качество GIF')
+    q = GIF_QUALITY[quality]
     target = Path(target)
     partial = target.with_name(target.stem + '-' + uuid.uuid4().hex[:6] + '.partial.gif')
     # Scale before splitting so the palette pass only buffers bounded small frames.
@@ -33,8 +46,8 @@ def encode(suite, source, target, start, duration, job, width=720, timer=False, 
         overlay = video_filter(suite.cfg.get('customization'),source_fps,suite.cfg.get('language','ru')) + ','
     if extra_filter:overlay+=extra_filter+','
     graph = (f"[0:v]setpts=PTS-STARTPTS,trim=start={trim_start:.6f}:duration={duration:.6f},setpts=PTS-STARTPTS,"
-             f"fps=15,scale=w='min({width},iw)':h=-2:flags=lanczos,setsar=1,{overlay}split[a][b];"
-             '[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=sierra2_4a[v]')
+             f"fps={q['fps']},scale=w='min({width},iw)':h=-2:flags=lanczos,setsar=1,{overlay}split[a][b];"
+             f"[a]{q['palette']}[p];[b][p]{q['use']}[v]")
     seek = [] if transport else ['-ss', f'{start:.6f}', '-t', f'{duration:.6f}']
     command = [suite.ff(), '-hide_banner', '-loglevel', 'error', *seek,
                '-i', str(source), '-filter_complex', graph,
@@ -53,7 +66,7 @@ def encode(suite, source, target, start, duration, job, width=720, timer=False, 
                 if line.startswith(b'out_time_us='):
                     try:
                         elapsed = int(line.strip().split(b'=')[1])/1000000
-                        job.update(progress=min(95, int(elapsed/duration*95)), message='Создание GIF · без звука')
+                        job.update(progress=min(95, int(elapsed/duration*95)), message='Создание GIF · без звука'+(' · высокое качество' if quality=='high' else ''))
                     except ValueError:
                         pass
             proc.wait()
