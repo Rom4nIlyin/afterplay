@@ -1159,7 +1159,7 @@ class Suite:
                 return self.window.evaluate_js("({language:window.afterplayI18n?.language,documentLanguage:document.documentElement.lang,missing:window.afterplayI18n?.untranslated(),errors:window.afterplayErrors||[],debug:window.customDebug?.(),languageSelect:$('#interfaceLanguage')?.value,review:window.reviewDebug?.(),frame:$('#player')?{width:$('#player').clientWidth,height:$('#player').clientHeight,videoWidth:$('#player').videoWidth,videoHeight:$('#player').videoHeight,layout:['#dialog','.dialog-head','.review-viewer','.review-transport'].map(s=>{const e=$(s);return e?{selector:s,width:e.clientWidth,height:e.clientHeight,style:e.getAttribute('style'),rows:getComputedStyle(e).gridTemplateRows}:null})}:null})")
             if op=='language_select':
                 value=arg.get('language')
-                if value not in {'ru','en'}:raise ValueError('Unsupported language')
+                if value not in {'ru','en','ko'}:raise ValueError('Unsupported language')
                 self.window.evaluate_js("$('#interfaceLanguage').value="+json.dumps(value)+";$('#interfaceLanguage').dispatchEvent(new Event('change',{bubbles:true}))")
                 return {'ok':True}
             if op=='custom_hover':
@@ -1382,7 +1382,7 @@ def server_for(suite, token=None, port=0):
                     p=BASE/'ui'/('index.html' if route=='' else route)
                     # The page itself is tiny and names versioned assets: never cache it.
                     cache='no-store' if route in {'','index.html'} else 'static'
-                elif route in {'settings-layout.js','scrollbars.css','sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/rysya-groom.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json','afterglow.css','afterglow.js','ag-app.css','ag-app.js'}:
+                elif route in {'settings-layout.js','scrollbars.css','sequence-viewport.js','sequence-model.js','sequence-ui.js','sequence.css','input-timeline.js','moments-ui.js','moments.css','pet-ui.js','pet.css','pets/rysya.png','pets/rysya-groom.png','pets/purr.wav','comfort.css','onboarding.js','onboarding.css','customization-ui.js','customization.css','i18n.js','en-catalog.js','en.json','ko-catalog.js','ko.json','afterglow.css','afterglow.js','ag-app.css','ag-app.js'}:
                     p=BASE/'ui'/route
                     cache='static'
                 elif route.startswith('backgrounds/'):

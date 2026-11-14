@@ -47,7 +47,16 @@ class LocalFixTests(unittest.TestCase):
             original=suite.cfg_path.read_bytes()
             with self.assertRaises(ValueError):localization.configure(suite,'fr')
             self.assertEqual(suite.cfg_path.read_bytes(),original)
+            localization.configure(suite,'ko')
+            self.assertEqual(localization.translate(suite,'Момент отмечен'),'순간 표시됨')
+            self.assertEqual(localization.translate(suite,'Discord · сжатие · 12 / 35 с'),'Discord · 압축 · 12 / 35초')
+            self.assertEqual(Suite(temp).cfg['language'],'ko')
     def test_english_catalog_has_no_russian_translations(self):
         import re
         self.assertGreater(len(localization.catalog()),900)
         self.assertFalse(any(re.search('[А-Яа-яЁё]',value) for value in localization.catalog().values()))
+    def test_korean_catalog_matches_english(self):
+        import re
+        english,korean=localization.catalog('en'),localization.catalog('ko')
+        self.assertEqual(set(korean),set(english))
+        self.assertFalse(any(re.search('[А-Яа-яЁё]',value) for value in korean.values()))

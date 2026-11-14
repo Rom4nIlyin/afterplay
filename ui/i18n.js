@@ -1,17 +1,47 @@
 'use strict';
 // Text-node translation leaves DOM nodes, event handlers and input values intact.
 (()=>{
- const dictionary=window.AFTERPLAY_EN||{},normalized=new Map(Object.entries(dictionary).map(([key,value])=>[key.replace(/\s+/g,' ').trim(),value]));
+ // Russian is the source language; every other language is a catalog keyed by the Russian text.
+ const LANGUAGES=['ru','en','ko'],LOCALES={ru:'ru-RU',en:'en-US',ko:'ko-KR'};
+ const catalogs={en:window.AFTERPLAY_EN||{},ko:window.AFTERPLAY_KO||{}};
+ const known=value=>LANGUAGES.includes(value)?value:'ru';
  const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
- const fragments=new RegExp('(?<![А-Яа-яЁё])(?:'+Object.keys(dictionary).sort((a,b)=>b.length-a.length).map(escape).join('|')+')(?![А-Яа-яЁё])','g');
+ const compiled={};
+ // Templates let words move around numbers and names, as Korean word order needs:
+ //  {0}  any text; the key must match the whole text node ("Получится {0}p · {1} fps — чётко.").
+ //  {#0} a number; keys made only of these also match inside longer text ("{#0} ноября" → "11월 {#0}일").
+ // Captured text is translated too; the value may use the placeholders in any order.
+ const PLACEHOLDER=/\{(#?)(\d)\}/g;
+ function template(key,value,inline){
+  // Capture groups follow the order the placeholders appear in the key.
+  const order=[];let source='';
+  for(const piece of key.split(/(\{#?\d\})/)){const m=piece.match(/^\{(#?)(\d)\}$/);if(m){order.push(Number(m[2]));source+=m[1]?'(\\d+(?:[.,]\\d+)?)':'(.+?)'}else source+=escape(piece)}
+  const pattern=inline?new RegExp('(?<![А-Яа-яЁё\\d])'+source+'(?![А-Яа-яЁё])','g'):new RegExp('^'+source+'$');
+  return {value,pattern,order};
+ }
+ function fill(t,match,offset=1){return t.value.replace(PLACEHOLDER,(_,hash,n)=>{const at=t.order.indexOf(Number(n));return at<0?'':translated(match[at+offset]??'')})}
+ function compile(code){
+  if(compiled[code])return compiled[code];
+  const dictionary=catalogs[code]||{},keys=Object.keys(dictionary),has=key=>/\{#?\d\}/.test(key);
+  const plain=keys.filter(key=>!has(key)),inline=key=>has(key)&&!/\{\d\}/.test(key);
+  const templates=keys.filter(key=>has(key)&&!inline(key)).map(key=>template(key,dictionary[key],false));
+  const inlines=keys.filter(inline).sort((a,b)=>b.length-a.length).map(key=>template(key,dictionary[key],true));
+  return compiled[code]={dictionary,templates,inlines,
+   normalized:new Map(plain.map(key=>[key.replace(/\s+/g,' ').trim(),dictionary[key]])),
+   fragments:plain.length?new RegExp('(?<![А-Яа-яЁё])(?:'+plain.sort((a,b)=>b.length-a.length).map(escape).join('|')+')(?![А-Яа-яЁё])','g'):null};
+ }
  const textMemory=new WeakMap(),attributeMemory=new WeakMap();
  let language='ru',busy=false,pending=false,translatedNodes=false;
  const protectedContent='script,style,textarea,[data-i18n-ignore],.clip-name,.clip-tags,.custom-card-game,.result-path,.review-file-name,.review-dialog .dialog-head h2,[data-action="custom-preset-load"],.custom-pinned,[data-tag],#exportList .row-main b,.auto-app b';
  function translated(value){
-  if(language!=='en'||!/[А-Яа-яЁё]/.test(value))return value;
-  const trimmed=value.trim(),exact=dictionary[trimmed]??normalized.get(trimmed.replace(/\s+/g,' '));
-  if(exact!==undefined)return value.slice(0,value.length-value.trimStart().length)+exact+value.slice(value.trimEnd().length);
-  return value.replace(fragments,key=>dictionary[key]);
+  if(language==='ru'||!/[А-Яа-яЁё]/.test(value))return value;
+  const {dictionary,normalized,templates,inlines,fragments}=compile(language);
+  const trimmed=value.trim(),lead=value.slice(0,value.length-value.trimStart().length),tail=value.slice(value.trimEnd().length);
+  const exact=dictionary[trimmed]??normalized.get(trimmed.replace(/\s+/g,' '));
+  if(exact!==undefined)return lead+exact+tail;
+  for(const t of templates){const match=trimmed.match(t.pattern);if(match)return lead+fill(t,match)+tail}
+  for(const t of inlines)value=value.replace(t.pattern,(...match)=>fill(t,match,1));
+  return fragments?value.replace(fragments,key=>dictionary[key]):value;
  }
  function userContent(element){
   return element?.closest(protectedContent)||element?.matches('#captureProfile option')&&(element.value!=='screen:default'||!['По умолчанию · весь экран','Default · entire screen'].includes(element.textContent));
@@ -35,7 +65,7 @@
  }
  function walk(root=document.body,force=false){
   // Russian is the source language: once restored, nothing needs walking.
-  if(!root||busy||(language!=='en'&&!translatedNodes&&!force))return;busy=true;
+  if(!root||busy||(language==='ru'&&!translatedNodes&&!force))return;busy=true;
   try{
    if(root.nodeType===Node.TEXT_NODE){node(root);return}
    if(root.nodeType!==Node.ELEMENT_NODE||root.matches('script,style,[data-i18n-ignore]'))return;
@@ -45,13 +75,13 @@
   }finally{busy=false}
  }
  function apply(value){
-  language=value==='en'?'en':'ru';document.documentElement.lang=language;
+  language=known(value);document.documentElement.lang=language;
   try{localStorage.setItem('afterplay.language',language)}catch{}
   // Detached nodes translated earlier may return later, so a session that
   // ever showed English keeps walking new nodes as before.
   walk(document.body,true);
  }
- window.i18nLocale=()=>language==='en'?'en-US':'ru-RU';
+ window.i18nLocale=()=>LOCALES[language];
  function untranslated(){
   const items=[],walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   while(walker.nextNode()){
@@ -68,7 +98,7 @@
  const beforeRender=render;
  render=function(){
   // Until the first state poll arrives keep the language remembered locally.
-  const value=state.settings.language||language;language=value==='en'?'en':'ru';document.documentElement.lang=language;
+  const value=state.settings.language||language;language=known(value);document.documentElement.lang=language;
   beforeRender();walk();
  };
  const beforePreferences=window.updatePreferences;
@@ -78,7 +108,7 @@
   beforeSettings?.();
   if(tab!=='settings'||$('#interfaceLanguage'))return;
   const card=document.createElement('section');card.className='settings-card';card.id='languageSettings';
-  card.innerHTML='<h2>Язык интерфейса</h2><div class="field"><label for="interfaceLanguage">Язык</label><select id="interfaceLanguage"><option value="ru" data-i18n-ignore>Русский</option><option value="en" data-i18n-ignore>English</option></select><small>Переключение применяется сразу и сохраняется между запусками.</small></div>';
+  card.innerHTML='<h2>Язык интерфейса</h2><div class="field"><label for="interfaceLanguage">Язык</label><select id="interfaceLanguage"><option value="ru" data-i18n-ignore>Русский</option><option value="en" data-i18n-ignore>English</option><option value="ko" data-i18n-ignore>한국어</option></select><small>Переключение применяется сразу и сохраняется между запусками.</small></div>';
   $('.settings-panel')?.prepend(card);$('#interfaceLanguage').value=language;
  };
  document.addEventListener('change',async event=>{
@@ -97,6 +127,6 @@
   for(const root of roots)walk(root);
  });
  observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['title','aria-label','placeholder','alt']});
- try{language=localStorage.getItem('afterplay.language')==='en'?'en':'ru'}catch{}
+ try{language=known(localStorage.getItem('afterplay.language'))}catch{}
  apply(language);
 })();

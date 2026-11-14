@@ -341,7 +341,7 @@ const viewer={
    this.v=null;const src=`${base}media/${encodeURIComponent(c.id)}`;
    stage.innerHTML=hd+`<div class="vw-stage">${nav}<div class="vw-frame" id="vwFrame"><canvas class="vw-gif" id="vwGif"></canvas><button type="button" class="vw-hit" data-act="vw-gif-play" aria-label="Воспроизвести или пауза"></button></div></div>
    <div class="vw-ctl"><div class="ctl-row"><button type="button" class="btn icon" data-act="vw-gif-frame" data-d="-1" aria-label="Кадр назад">${ic('frameBack')}</button><button type="button" class="btn icon primary" data-act="vw-gif-play" id="vwPlay" aria-label="Пауза">${pauseIc}</button><button type="button" class="btn icon" data-act="vw-gif-frame" data-d="1" aria-label="Кадр вперёд">${ic('frameFwd')}</button><button type="button" class="btn ghost sm num" data-act="vw-gif-jump" data-d="-5">−5 с</button><button type="button" class="btn ghost sm num" data-act="vw-gif-jump" data-d="5">+5 с</button>
-    <span class="num" style="padding:0 8px;color:var(--muted)" id="vwGifPos">Загрузка…</span><span class="fmt-badge">GIF</span><span class="hint">без звука${c.width?' · '+c.width+' × '+c.height:''}</span><span class="grow"></span><span class="hint keyhint">Пробел — пауза · ← → — кадр · Shift + ← → — 5 с · F или двойной клик — весь экран · Esc — назад</span><button type="button" class="btn icon" data-act="vw-full" aria-label="Во весь экран">${ic('full')}</button></div></div>`;
+    <span class="num" style="padding:0 8px;color:var(--muted)" id="vwGifPos">Загрузка…</span><span class="fmt-badge">GIF</span><span class="hint"><span>без звука</span>${c.width?' · '+c.width+' × '+c.height:''}</span><span class="grow"></span><span class="hint keyhint">Пробел — пауза · ← → — кадр · Shift + ← → — 5 с · F или двойной клик — весь экран · Esc — назад</span><button type="button" class="btn icon" data-act="vw-full" aria-label="Во весь экран">${ic('full')}</button></div></div>`;
    this.keys=e=>this.key(e);document.addEventListener('keydown',this.keys);
    $('#vwFrame').addEventListener('dblclick',e=>{e.preventDefault();this.fullscreen()});
    this.fsch=()=>{this.wake();this.paintFull()};document.addEventListener('fullscreenchange',this.fsch);
@@ -536,15 +536,15 @@ function discordPlan(len,srcH,fps){
 // Longest clip that still gets the given height.
 function discordMaxLen(h,fps){const need=DISCORD_BPP*(h*16/9)*h*fps/1000;let len=9.4e6*8/1000/(need+96+50);if(len>60)len=9.4e6*8/1000/(need+64+50);return Math.floor(len)}
 function discordHint(fps){return (len,c)=>{
- const pl=discordPlan(len,c?.height,fps);if(pl.kbps<200)return 'Отрезок слишком длинный для 10 МБ — укоротите его или выберите Nitro';
- const now=`Получится ${pl.height}p · ${fps} fps`;
+ const pl=discordPlan(len,c?.height,fps);if(pl.kbps<200)return ['Отрезок слишком длинный для 10 МБ — укоротите его или выберите Nitro'];
+ const h=pl.height,out=[];
+ out.push(h>=1080?`Получится ${h}p · ${fps} fps — максимум для этого лимита.`:h>=720?`Получится ${h}p · ${fps} fps — чётко.`:h>=540?`Получится ${h}p · ${fps} fps — картинка мягче.`:`Получится ${h}p · ${fps} fps — картинка мелкая.`);
+ if(h<720)out.push(`Для 720p укоротите до ~${discordMaxLen(720,fps)} с или выберите Nitro.`);
+ else if(h<1080&&fps===30&&(c?.height||1080)>=1080)out.push(`Для 1080p укоротите до ~${discordMaxLen(1080,30)} с.`);
  // 60 fps splits the same 10 MB over twice as many frames: say so when it costs resolution.
  const at30=fps===60?discordPlan(len,c?.height,30).height:0;
- const smooth=at30>pl.height?` При 60 fps картинка размажется в динамике — в «Чётче · 30 fps» будет ${at30}p.`:'';
- if(pl.height>=1080)return now+' — максимум для этого лимита'+smooth;
- if(pl.height>=720)return now+' — чётко.'+smooth+(fps===30&&(c?.height||1080)>=1080?` Для 1080p укоротите до ~${discordMaxLen(1080,30)} с.`:'');
- const target=discordMaxLen(720,fps);
- return now+(pl.height>=540?' — картинка мягче':' — картинка мелкая')+`. Для 720p укоротите до ~${target} с или выберите Nitro.`+smooth;
+ if(at30>h)out.push(`При 60 fps картинка размажется в динамике — в «Чётче · 30 fps» будет ${at30}p.`);
+ return out;
 }}
 const PRESETS=[
  {id:'discord',label:'Discord · до 10 МБ',detail:'Влезает в лимит Discord без Nitro',args:{format:'original',quality:'discord'},q:'30',qualities:[
@@ -563,7 +563,9 @@ const PRESETS=[
 ];
 // The chosen quality of each preset is remembered between exports.
 const exportQ=(()=>{try{return JSON.parse(localGet('ag.exportQ')||'{}')||{}}catch{return {}}})();
-function hintOf(q,len,c){return typeof q.hint==='function'?q.hint(len,c):q.hint}
+function hintOf(q,len,c){const v=typeof q.hint==='function'?q.hint(len,c):q.hint;return Array.isArray(v)?v:[v]}
+// One span per sentence: the translator matches whole text nodes.
+const hintHTML=(q,len,c)=>hintOf(q,len,c).map(x=>`<span>${esc(x)}</span>`).join(' ');
 function presetQuality(p){return p.qualities.find(x=>x.id===exportQ[p.id])||p.qualities.find(x=>x.id===p.q)||p.qualities[0]}
 const editor={
  c:null,v:null,info:null,inT:0,outT:0,marks:[],snap:false,drag:null,hover:null,raf:0,peaks:null,preset:'discord',tracks:[],timer:false,
@@ -641,7 +643,7 @@ const editor={
   box.innerHTML=PRESETS.map(p=>{const ok=gif?isGifPreset(p.id):this.fits(p.id);const why=isGifPreset(p.id)&&!ok&&!gif?'Выделите от 2 до 15 секунд':p.id==='discord'&&!ok?'Отрезок длиннее 3 минут — выберите Nitro':gif&&!isGifPreset(p.id)?'Для GIF-файла доступен только GIF':'';
    const on=this.preset===p.id&&ok,q=presetQuality(p);
    // Only the chosen preset shows its quality switch, so the list stays short.
-   const quality=on&&p.qualities.length>1?`<div class="pq"><div class="seg pq-seg" role="radiogroup" aria-label="Качество: ${esc(p.label)}">${p.qualities.map(x=>`<button type="button" role="radio" aria-checked="${x.id===q.id}" data-act="ed-q" data-p="${p.id}" data-q="${x.id}">${esc(x.short)}</button>`).join('')}</div><small class="pq-hint">${esc(hintOf(q,this.outT-this.inT,this.c))}</small></div>`:'';
+   const quality=on&&p.qualities.length>1?`<div class="pq"><div class="seg pq-seg" role="radiogroup" aria-label="Качество: ${esc(p.label)}">${p.qualities.map(x=>`<button type="button" role="radio" aria-checked="${x.id===q.id}" data-act="ed-q" data-p="${p.id}" data-q="${x.id}">${esc(x.short)}</button>`).join('')}</div><small class="pq-hint">${hintHTML(q,this.outT-this.inT,this.c)}</small></div>`:'';
    return `<div class="preset-item ${on?'on':''} ${ok?'':'off'}"><button type="button" role="radio" class="preset" data-act="ed-preset" data-id="${p.id}" aria-checked="${on}" ${ok?'':'disabled'}><span class="r" aria-hidden="true"></span><span class="tx"><b>${p.label}</b><small>${esc(why||(on?p.detail:p.detail+(p.qualities.length>1?' · '+q.short:'')))}</small></span><span class="sz">${ok?this.estimate(p.id):''}</span></button>${quality}</div>`}).join('');
  },
  renderTracks(){
@@ -663,7 +665,7 @@ const editor={
   if(!p||!card||this.preset!==pid)return this.renderPresets(),this.renderExport();
   const q=presetQuality(p);
   for(const b of card.querySelectorAll('[data-act=ed-q]'))b.setAttribute('aria-checked',String(b.dataset.q===q.id));
-  const hint=card.querySelector('.pq-hint');if(hint)hint.textContent=hintOf(q,this.outT-this.inT,this.c);
+  const hint=card.querySelector('.pq-hint');if(hint)hint.innerHTML=hintHTML(q,this.outT-this.inT,this.c);
   const sz=card.querySelector('.sz');if(sz)sz.textContent=this.estimate(pid);
   const exp=$('#edExpSz');if(exp)exp.textContent=this.estimate(pid);else this.renderExport();
  },
@@ -976,7 +978,7 @@ const settingsUI={
   const sw=(act,on,label,sub,disabled=false)=>`<div class="st-row"><span class="t"><b>${label}</b>${sub?`<small>${sub}</small>`:''}</span><button type="button" class="switch" role="switch" aria-checked="${!!on}" aria-label="${esc(label)}" data-act="${act}" ${disabled?'disabled':''}><span class="tr"><span></span></span></button></div>`;
   const used=Object.entries(hk).filter(([,v])=>v);
   box.innerHTML=`<section class="card st-sec" id="st-general"><h2>Общие</h2>
-   <div class="st-row"><span class="t"><b>Язык интерфейса</b><small>Переключение применяется сразу и сохраняется между запусками.</small></span><select class="input" id="interfaceLanguage" aria-label="Язык интерфейса" style="width:auto;min-width:160px"><option value="ru" data-i18n-ignore ${state.settings.language==='en'?'':'selected'}>Русский</option><option value="en" data-i18n-ignore ${state.settings.language==='en'?'selected':''}>English</option></select></div>
+   <div class="st-row"><span class="t"><b>Язык интерфейса</b><small>Переключение применяется сразу и сохраняется между запусками.</small></span><select class="input" id="interfaceLanguage" aria-label="Язык интерфейса" style="width:auto;min-width:160px">${[['ru','Русский'],['en','English'],['ko','한국어']].map(([v,l])=>`<option value="${v}" data-i18n-ignore ${(['en','ko'].includes(state.settings.language)?state.settings.language:'ru')===v?'selected':''}>${l}</option>`).join('')}</select></div>
    ${sw('st-autostart',d.autostart,'Запускать вместе с Windows','AFTERPLAY стартует свёрнутым в трей')}
    <div class="st-row"><span class="t"><b>Кнопка «Закрыть» в окне</b><small>Полный выход всегда есть в меню значка в трее</small></span><div class="seg" role="radiogroup" aria-label="Кнопка «Закрыть»">${[['tray','Свернуть в трей'],['close','Закрыть программу']].map(([v,l])=>`<button type="button" role="radio" data-act="st-close" data-v="${v}" aria-checked="${(d.close_action||'tray')===v}">${l}</button>`).join('')}</div></div>
    ${sw('st-exit-save',auto.save_on_exit,'Сохранять повтор при закрытии игры','Для профилей, которые включаются сами при запуске игры')}
