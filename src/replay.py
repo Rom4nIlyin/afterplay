@@ -181,18 +181,18 @@ class Replay:
         self.input_track=None;self.input_recorder=None;self.input_error=''
 
     def configure_inputs(self,enabled):
+        # Key/mouse input recording is removed: it left an .inputs.json file next to
+        # every save. The request is accepted so old callers keep working, but it
+        # always ends up switched off.
         if type(enabled) is not bool:raise ValueError('Ожидался переключатель записи нажатий')
         with self.lock:
-            if self.phase in {'starting','stopping'}:raise ValueError('Дождись запуска или остановки записи')
-            if enabled and self.phase=='recording' and self.input_recorder is None:
-                self._start_inputs()
-            elif not enabled and self.input_recorder is not None:
+            if self.input_recorder is not None:
                 self.input_recorder.close();self.input_recorder=None
-            self.suite.cfg['input_recording']={'enabled':enabled};self.suite.save_cfg()
+            self.suite.cfg['input_recording']={'enabled':False};self.suite.save_cfg()
         return self.state()
 
     def toggle_inputs(self):
-        return self.configure_inputs(not self.suite.cfg.get('input_recording',{}).get('enabled',False))
+        return self.configure_inputs(False)
 
     def _start_inputs(self):
         from input_capture import RawInputRecorder
@@ -338,7 +338,20 @@ class Replay:
                     'input_recording':{'enabled':bool(self.suite.cfg.get('input_recording',{}).get('enabled',False)),
                                        'active':bool(self.input_recorder and self.input_recorder.thread.is_alive()),
                                        'error':self.input_error or (self.input_recorder.error if self.input_recorder else '')},
+                    'microphone':self._microphone_status(),
                     'last_saved':self.last_saved,'disk_bytes':sum(r['size'] for r in rows)}
+
+    def _microphone_status(self):
+        """Whether the microphone track is really receiving a device.
+
+        A missing microphone (e.g. Bluetooth earbuds without the headset
+        profile) kept the track silent for whole sessions with no sign in the UI.
+        """
+        if not self.settings.get('microphone_enabled'):return {'enabled':False}
+        source=next((s for s in self._optional_audio if s.get('optional')=='microphone'),None)
+        capture=source.get('_capture') if source else None
+        state=getattr(capture,'last_state',None)
+        return {'enabled':True,'connected':bool(state and state[0]=='connected'),'error':str(getattr(capture,'error','') or '')}
 
     def add_marker(self):
         import live_markers
@@ -479,10 +492,7 @@ class Replay:
             threading.Thread(target=self._progress_reader,args=(self.proc,),daemon=True).start()
             self.started=time.monotonic()
             self.phase='recording'
-            if self.suite.cfg.get('input_recording',{}).get('enabled',False):
-                try:self._start_inputs()
-                except Exception as error:
-                    self.input_error=str(error);self.suite.log('input_capture_error',error=str(error))
+            # Input recording is removed (see configure_inputs): never started.
             self.suite.log('replay_start',monitor=monitor,system_audio=self.audio_name,microphone=self.settings.get('microphone_enabled',False),
                            encoder=self.encoder,output_size=self.output_size,gpu_capture=self.native_gpu,backend_note=self.backend_note,settings=self.settings)
             threading.Thread(target=self._maintain,args=(audio,),daemon=True).start()

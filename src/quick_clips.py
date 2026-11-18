@@ -23,8 +23,29 @@ def retention(replay):
     return max([replay.settings['seconds']] + [values[i] for i, key in enumerate(ACTIONS) if hotkeys.get(key)])
 
 
+# Recording and markers are core actions; suggest keys once so they work out of the box.
+SUGGESTED_CORE_KEYS = {'record': 'Ctrl+Alt+F9', 'mark': 'Ctrl+Alt+F11'}
+
+
+def suggest_core_keys(cfg):
+    """One-time: offer record/mark shortcuts if the user has none and the combo is free."""
+    if cfg.get('core_keys_version') == 1:
+        return False
+    hotkeys = cfg.setdefault('hotkeys', {})
+    from hotkeys import DEFAULTS as BASE
+    used = {str(v).casefold() for v in hotkeys.values() if v}
+    used |= {v.casefold() for k, v in BASE.items() if not hotkeys.get(k)}
+    for action, combo in SUGGESTED_CORE_KEYS.items():
+        if action not in hotkeys and combo.casefold() not in used:
+            hotkeys[action] = combo
+            used.add(combo.casefold())
+    cfg['core_keys_version'] = 1
+    return True
+
+
 def migrate(cfg):
     """Two quick clips with ready shortcuts (version 1.15.0)."""
+    suggest_core_keys(cfg)
     if cfg.get('quick_clips_version') == 2:
         return False
     try:cfg['quick_clips'] = durations(cfg.get('quick_clips'))

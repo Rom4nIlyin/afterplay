@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock,patch
 
 import av
 import numpy as np
@@ -67,13 +67,24 @@ class InputTrackTests(unittest.TestCase):
             recorder.close();self.assertFalse(recorder.thread.is_alive());track.close()
             self.assertEqual(track.path.read_text(), '')
 
-    def test_configure_inputs_does_not_restart_capture(self):
+    def test_input_recording_is_removed_and_never_restarts_capture(self):
+        # 1.15.4: key/mouse recording left an .inputs.json beside every save and is removed.
+        # Old callers (hotkey, older UI) may still ask to enable it: it stays off,
+        # a running recorder is closed and the video capture is never touched.
         with tempfile.TemporaryDirectory() as temp:
             suite=Suite(temp);rec=Replay(suite);rec.phase='recording';rec.input_track=inputs.InputTrack(temp,time.perf_counter())
+            running=MagicMock();rec.input_recorder=running
             with patch.object(rec,'_start_inputs') as start,patch.object(rec,'start') as capture:
-                rec.configure_inputs(True);start.assert_called_once();capture.assert_not_called()
-            self.assertTrue(suite.cfg['input_recording']['enabled'])
-            self.assertFalse(rec.configure_inputs(False)['input_recording']['enabled'])
+                state=rec.configure_inputs(True);start.assert_not_called();capture.assert_not_called()
+            running.close.assert_called_once();self.assertIsNone(rec.input_recorder)
+            self.assertFalse(suite.cfg['input_recording']['enabled']);self.assertFalse(state['input_recording']['enabled'])
+            with patch.object(rec,'configure_inputs') as configure:rec.toggle_inputs();configure.assert_called_once_with(False)
+
+    def test_saved_input_recording_setting_and_shortcut_are_cleared_on_start(self):
+        with tempfile.TemporaryDirectory() as temp:
+            Path(temp,'settings.json').write_text(json.dumps({'input_recording':{'enabled':True},'hotkeys':{'inputs':'Ctrl+Alt+F12'}}),'utf-8')
+            suite=Suite(temp)
+            self.assertEqual(suite.cfg['input_recording'],{'enabled':False});self.assertNotIn('inputs',suite.cfg['hotkeys'])
 
 
 class QuickClipTests(unittest.TestCase):
