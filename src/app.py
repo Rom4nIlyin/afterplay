@@ -145,6 +145,9 @@ class Suite:
         self.cfg.setdefault('updates', {'auto_enabled': False})
         self.cfg.setdefault('desktop',{}).setdefault('clips',{}).setdefault('close_action','tray')
         self.cfg.get('hotkeys',{}).pop('auto',None)
+        # Input recording is removed: switch it off for good and drop its shortcut.
+        self.cfg['input_recording']={'enabled':False}
+        self.cfg.get('hotkeys',{}).pop('inputs',None)
         from quick_clips import migrate as migrate_quick_clips
         migrate_quick_clips(self.cfg)
         from customization import migrate_palettes
@@ -555,13 +558,88 @@ class Suite:
         self.log('library_pruned',count=len(missing),paths=[path for _,path in missing[:20]])
         return len(missing)
 
-    def prune_missing_soon(self,interval=10):
-        """Throttled background prune for the UI poll; never blocks a request."""
+    def sync_library(self):
+        """Pick up videos renamed, moved, added or removed outside AFTERPLAY.
+
+        A rename or a move within the library keeps the file's size and mtime,
+        so a missing row with the same size and mtime as a new file is the same
+        video: the row keeps its id, so notes, marks, favourite, game and
+        thumbnail follow the file instead of being pruned with the old path.
+        Walking every library folder takes a few milliseconds; files are only
+        stat'ed when their path is new.
+        """
+        if any(j.get('label')=='Индексация видео' and j.get('status')=='running' for j in list(self.jobs.values())):return 0
+        buffer=self._resolved_key(self.data/'replay-buffer')
+        norm=lambda p:os.path.normcase(os.path.normpath(str(p)))
+        def internal(p):return self._internal_name(p) or self._path_key(p).startswith(buffer)
+        found=[]
+        def take(folder,name):
+            p=os.path.join(folder,name)
+            if os.path.splitext(name)[1].lower() in VIDEO_EXT and '.partial.' not in name and not internal(p):found.append(p)
+        for root in self.cfg.get('video_roots',[]):
+            if not os.path.isdir(root) or self.internal_media(root):continue
+            for folder,dirs,names in os.walk(root,followlinks=False):
+                dirs[:]=[d for d in dirs if not internal(os.path.join(folder,d)) and not os.path.islink(os.path.join(folder,d))]
+                for name in names:take(folder,name)
+        # The recordings folder and earlier ones hold AFTERPLAY's own saves (not recursive, like exports()).
+        for root in [str(self.recordings_dir()),*self.cfg.get('storage',{}).get('previous_dirs',[])]:
+            try:
+                with os.scandir(root) as entries:
+                    for entry in entries:
+                        if entry.is_file(follow_symlinks=False):take(root,entry.name)
+            except OSError:continue
+        with self.db() as db:rows=list(db.execute('SELECT id,path,size,mtime FROM clips'))
+        known={norm(r['path']) for r in rows}
+        new=list(dict.fromkeys(p for p in found if norm(p) not in known))
+        if not new:return 0
+        missing={}
+        for r in rows:
+            try:
+                if os.path.exists(r['path']):continue
+            except OSError:continue
+            missing.setdefault((r['size'],round(r['mtime'] or 0,3)),[]).append(r)
+        renamed=[];added=[];now=time.time()
+        for p in new:
+            try:st=os.stat(p)
+            except OSError:continue
+            match=missing.get((st.st_size,round(st.st_mtime,3)))
+            if match:renamed.append((p,match.pop(0)))
+            # A file still being written (recording, copy) is picked up on a later pass.
+            elif now-st.st_mtime>10:added.append(Path(p))
+        if renamed:
+            with self.db() as db:
+                for p,row in renamed:
+                    try:db.execute('UPDATE clips SET path=?,name=? WHERE id=?',(p,os.path.basename(p),row['id']))
+                    except sqlite3.IntegrityError:continue
+            self.log('library_renamed',count=len(renamed),paths=[[row['path'],p] for p,row in renamed[:20]])
+        for p in added[:40]:
+            try:self._index_new(p)
+            except Exception as error:self.log('library_add_failed',path=str(p),error=str(error))
+        return len(renamed)+len(added)
+
+    def _index_new(self,path):
+        st=path.stat();cid=hashlib.sha256(str(path.resolve()).lower().encode()).hexdigest()[:24]
+        with self.db() as db:
+            try:db.execute('INSERT INTO clips(id,path,name,size,mtime) VALUES(?,?,?,?,?) ON CONFLICT(path) DO NOTHING',
+                           (cid,str(path),path.name,st.st_size,st.st_mtime))
+            except sqlite3.IntegrityError:return  # Already indexed under another spelling.
+        try:
+            info=self._index_thumbnail(path,cid)
+            with self.db() as db:db.execute('UPDATE clips SET duration=?,width=?,height=?,audio=?,error=? WHERE id=?',
+                                            (info['duration'],info['width'],info['height'],info['audio'],'',cid))
+        except Exception as error:
+            with self.db() as db:db.execute('UPDATE clips SET error=? WHERE id=?',(str(error),cid))
+
+    def prune_missing_soon(self,interval=5):
+        """Throttled background library sync for the UI poll; never blocks a request."""
         now=time.monotonic()
         with self.lock:
             if self.__dict__.get('_pruning') or now-self.__dict__.get('_pruned_at',-interval)<interval:return
             self._pruning=True;self._pruned_at=now
         def run():
+            # Renames are matched first; only rows still missing afterwards are pruned.
+            try:self.sync_library()
+            except Exception as error:self.log('library_sync_failed',error=str(error))
             try:self.prune_missing()
             except Exception as error:self.log('library_prune_failed',error=str(error))
             finally:self._pruning=False
@@ -1114,6 +1192,23 @@ class Suite:
             self.cfg['editor_layout']={'timeline_height':round(height)}
             self.save_cfg()
             return self.cfg['editor_layout']
+        if action=='ui_prefs':
+            # Player volume and per-preset export quality. They lived in the page's
+            # localStorage, which WebView2 InPrivate mode (private_mode=True) and the
+            # random port of every launch wiped, so both reset on each start.
+            prefs=dict(self.cfg.get('ui_prefs') or {})
+            if 'volume' in arg:
+                value=arg['volume']
+                if isinstance(value,bool) or not isinstance(value,(int,float)) or not 0<=value<=1:raise ValueError('Громкость: от 0 до 1')
+                prefs['volume']=round(float(value),3)
+            if 'export_quality' in arg:
+                value=arg['export_quality']
+                if not isinstance(value,dict) or len(value)>16 or not all(isinstance(k,str) and isinstance(v,str) and len(k)<=24 and len(v)<=24 for k,v in value.items()):
+                    raise ValueError('Некорректный выбор качества')
+                prefs['export_quality']=value
+            with self.lock:self.cfg['ui_prefs']=prefs
+            self.save_cfg()
+            return prefs
         if action=='onboarding_config':
             status=arg.get('status')
             if status not in {'skipped','completed'}:raise ValueError('Некорректный статус обучения')
@@ -1456,6 +1551,15 @@ def server_for(suite, token=None, port=0):
     class LocalHTTPServer(ThreadingHTTPServer):
         request_queue_size=128
         daemon_threads=True
+        def handle_error(self,request,client_address):
+            # WebView2 drops media range requests on every seek, track switch and
+            # player close. The default handler printed a full traceback for each
+            # (WinError 10053/10054): ~11 800 of them filled host.log to 8 MB.
+            # A client that went away is normal; anything else goes to the journal.
+            error=sys.exc_info()[1]
+            if isinstance(error,(ConnectionError,TimeoutError)):return
+            try:suite.log('http_handler_error',error=str(error),trace=traceback.format_exc()[-1500:])
+            except Exception:super().handle_error(request,client_address)
     server=LocalHTTPServer(('127.0.0.1',port),Handler)
     server.daemon_threads=True
     return server,token

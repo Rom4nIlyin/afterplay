@@ -51,6 +51,9 @@ const short=s=>{s=Math.max(0,Math.floor(Number(s)||0));return (s>=3600?Math.floo
 const precise=s=>{s=Math.max(0,Number(s)||0);const w=Math.floor(s);return clock(w)+'.'+pad(Math.round((s-w)*1000)%1000,3)};
 const bytes=n=>n>=1073741824?(n/1073741824).toFixed(1).replace('.',',')+' ГБ':n>=1048576?Math.max(1,Math.round(n/1048576))+' МБ':Math.max(1,Math.round((n||0)/1024))+' КБ';
 const secondsText=s=>s>=60&&s%60===0?(s/60)+' мин':s+' с';
+// Russian plural: 1 запись, 2 записи, 5 записей (11–14 always take the "many" form).
+const plural=(n,one,few,many)=>{const a=Math.abs(n)%100,b=a%10;return n+' '+(a>10&&a<15?many:b===1?one:b>1&&b<5?few:many)};
+const recordsText=n=>plural(n,'запись','записи','записей');
 const months=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 function dayLabel(ts){
  const d=new Date(ts*1000),now=new Date(),day=new Date(now.getFullYear(),now.getMonth(),now.getDate());
@@ -79,6 +82,13 @@ function nameOf(c){
  const m=stem.match(/^(Повтор|Запись)-(\d{4})-(\d\d)-(\d\d)_(\d\d)-(\d\d)-\d\d-[0-9a-f]{4}$/i);
  if(m)return tr(m[1]+' · '+Number(m[4])+' '+months[Number(m[3])-1]+', '+m[5]+':'+m[6]);
  return stem;
+}
+// When the recording time is part of the file name, it wins over the file's mtime:
+// copying or moving a file changes mtime, and a replay from October must not show as "Сегодня".
+function clipTime(c){
+ const m=String(c?.name||'').match(/^(?:Повтор|Запись)-(\d{4})-(\d\d)-(\d\d)_(\d\d)-(\d\d)-(\d\d)/i);
+ if(m){const t=new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+m[6]).getTime()/1000;if(Number.isFinite(t))return t}
+ return c?.mtime||0;
 }
 const gameOf=c=>state.settings.clip_games?.[c.id]||'';
 function marksOf(c){try{const v=JSON.parse(c.marks||'[]');return Array.isArray(v)?v.filter(Number.isFinite):[]}catch{return []}}
@@ -177,17 +187,30 @@ function enter(){
 }
 
 // ---------- Shell
-const NAV=[['all','Все записи','film'],['replay','Повторы','clock'],['record','Записи','rec'],['clip','Клипы','scissors']];
+const NAV=[['all','Библиотека','film'],['replay','Повторы','clock'],['record','Записи','rec'],['clip','Клипы','scissors']];
 function renderShell(){
  const counts={all:state.clips.length,replay:0,record:0,clip:0};
  for(const c of state.clips){const k=kindOf(c);if(k in counts)counts[k]++}
  const lib=view.screen==='library';
  $('#nav').innerHTML=NAV.map(([id,label,icon])=>`<button type="button" data-act="nav" data-kind="${id}" ${lib&&libUI.kind===id?'aria-current="page"':''}>${ic(icon)}<span>${label}</span><span class="count">${counts[id]}</span></button>`).join('')+
-  `<hr><button type="button" data-act="go" data-screen="profiles" ${view.screen==='profiles'?'aria-current="page"':''}>${ic('user')}<span>Профили записи</span></button><button type="button" data-act="go" data-screen="settings" ${view.screen==='settings'?'aria-current="page"':''}>${ic('gear')}<span>Настройки</span></button>`;
+  `<hr><button type="button" data-act="go" data-screen="profiles" ${view.screen==='profiles'?'aria-current="page"':''}>${ic('user')}<span>Профили записи</span>${profiles.dirty()?'<i class="nav-dirty" title="Есть несохранённые изменения" aria-label="Есть несохранённые изменения"></i>':''}</button><button type="button" data-act="go" data-screen="settings" ${view.screen==='settings'?'aria-current="page"':''}>${ic('gear')}<span>Настройки</span></button>`;
  const total=state.clips.reduce((s,c)=>s+(c.size||0),0),disk=state.storage||{};
  const used=disk.disk_total?Math.round((disk.disk_total-disk.disk_free)/disk.disk_total*100):0;
- $('#disk').innerHTML=disk.disk_total?`<div><span>Свободно на диске</span><span class="num">${bytes(disk.disk_free)}</span></div><div class="bar" aria-hidden="true"><span style="width:${used}%"></span></div><div><span>${state.clips.length} записей · ${bytes(total)}</span></div>`:`<div><span>${state.clips.length} записей · ${bytes(total)}</span></div>`;
- renderHeader();
+ $('#disk').innerHTML=disk.disk_total?`<div><span>Свободно на диске</span><span class="num">${bytes(disk.disk_free)}</span></div><div class="bar" aria-hidden="true"><span style="width:${used}%"></span></div><div><span>${recordsText(state.clips.length)} · ${bytes(total)}</span></div>`:`<div><span>${recordsText(state.clips.length)} · ${bytes(total)}</span></div>`;
+ renderJobs();renderHeader();
+}
+// ---------- Background tasks: long jobs show their progress wherever the user is.
+// Short dock actions already show their state in the recording dock.
+const QUIET_JOBS=new Set(['Включение повтора','Остановка повтора','Включение записи','Сохранение записи','Проверка обновлений']);
+const runningJob=label=>(state.jobs||[]).find(j=>j.status==='running'&&j.label===label);
+function renderJobs(){
+ let box=$('#jobsBox');
+ if(!box){box=document.createElement('section');box.id='jobsBox';box.className='jobs';box.setAttribute('aria-label','Фоновые задачи');box.setAttribute('aria-live','polite');$('#disk').before(box)}
+ const rows=(state.jobs||[]).filter(j=>j.status==='running'&&!QUIET_JOBS.has(j.label)).map(j=>({id:j.id,label:j.label,message:j.message||'',progress:clamp(Number(j.progress)||0,0,100),cancel:!!j.cancellable}));
+ // The automatic updater downloads without a job: still say it is happening.
+ if(state.updates?.busy&&!rows.some(r=>r.label==='Обновление AFTERPLAY'))rows.push({id:'auto-update',label:'Обновление AFTERPLAY',message:'Автоматическая загрузка…',progress:-1,cancel:false});
+ const html=rows.map(r=>`<div class="job"><div class="job-t"><b>${esc(r.label)}</b>${r.progress>=0?`<span class="num">${r.progress}%</span>`:''}</div>${r.message&&r.message!=='Подготовка…'?`<small>${esc(r.message)}</small>`:''}<div class="bar${r.progress<0?' indet':''}" role="progressbar" aria-label="${esc(r.label)}" ${r.progress>=0?`aria-valuemin="0" aria-valuemax="100" aria-valuenow="${r.progress}"`:''}><span style="width:${r.progress<0?40:r.progress}%"></span></div>${r.cancel?`<button type="button" class="btn sm ghost" data-act="job-cancel" data-id="${esc(r.id)}">Отменить</button>`:''}</div>`).join('');
+ box.hidden=!rows.length;if(box.dataset.html!==html){box.dataset.html=html;box.innerHTML=html}
 }
 function renderHeader(){
  const lib=view.screen==='library';
@@ -217,27 +240,33 @@ function dockState(){
  const busy=['starting','stopping'].includes(r.phase)||!!r.finishing;
  const live=r.phase==='recording',manual=!!(r.continuous||r.pending_recording),replay=!!r.replay_enabled&&live;
  const minutes=Math.round((r.settings?.seconds||300)/60);
- let mode='off',title='Запись выключена',sub='Повтор и запись не идут';
+ let mode='off',title='Повтор выключен',sub='Включите, чтобы сохранять моменты';
  if(r.phase==='starting'){mode='busy';title='Запуск…';sub='Подключаем захват'}
  else if(r.phase==='stopping'||r.finishing){mode='busy';title='Сохранение…';sub='Дождитесь завершения'}
  else if(live&&manual){mode='record';title='Запись '+clock(liveSeconds(r));sub=replay?'и повтор · '+minutes+' мин':(r.active_profile||'Идёт запись')}
  else if(live){mode='replay';title='Повтор · '+minutes+' мин';sub=keys.save?keys.save+' — сохранить':'Буфер '+clock(r.buffer_seconds)}
  else if(r.phase==='error'){mode='error';title='Ошибка записи';sub=r.error||''}
  if(r.saving&&mode!=='busy')sub='Сохраняю клип…';
+ // A silent microphone track used to go unnoticed for whole sessions.
+ const micMissing=live&&r.microphone?.enabled&&!r.microphone.connected&&(r.elapsed||0)>3;
+ if(micMissing&&!r.saving)sub='⚠ Микрофон не подключён';
  const fill=mode==='replay'?Math.min(100,Math.round((r.buffer_seconds||0)/(r.settings?.seconds||300)*100)):0;
- return {r,keys,busy,manual,replay,mode,title,sub,fill,canSave:live&&!busy&&(r.save_queue||0)<8};
+ const canSave=live&&!busy&&(r.save_queue||0)<8;
+ // A disabled button says why, so "Сохранить" never looks broken.
+ const why=canSave?'':!live?'Сначала включите повтор':busy?'Подождите окончания операции':'Сохраняются предыдущие клипы';
+ return {r,keys,busy,manual,replay,mode,title,sub,fill,canSave,why,micMissing};
 }
 function renderDock(){
  const s=dockState(),q=quickValues();
  document.body.classList.toggle('recording',s.mode==='record');
  const html=`<div class="dock" data-mode="${s.mode}" role="group" aria-label="Управление записью">`+
-  `<button type="button" class="dk-status" data-act="go" data-screen="profiles" title="${esc(s.title+' · '+s.sub)}"><i class="dot" aria-hidden="true"></i><span class="dk-text"><b>${esc(s.title)}</b><small>${esc(s.sub)}</small></span>${s.mode==='replay'?`<span class="dk-fill" aria-hidden="true"><span style="width:${s.fill}%"></span></span>`:''}</button>`+
+  `<button type="button" class="dk-status" data-act="go" data-screen="profiles" title="${esc(s.title+' · '+s.sub+(s.micMissing&&s.r.microphone.error?'. '+s.r.microphone.error:''))}"><i class="dot" aria-hidden="true"></i><span class="dk-text"><b>${esc(s.title)}</b><small>${esc(s.sub)}</small></span>${s.mode==='replay'?`<span class="dk-fill" aria-hidden="true"><span style="width:${s.fill}%"></span></span>`:''}</button>`+
   `<span class="dk-sep" aria-hidden="true"></span>`+
   `<button type="button" class="dk-toggle ${s.replay?'on':''}" data-act="${s.replay?'replay-stop':'replay-start'}" aria-pressed="${s.replay}" title="${s.replay?'Выключить повтор':'Включить повтор'}" ${s.busy?'disabled':''}>${ic('clock')}<span>Повтор</span></button>`+
   `<button type="button" class="dk-toggle dk-rec ${s.manual?'on':''}" data-act="${s.manual?'record-stop':'record-start'}" aria-pressed="${s.manual}" title="${s.manual?'Остановить и сохранить запись':'Начать запись'}${s.keys.record?' · '+esc(s.keys.record):''}" ${s.busy?'disabled':''}>${s.manual?ic('stop'):'<i class="rec-dot" aria-hidden="true"></i>'}<span>${s.manual?'Стоп':'Запись'}</span></button>`+
   `<span class="dk-sep" aria-hidden="true"></span>`+
-  `<button type="button" class="dk-save" data-act="save" title="Сохранить повтор${s.keys.save?' · '+esc(s.keys.save):''}" ${s.canSave?'':'disabled'}>${ic('save')}<span>Сохранить</span>${s.keys.save?`<kbd>${esc(s.keys.save)}</kbd>`:''}</button>`+
-  q.map((sec,i)=>`<button type="button" class="dk-quick" data-act="quick" data-index="${i}" title="Быстрый клип: последние ${secondsText(sec)}${s.keys['clip_'+(i+1)]?' · '+esc(s.keys['clip_'+(i+1)]):''}" aria-label="Сохранить последние ${secondsText(sec)}" ${s.canSave?'':'disabled'}>${secondsText(sec)}</button>`).join('')+`</div>`;
+  `<button type="button" class="dk-save" data-act="save" title="${s.why?'Сохранить повтор: '+esc(s.why.toLowerCase()):'Сохранить повтор'+(s.keys.save?' · '+esc(s.keys.save):'')}" ${s.canSave?'':'disabled'}>${ic('save')}<span>Сохранить</span>${s.keys.save?`<kbd>${esc(s.keys.save)}</kbd>`:''}</button>`+
+  q.map((sec,i)=>`<button type="button" class="dk-quick" data-act="quick" data-index="${i}" title="Быстрый клип: последние ${secondsText(sec)}${s.why?' · '+esc(s.why.toLowerCase()):s.keys['clip_'+(i+1)]?' · '+esc(s.keys['clip_'+(i+1)]):''}" aria-label="Сохранить последние ${secondsText(sec)}" ${s.canSave?'':'disabled'}>${secondsText(sec)}</button>`).join('')+`</div>`;
  const host=$('#dock');if(host.dataset.html!==html){host.dataset.html=html;host.innerHTML=html}
 }
 function render(){
@@ -252,7 +281,7 @@ function render(){
 const libUI={kind:'all',chip:'all',query:'',sel:null,limit:120,sig:'',detailSig:''};
 function libraryRows(){
  const q=libUI.query.trim().toLocaleLowerCase();
- return state.clips.filter(c=>(libUI.kind==='all'||kindOf(c)===libUI.kind)&&(libUI.chip!=='marks'||marksOf(c).length)&&(libUI.chip!=='fav'||c.favorite)&&(!q||(nameOf(c)+' '+c.name+' '+gameOf(c)).toLocaleLowerCase().includes(q)));
+ return state.clips.filter(c=>(libUI.kind==='all'||kindOf(c)===libUI.kind)&&(libUI.chip!=='marks'||marksOf(c).length)&&(libUI.chip!=='fav'||c.favorite)&&(!q||(nameOf(c)+' '+c.name+' '+gameOf(c)).toLocaleLowerCase().includes(q))).sort((a,b)=>clipTime(b)-clipTime(a));
 }
 function stepsHTML(){
  if(state.settings.onboarding?.status==='completed')return '';
@@ -264,12 +293,12 @@ function stepsHTML(){
 }
 function cardHTML(c){
  const k=kindOf(c),m=marksOf(c).length,sel=libUI.sel===c.id;
- const meta=[gameOf(c),timeOf(c.mtime),bytes(c.size)].filter(Boolean).join(' · ');
- return `<button type="button" class="clip ${sel?'sel':''}" data-act="select" data-id="${esc(c.id)}" aria-pressed="${sel}" aria-label="${esc(nameOf(c)+', '+short(c.duration))}"><div class="thumb"><img src="${esc(thumbUrl(c))}" loading="lazy" alt=""><span class="badge kind ${k}${isGif(c)?' gif':''}">${kindText(c)}</span>${m?`<span class="badge marks">★ ${m}</span>`:''}${c.favorite?`<span class="badge fav" aria-label="В избранном">♥</span>`:''}<span class="badge dur">${short(c.duration)}</span></div><div class="meta"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc(meta)}</small></div></button>`;
+ const meta=[gameOf(c),timeOf(clipTime(c)),bytes(c.size)].filter(Boolean).join(' · ');
+ return `<button type="button" class="clip ${sel?'sel':''}" data-act="select" data-id="${esc(c.id)}" aria-pressed="${sel}" aria-label="${esc(nameOf(c)+', '+short(c.duration))}"><div class="thumb"><img src="${esc(thumbUrl(c))}" loading="lazy" alt=""><span class="badge kind ${k}${isGif(c)?' gif':''}">${kindText(c)}</span>${m?`<span class="badge marks">★ ${m}</span>`:''}${c.favorite?`<span class="badge fav" aria-label="В избранном">♥</span>`:''}<span class="badge dur">${short(c.duration)}</span></div><div class="meta"><b data-i18n-ignore title="${esc(nameOf(c))}">${esc(nameOf(c))}</b><small>${esc(meta)}</small></div></button>`;
 }
 function gridHTML(rows){
  const shown=rows.slice(0,libUI.limit);const groups=new Map();
- for(const c of shown){const g=groupOf(c.mtime);if(!groups.has(g))groups.set(g,[]);groups.get(g).push(c)}
+ for(const c of shown){const g=groupOf(clipTime(c));if(!groups.has(g))groups.set(g,[]);groups.get(g).push(c)}
  return [...groups].map(([label,items])=>`<section class="group"><h2 class="sec">${esc(label)}</h2><div class="grid">${items.map(cardHTML).join('')}</div></section>`).join('')+
   (rows.length>shown.length?`<button type="button" class="btn more" data-act="more">Показать ещё ${Math.min(120,rows.length-shown.length)}</button>`:'')+
   (!rows.length?`<div class="empty">${state.clips.length?'Ничего не найдено. Измените запрос или фильтр.':'Здесь появятся повторы и записи. Включите повтор кнопкой сверху или добавьте папку с видео в настройках.'}</div>`:'');
@@ -280,9 +309,9 @@ function libraryHTML(){
  if(!libUI.sel&&rows.length)libUI.sel=rows[0].id;
  const titles={all:'Библиотека',replay:'Повторы',record:'Записи',clip:'Клипы'};
  const chips=[['all','Все'],['marks','С метками'],['fav','Избранное']];
- return `<div class="lib"><div class="lib-main">${stepsHTML()}<div class="lib-top"><h1>${titles[libUI.kind]}</h1><span class="num" id="libCount">${rows.length} записей</span><span class="grow"></span><div class="chips" role="group" aria-label="Фильтр">${chips.map(([id,l])=>`<button type="button" data-act="chip" data-chip="${id}" aria-pressed="${libUI.chip===id}">${l}</button>`).join('')}</div></div><div id="libGrid">${gridHTML(rows)}</div></div><aside class="detail" id="detail" aria-label="О записи"></aside></div>`;
+ return `<div class="lib"><div class="lib-main">${stepsHTML()}<div class="lib-top"><h1>${titles[libUI.kind]}</h1><span class="num" id="libCount">${recordsText(rows.length)}</span><span class="grow"></span><div class="chips" role="group" aria-label="Фильтр">${chips.map(([id,l])=>`<button type="button" data-act="chip" data-chip="${id}" aria-pressed="${libUI.chip===id}">${l}</button>`).join('')}</div></div><div id="libGrid">${gridHTML(rows)}</div></div><aside class="detail" id="detail" aria-label="О записи"></aside></div>`;
 }
-function libSignature(){return state.clips.map(c=>c.id+c.favorite+c.size+c.duration+(c.marks||'')+(state.settings.clip_games?.[c.id]||'')).join('|')+libUI.kind+libUI.chip+libUI.query+libUI.limit}
+function libSignature(){return state.clips.map(c=>c.id+c.name+c.favorite+c.size+c.duration+(c.marks||'')+(state.settings.clip_games?.[c.id]||'')).join('|')+libUI.kind+libUI.chip+libUI.query+libUI.limit}
 function afterLibrary(){libUI.sig=libSignature();renderDetail(true)}
 function refreshLibrary(){
  if(view.screen!=='library')return;
@@ -291,7 +320,7 @@ function refreshLibrary(){
  if(libUI.sel&&!clipById(libUI.sel))libUI.sel=rows[0]?.id||null;
  if(!$('#libGrid'))return render();
  const steps=$('.steps');const html=stepsHTML();if(steps&&!html)steps.remove();
- $('#libGrid').innerHTML=gridHTML(rows);$('#libCount').textContent=rows.length+' записей';renderDetail();
+ $('#libGrid').innerHTML=gridHTML(rows);$('#libCount').textContent=recordsText(rows.length);renderDetail();
 }
 const mediaInfo=new Map();
 function loadInfo(id){
@@ -301,7 +330,7 @@ function loadInfo(id){
 }
 function renderDetail(force=false){
  const box=$('#detail');if(!box)return;const c=libUI.sel&&clipById(libUI.sel);
- const sig=c?[c.id,c.favorite,c.marks,c.size,gameOf(c)].join('|'):'none';
+ const sig=c?[c.id,c.name,c.favorite,c.marks,c.size,c.width,gameOf(c)].join('|'):'none';
  if(!force&&sig===libUI.detailSig)return;libUI.detailSig=sig;
  if(!c){box.innerHTML=`<h2 class="sec">О записи</h2><p class="hint">Выберите запись, чтобы увидеть сведения.</p>`;return}
  const k=kindOf(c),marks=marksOf(c);
@@ -309,7 +338,7 @@ function renderDetail(force=false){
  <button type="button" class="big" data-act="watch" data-id="${esc(c.id)}" aria-label="Смотреть"><img src="${esc(thumbUrl(c))}" alt=""><span class="play" aria-hidden="true">${playIc}</span><span class="badge dur">${short(c.duration)}</span></button>
  <div><h3 data-i18n-ignore>${esc(nameOf(c))}</h3><div class="sub">${esc([gameOf(c),kindText(c)].filter(Boolean).join(' · '))}</div></div>
  <div class="acts"><button type="button" class="btn primary" data-act="watch" data-id="${esc(c.id)}">Смотреть</button>${isGif(c)?'':`<button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}">Обрезать</button>`}<button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}" data-export="1">Экспорт</button></div>
- <dl class="facts"><dt>Формат</dt><dd>${isGif(c)?'GIF-анимация':'Видео '+esc((c.name.match(/\.(\w+)$/)?.[1]||'').toUpperCase())}</dd><dt>Дата</dt><dd>${esc(timeOf(c.mtime))}</dd><dt>Длительность</dt><dd>${clock(c.duration)}</dd><dt>Размер</dt><dd>${bytes(c.size)}</dd><dt>${isGif(c)?'Кадр':'Видео'}</dt><dd id="dtVideo">${c.width?c.width+' × '+c.height:'—'}</dd><dt>Звук</dt><dd>${isGif(c)?'нет (GIF без звука)':c.audio?c.audio+' '+(c.audio===1?'дорожка':c.audio<5?'дорожки':'дорожек'):'нет'}</dd></dl>
+ <dl class="facts"><dt>Формат</dt><dd>${isGif(c)?'GIF-анимация':'Видео '+esc((c.name.match(/\.(\w+)$/)?.[1]||'').toUpperCase())}</dd><dt>Дата</dt><dd>${esc(timeOf(clipTime(c)))}</dd><dt>Длительность</dt><dd>${clock(c.duration)}</dd><dt>Размер</dt><dd>${bytes(c.size)}</dd><dt>${isGif(c)?'Кадр':'Видео'}</dt><dd id="dtVideo">${c.width?c.width+' × '+c.height:'—'}</dd><dt>Звук</dt><dd>${isGif(c)?'нет (GIF без звука)':c.audio?plural(c.audio,'дорожка','дорожки','дорожек'):'нет'}</dd></dl>
  <div class="field"><span class="lbl">Метки</span><div class="marks">${marks.length?marks.map(m=>`<button type="button" class="mark" data-act="watch" data-id="${esc(c.id)}" data-at="${m}">★ ${short(m)}</button>`).join(''):'<span class="hint">Нет меток. Во время записи нажмите клавишу метки — она появится здесь.</span>'}</div></div>
  ${c.error?`<p class="hint" style="color:#FFB4B5">${esc(c.error)}</p>`:''}
  <span class="grow"></span>
@@ -331,7 +360,7 @@ const viewer={
   const list=this.list(),i=list.findIndex(x=>x.id===id),marks=marksOf(c),cust=custom();
   const stage=$('#stage');stage.className='vw';
   const gif=this.gif=isGif(c);
-  const hd=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Библиотека</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc([gif?'GIF':'',gameOf(c),timeOf(c.mtime),i>=0?(i+1)+' из '+list.length:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
+  const hd=`<header class="st-hd"><button type="button" class="btn ghost" data-act="back">${ic('back')}Библиотека</button><div class="ttl"><b data-i18n-ignore>${esc(nameOf(c))}</b><small>${esc([gif?'GIF':'',gameOf(c),timeOf(clipTime(c)),i>=0?(i+1)+' из '+list.length:''].filter(Boolean).join(' · '))}</small></div><span class="grow"></span>
   <button type="button" class="btn icon ghost" data-act="vw-fav" aria-pressed="${!!c.favorite}" aria-label="В избранное" style="color:${c.favorite?'var(--accent)':'inherit'}">${ic('heart',c.favorite?'fill="currentColor"':'')}</button>
   ${gif?'':`<button type="button" class="btn" data-act="edit" data-id="${esc(c.id)}">${ic('scissors')}Обрезать</button>`}<button type="button" class="btn primary" data-act="edit" data-id="${esc(c.id)}" data-export="1">Экспорт</button></header>`;
   const nav=`<button type="button" class="side-nav l" data-act="vw-step" data-dir="-1" aria-label="Предыдущая запись">${ic('back')}</button><button type="button" class="side-nav r" data-act="vw-step" data-dir="1" aria-label="Следующая запись">${ic('next')}</button>`;
@@ -352,12 +381,12 @@ const viewer={
    <div class="vw-frame" id="vwFrame"><video id="vwVideo" preload="auto" playsinline src="${base}media/${encodeURIComponent(c.id)}"></video><button type="button" class="vw-hit" data-act="vw-play" aria-label="Воспроизвести или пауза"><span class="bigplay" id="vwBig" aria-hidden="true">${playIc}</span></button><span class="vw-badge" id="vwMark" style="left:14px;background:var(--accent);color:var(--on-accent)" hidden>★ Метка</span><span class="vw-badge" id="vwSpeedBadge" style="right:14px;background:rgba(11,12,15,.8)" hidden></span></div></div>
   <div class="vw-ctl"><div class="scrub" id="vwScrub" role="slider" tabindex="0" aria-label="Позиция" aria-valuemin="0" aria-valuemax="${Math.round(c.duration)}"><div class="rail"><div class="buf" id="vwBuf"></div><div class="fill" id="vwFill"></div></div>${marks.map(m=>`<span class="pin" style="left:${(m/c.duration*100).toFixed(3)}%"></span>`).join('')}<span class="knob" id="vwKnob"></span><div class="preview" id="vwPrev" hidden><div class="pic" id="vwPic"></div><span id="vwPrevT"></span></div></div>
    <div class="ctl-row"><button type="button" class="btn icon" data-act="vw-frame" data-d="-1" aria-label="Кадр назад">${ic('frameBack')}</button><button type="button" class="btn icon primary" data-act="vw-play" id="vwPlay" aria-label="Воспроизвести">${playIc}</button><button type="button" class="btn icon" data-act="vw-frame" data-d="1" aria-label="Кадр вперёд">${ic('frameFwd')}</button><button type="button" class="btn ghost sm num" data-act="vw-seek" data-d="-5">−5 с</button><button type="button" class="btn ghost sm num" data-act="vw-seek" data-d="5">+5 с</button><span class="num" style="padding:0 8px;color:var(--muted)"><b id="vwTime" style="color:var(--text);font-weight:600">00:00</b> / ${short(c.duration)}</span>
-    <div class="vol"><button type="button" class="btn icon ghost" data-act="vw-mute" id="vwMute" aria-label="Выключить звук">${ic('speaker')}</button><input type="range" id="vwVol" min="0" max="100" value="${Math.round((Number(localGet('ag.volume'))||0.8)*100)}" aria-label="Громкость"><span class="num hint" id="vwVolT" style="width:38px"></span></div>
+    <div class="vol"><button type="button" class="btn icon ghost" data-act="vw-mute" id="vwMute" aria-label="Выключить звук">${ic('speaker')}</button><input type="range" id="vwVol" min="0" max="100" value="${Math.round(savedVolume()*100)}" aria-label="Громкость"><span class="num hint" id="vwVolT" style="width:38px"></span></div>
     <span class="grow"></span><div class="seg" id="vwTracks" role="group" aria-label="Звуковые дорожки — можно включить несколько" hidden></div>
     <div class="menu-wrap"><button type="button" class="btn" data-act="vw-menu" aria-haspopup="true" aria-expanded="false" id="vwSpeed">Скорость 1×</button><div class="menu" id="vwMenu" role="menu" hidden>${[0.1,0.25,0.5,1,1.5,2,3,4,5].map(v=>`<button type="button" role="menuitemradio" data-act="vw-rate" data-v="${v}" aria-checked="${v===1}"><span>${String(v).replace('.',',')}×</span><span>${v===1?'✓':''}</span></button>`).join('')}</div></div>
     <button type="button" class="btn icon" data-act="vw-full" aria-label="Во весь экран">${ic('full')}</button></div>
    <div class="ctl-row"><span class="hint">Метки</span>${marks.length?marks.map(m=>`<button type="button" class="mark" data-act="vw-to" data-t="${m}">★ ${short(m)}</button>`).join(''):'<span class="hint">нет</span>'}<span class="grow"></span><span class="hint keyhint">Пробел — пауза · ← → — кадр · Shift + ← → — 5 с · ↑ ↓ — громкость · &lt; &gt; — скорость · F или двойной клик — весь экран · Esc — назад</span></div></div>`;
-  const v=this.v=$('#vwVideo');v.volume=clamp(Number(localGet('ag.volume'))||0.8,0,1);this.syncVol();
+  const v=this.v=$('#vwVideo');v.volume=savedVolume();this.syncVol();
   v.addEventListener('play',()=>{this.paint();this.loop();this.syncExtra();this.wake()});v.addEventListener('pause',()=>{this.paint();this.syncExtra();this.wake()});
   v.addEventListener('seeked',()=>{this.paint();this.syncExtra(true)});v.addEventListener('timeupdate',()=>{if(v.paused)this.paint()});
   v.addEventListener('loadedmetadata',()=>{if(at)v.currentTime=clamp(Number(at),0,v.duration||c.duration);this.paint()},{once:true});
@@ -368,7 +397,7 @@ const viewer={
   const end=e=>{if(this.scrubbing){this.scrubbing=false;sc.classList.remove('drag');try{sc.releasePointerCapture(e.pointerId)}catch{}}};
   sc.addEventListener('pointerup',end);sc.addEventListener('pointercancel',end);sc.addEventListener('pointerleave',()=>{if(!this.scrubbing)$('#vwPrev').hidden=true});
   sc.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();this.arrow(e)}});
-  $('#vwVol').addEventListener('input',e=>{v.volume=Number(e.target.value)/100;this.userMuted=false;localSet('ag.volume',v.volume);this.syncVol();this.syncExtra()});
+  $('#vwVol').addEventListener('input',e=>{v.volume=Number(e.target.value)/100;this.userMuted=false;prefSet('volume',v.volume);this.syncVol();this.syncExtra()});
   this.keys=e=>this.key(e);document.addEventListener('keydown',this.keys);
   $('#vwFrame').addEventListener('dblclick',e=>{e.preventDefault();this.fullscreen()});
   stage.addEventListener('pointermove',()=>this.wake());
@@ -429,7 +458,8 @@ const viewer={
   cancelAnimationFrame(this.raf);document.removeEventListener('keydown',this.keys);document.removeEventListener('fullscreenchange',this.fsch);clearTimeout(this.idleT);clearTimeout(this.drift);$('#stage').classList.remove('idle');
   if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});
   if(this.v){this.v.pause();this.v.removeAttribute('src');this.v.load()}
-  for(const a of this.extras.values()){a.pause();a.removeAttribute('src')}this.extras.clear();
+  // load() after removing src releases the decoder now instead of at garbage collection.
+  for(const a of this.extras.values()){a.pause();a.removeAttribute('src');a.load()}this.extras.clear();
   this.v=null;this.c=null;$('#stage').innerHTML='';
  },
  dur(){return this.v?.duration||this.c?.duration||0},
@@ -464,14 +494,23 @@ const viewer={
  syncExtra(seek=false){
   const v=this.v;if(!v)return;
   v.muted=!!this.userMuted||!this.on.has(0);
-  for(const [i,a] of this.extras)if(!this.on.has(i)){a.pause();a.removeAttribute('src');this.extras.delete(i)}
-  const rate=v.playbackRate,lag=.15*Math.max(1,rate);
+  // A track that is switched off is only paused: its element, download and decoder stay,
+  // so switching it back on costs nothing. Before, every switch created a new element
+  // (new download, decoder and two seeks) and the old one was never released.
+  for(const [i,a] of this.extras)if(!this.on.has(i)&&!a.paused)a.pause();
+  const rate=v.playbackRate,lag=.25*Math.max(1,rate),now=performance.now();let playing=0;
   for(const i of this.on){if(i===0)continue;let a=this.extras.get(i);
-   if(!a){a=new Audio(`${base}audio-preview/${encodeURIComponent(this.c.id)}?track=${i}`);a.preload='auto';this.extras.set(i,a);seek=true}
-   a.muted=!!this.userMuted;a.volume=v.volume;try{a.playbackRate=rate}catch{}
-   if(seek||Math.abs(a.currentTime-v.currentTime)>lag){try{a.currentTime=v.currentTime}catch{}}
-   if(v.paused)a.pause();else a.play().catch(()=>{});}
-  clearTimeout(this.drift);if(!v.paused&&this.extras.size)this.drift=setTimeout(()=>this.syncExtra(),700);
+   if(!a){a=new Audio(`${base}audio-preview/${encodeURIComponent(this.c.id)}?track=${i}`);a.preload='auto';a.fresh=true;this.extras.set(i,a)}
+   a.muted=!!this.userMuted;if(a.volume!==v.volume)a.volume=v.volume;if(a.playbackRate!==rate){try{a.playbackRate=rate}catch{}}
+   // Seek only when really out of sync, and at most once a second unless the user moved the video.
+   const off=Math.abs(a.currentTime-v.currentTime);
+   if((seek||a.fresh||off>lag)&&off>.04&&(seek||!a.seekAt||now-a.seekAt>1000)){
+    if(a.readyState>=1){a.fresh=false;a.seekAt=now;try{a.currentTime=v.currentTime}catch{}}
+    else if(!a.waiting){a.waiting=true;a.addEventListener('loadedmetadata',()=>{a.waiting=false;this.syncExtra(true)},{once:true})}
+   }else if(a.readyState>=1)a.fresh=false;
+   if(v.paused){if(!a.paused)a.pause()}else{playing++;if(a.paused)a.play().catch(()=>{})}
+  }
+  clearTimeout(this.drift);if(!v.paused&&playing)this.drift=setTimeout(()=>this.syncExtra(),700);
  },
  key(e){
   if(e.target.closest('input,select,textarea'))return;const k=e.key;
@@ -502,6 +541,15 @@ const viewer={
 };
 function localGet(k){try{return localStorage.getItem(k)}catch{return null}}
 function localSet(k,v){try{localStorage.setItem(k,String(v))}catch{}}
+// Player volume and export quality are kept in the app's settings: WebView2 runs
+// InPrivate and the page gets a new port every launch, so localStorage never survived.
+let prefTimer=0,prefPending={};
+const uiPrefs=()=>({...(state.settings.ui_prefs||{}),...prefPending});
+function prefSet(key,value,delay=400){
+ prefPending[key]=value;clearTimeout(prefTimer);
+ prefTimer=setTimeout(()=>{const patch=prefPending;api('ui_prefs',patch).then(p=>{state.settings.ui_prefs=p;for(const k in patch)if(prefPending[k]===patch[k])delete prefPending[k]}).catch(()=>{})},delay);
+}
+function savedVolume(){const raw=uiPrefs().volume??localGet('ag.volume');if(raw===null||raw===undefined||raw==='')return .8;const v=Number(raw);return Number.isFinite(v)&&v>=0&&v<=1?v:.8}
 
 // ---------- Editor: trim with the mouse, mix tracks, export
 const isGifPreset=id=>id==='gif';
@@ -562,11 +610,13 @@ const PRESETS=[
   {id:'high',short:'Высокое',hint:'1080 px · 30 fps · своя палитра на каждый кадр',args:{gif_width:1080,gif_quality:'high'},est:l=>l*2.2e6}]},
 ];
 // The chosen quality of each preset is remembered between exports.
-const exportQ=(()=>{try{return JSON.parse(localGet('ag.exportQ')||'{}')||{}}catch{return {}}})();
+// Older builds kept this in localStorage; it is only a fallback now.
+const legacyExportQ=(()=>{try{return JSON.parse(localGet('ag.exportQ')||'{}')||{}}catch{return {}}})();
+const exportQ=()=>({...legacyExportQ,...(uiPrefs().export_quality||{})});
 function hintOf(q,len,c){const v=typeof q.hint==='function'?q.hint(len,c):q.hint;return Array.isArray(v)?v:[v]}
 // One span per sentence: the translator matches whole text nodes.
 const hintHTML=(q,len,c)=>hintOf(q,len,c).map(x=>`<span>${esc(x)}</span>`).join(' ');
-function presetQuality(p){return p.qualities.find(x=>x.id===exportQ[p.id])||p.qualities.find(x=>x.id===p.q)||p.qualities[0]}
+function presetQuality(p){return p.qualities.find(x=>x.id===exportQ()[p.id])||p.qualities.find(x=>x.id===p.q)||p.qualities[0]}
 const editor={
  c:null,v:null,info:null,inT:0,outT:0,marks:[],snap:false,drag:null,hover:null,raf:0,peaks:null,preset:'discord',tracks:[],timer:false,
  job:null,result:null,progress:0,ctx:null,nodes:null,keys:null,frame:1/60,pending:0,
@@ -594,7 +644,7 @@ const editor={
      <div class="head" id="edHead"></div><div class="hover-line" id="edHover" hidden></div><span class="drag-time" id="edDragT" hidden></span><div id="edStars"></div></div></div>
   </section>
   <aside class="ed-side" aria-label="Экспорт">
-   <div class="field"><label for="edName">Название файла</label><input class="input" id="edName" value="${esc(nameOf(c).replace(/[<>:"/\\|?*]/g,'').slice(0,120))}" maxlength="150"></div>
+   <div class="field"><label for="edName">Название файла</label><input class="input" id="edName" value="${esc(nameOf(c).replace(/:/g,'-').replace(/[<>"/\\|?*]/g,'').slice(0,120))}" maxlength="150"></div>
    <div class="field" role="radiogroup" aria-label="Куда экспортировать"><span class="lbl">Куда экспортировать</span><div id="edPresets" style="display:flex;flex-direction:column;gap:8px"></div></div>
    <div class="field" id="edTracksBox"><span class="lbl">Звуковые дорожки</span><div id="edTracks" style="display:flex;flex-direction:column;gap:8px"><span class="hint">Загрузка…</span></div></div>
    <label class="check"><input type="checkbox" id="edTimerOn" ${this.timer?'checked':''}> Таймер на видео (отсчёт от начала отрезка)</label>
@@ -622,7 +672,7 @@ const editor={
  close(){
   cancelAnimationFrame(this.raf);document.removeEventListener('keydown',this.keys);window.removeEventListener('resize',this.resize);
   if(this.v){this.v.pause();this.v.removeAttribute('src');this.v.load()}
-  for(const n of this.nodes?.extra||[]){n.el.pause();n.el.removeAttribute('src')}
+  for(const n of this.nodes?.extra||[]){n.el.pause();n.el.removeAttribute('src');n.el.load()}
   if(this.ctx){this.ctx.close().catch(()=>{});this.ctx=null}this.nodes=null;this.v=null;$('#stage').innerHTML='';
  },
  D(){return this.c?.duration||0},
@@ -725,7 +775,8 @@ const editor={
  timeAt(e){const r=this.drag?.rect||$('#edTl').getBoundingClientRect();return clamp((e.clientX-r.left)/r.width,0,1)*this.D()},
  modeAt(e){
   const r=$('#edTl').getBoundingClientRect(),x=e.clientX-r.left,w=r.width,D=this.D()||1,inX=this.inT/D*w,outX=this.outT/D*w;
-  if(x>=inX-14&&x<=inX+4)return 'in';if(x>=outX-4&&x<=outX+14)return 'out';
+  // 24 px grab zones around each edge (the visible handle is 14 px wide).
+  if(x>=inX-16&&x<=inX+8)return 'in';if(x>=outX-8&&x<=outX+16)return 'out';
   if(e.clientY-r.top<52&&x>inX&&x<outX)return 'range';return 'head';
  },
  snapTo(t,mode){
@@ -860,38 +911,43 @@ const profiles={
   const box=$('#pfList');if(!box)return;
   box.innerHTML=this.rows().map(p=>{const on=keyOf(p.id||p.path)===keyOf(this.sel),d=on?this.draft:{name:p.name,settings:p.settings||{}};const s=d.settings;
    const sum=(s.capture_mode==='window'?'Окно':'Экран')+' · '+(s.fps||60)+' fps · '+Math.round((s.seconds||300)/60)+' мин';
-   return `<button type="button" class="pf-item" data-act="pf-pick" data-id="${esc(p.id||p.path)}" aria-current="${on}"><span class="ini" aria-hidden="true">${esc(initials(d.name))}</span><span class="tx"><span style="display:flex;align-items:center;gap:6px;min-width:0"><b>${esc(d.name||'Без названия')}</b>${this.isActive(p)?'<span class="tag">Активен</span>':''}</span><small>${esc(sum)}</small>${this.autoOn(p)?'<small>⚡ Включается сам при запуске игры</small>':''}</span></button>`}).join('')+
+   return `<button type="button" class="pf-item" data-act="pf-pick" data-id="${esc(p.id||p.path)}" aria-current="${on}"><span class="ini" aria-hidden="true">${esc(initials(d.name))}</span><span class="tx"><span style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0"><b>${esc(d.name||'Без названия')}</b>${this.isActive(p)?'<span class="tag status">Активен</span>':''}</span><small>${esc(sum)}</small>${this.autoOn(p)?'<small>⚡ Включается сам при запуске игры</small>':''}</span></button>`}).join('')+
    `<button type="button" class="btn" data-act="pf-new" style="border-style:dashed;height:44px" ${busyCapture()?'disabled':''}>${ic('plus')}Новый профиль</button>`;
  },
- seg(key,opts,{disabled=()=>false}={}){
+ // why(v) explains a disabled choice: it becomes the tooltip, so nothing is greyed out silently.
+ seg(key,opts,{disabled=()=>false,why=()=>'',label=''}={}){
   const cur=this.draft.settings[key];
-  return `<div class="seg" role="radiogroup">${opts.map(([v,l])=>`<button type="button" role="radio" data-act="pf-set" data-k="${key}" data-v='${esc(JSON.stringify(v))}' aria-checked="${cur===v}" ${disabled(v)?'disabled':''}>${l}</button>`).join('')}</div>`;
+  return `<div class="seg" role="radiogroup"${label?` aria-label="${esc(label)}"`:''}>${opts.map(([v,l])=>{const off=disabled(v),reason=off?why(v):'';return `<button type="button" role="radio" data-act="pf-set" data-k="${key}" data-v='${esc(JSON.stringify(v))}' aria-checked="${cur===v}" ${off?'disabled':''}${reason?` title="${esc(reason)}"`:''}>${l}</button>`}).join('')}</div>`;
  },
- sw(key,label,sub='',disabled=false){const on=!!this.draft.settings[key];return `<button type="button" class="switch" role="switch" aria-checked="${on}" data-act="pf-toggle" data-k="${key}" ${disabled?'disabled':''}><span class="tr"><span></span></span><span style="display:flex;flex-direction:column"><b style="font-weight:500">${label}</b>${sub?`<small class="hint">${sub}</small>`:''}</span></button>`},
+ sw(key,label,sub='',disabled=false,why=''){const on=!!this.draft.settings[key];return `<button type="button" class="switch" role="switch" aria-checked="${on}" data-act="pf-toggle" data-k="${key}" ${disabled?'disabled':''}${disabled&&why?` title="${esc(why)}"`:''}><span class="tr"><span></span></span><span style="display:flex;flex-direction:column"><b style="font-weight:500">${label}</b>${sub?`<small class="hint">${sub}</small>`:''}</span></button>`},
  renderEdit(){
   const box=$('#pfEdit');if(!box||!this.draft)return;const d=this.draft,s=d.settings,dev=this.devices,isDefault=d.id==='screen:default';
   const p=this.find(d.id)||{},busy=busyCapture(),win=s.capture_mode==='window',procOk=!!dev?.process_audio_supported;
   const mons=dev?.monitors||[];
-  const monTiles=[{id:'primary',label:'Основной монитор',detail:'Всегда главный экран',w:150,h:84},...mons.map((m,i)=>({id:m.id,label:'Монитор '+(i+1),detail:m.width+' × '+m.height+(m.primary?' · основной':''),w:Math.round(140*Math.min(1.25,m.width/2560)),h:Math.round(140*Math.min(1.25,m.width/2560)*m.height/m.width)}))];
+  // "Основной (авто)" follows whichever screen Windows calls primary; the numbered tiles pin one screen.
+  const monTiles=[{id:'primary',label:'Основной (авто)',detail:'Следует за главным экраном Windows',w:150,h:84},...mons.map((m,i)=>({id:m.id,label:'Монитор '+(i+1),detail:m.width+' × '+m.height+(m.primary?' · сейчас основной':''),w:Math.round(140*Math.min(1.25,m.width/2560)),h:Math.round(140*Math.min(1.25,m.width/2560)*m.height/m.width)}))];
   const apps=(dev?.applications||[]).filter(a=>!/afterplay/i.test(a.title)&&!/\\runtime\\python(w)?\.exe$/i.test(a.path));
   const known=d.path&&!apps.some(a=>keyOf(a.path)===keyOf(d.path));
   const mb=s.quality_mode==='cbr'?s.mbps:s.max_mbps,gb=(mb*1e6/8*(s.seconds||300))/1e9;
   const hints={system:'Записывается всё, что слышно в колонках или наушниках.',game:'Только звук выбранной игры: музыка и Discord в запись не попадут.',exclude:'Весь звук, кроме выбранной игры.',multitrack:'Общий звук, игра и чат — на отдельных дорожках. При монтаже громкость каждой меняется отдельно.',none:'Видео без звука.'};
   const procModes=['game','exclude','multitrack'];
   const audioDisabled=v=>procModes.includes(v)&&(!procOk||!win||!d.path||isDefault);
+  const audioWhy=()=>!procOk&&dev?'Нужна Windows 11':isDefault?'Доступно в профиле игры — создайте новый профиль':!win?'Сначала выберите «Окно приложения»':!d.path?'Сначала выберите окно игры':'';
+  const qualityHints={quality:'Качество держится ровным, размер файла зависит от сцены. Подходит почти всегда.',vbr:'Средний битрейт с верхним пределом: размер файла предсказуем.',cbr:'Битрейт не меняется: стабильный поток, но файл больше.'};
   const chats=[...new Map((dev?.audio_applications||[]).map(a=>[keyOf(a.path),a])).values()];
   const mics=dev?.microphones||[];
   box.innerHTML=`${busy?`<div class="note" style="border:1px solid rgba(var(--accent-rgb),.4)"><span>Идёт запись. Профиль можно посмотреть, а изменить — после остановки.</span></div>`:''}
   <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px">
    <div class="field" style="flex:1 1 260px;max-width:420px"><label for="pfName">Название профиля</label><input class="input" id="pfName" value="${esc(d.name)}" maxlength="100" style="font-weight:600;font-size:15px;height:42px"></div>
    <span class="grow"></span>
-   ${this.isActive(p)?'<span class="tag" style="padding:6px 10px;font-size:12px">Активный профиль</span>':`<button type="button" class="btn" data-act="pf-activate" ${busy||this.dirty()?'disabled':''} title="${this.dirty()?'Сначала сохраните изменения':''}">Сделать активным</button>`}
+   ${this.isActive(p)?'<span class="tag status lg" role="status">Активный профиль</span>':`<button type="button" class="btn" data-act="pf-activate" ${busy||this.dirty()?'disabled':''} title="${this.dirty()?'Сначала сохраните изменения':''}">Сделать активным</button>`}
    ${isDefault?'':`<button type="button" class="switch" role="switch" aria-checked="${this.autoOn(p)}" data-act="pf-auto" ${!p.path||this.dirty()?'disabled':''} style="height:42px;padding:0 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel)"><span class="tr"><span></span></span>Включать при запуске игры</button>`}
    ${isDefault?'':`<button type="button" class="btn icon danger" data-act="pf-delete" aria-label="Удалить профиль" ${busy?'disabled':''}>${ic('trash')}</button>`}
   </div>
   <p class="hint" style="margin-top:-8px">${isDefault?'Профиль по умолчанию записывает весь экран. Он используется для ручной записи и когда не запущена игра со своим профилем.':this.autoOn(p)?'Когда игра запустится, AFTERPLAY сам включит повтор с этим профилем. Так можно настроить сразу несколько игр.':p.path?'Включите «Включать при запуске игры», чтобы повтор запускался сам.':'Выберите окно игры ниже и сохраните профиль — тогда можно будет включить автозапуск.'}</p>
   <div class="pf-grid">
-   <section class="card box wide"><div class="box-head"><h3>Что записывать</h3>${this.seg('capture_mode',[['monitor','Весь экран'],['window','Окно приложения']],{disabled:v=>isDefault&&v==='window'})}</div>
+   <section class="card box wide"><div class="box-head"><h3>Что записывать</h3>${this.seg('capture_mode',[['monitor','Весь экран'],['window','Окно приложения']],{disabled:v=>isDefault&&v==='window',why:()=>'Профиль по умолчанию всегда пишет экран. Для окна игры создайте новый профиль',label:'Что записывать'})}</div>
+    ${isDefault?`<p class="hint">Чтобы записывать только окно игры, <button type="button" class="link" data-act="pf-new" ${busy?'disabled':''}>создайте новый профиль</button>.</p>`:''}
     ${win?`<div class="apps" role="radiogroup" aria-label="Окно приложения">${known?`<button type="button" class="app" role="radio" aria-checked="true" data-act="noop"><span class="ini">${esc(initials(d.path.split(/[\\/]/).pop()))}</span><span><b>${esc(d.path.split(/[\\/]/).pop())}</b><small>сейчас не запущено</small></span></button>`:''}${apps.map(a=>`<button type="button" class="app" role="radio" aria-checked="${keyOf(a.path)===keyOf(d.path)}" data-act="pf-app" data-path="${esc(a.path)}" data-hwnd="${a.hwnd}" data-name="${esc(a.title||a.name)}"><span class="ini">${esc(initials(a.name.replace(/\.exe$/i,'')))}</span><span data-i18n-ignore><b>${esc(a.title||a.name)}</b><small>${esc(a.name)}</small></span></button>`).join('')}</div>
      <div style="display:flex;gap:8px;align-items:center"><button type="button" class="btn sm" data-act="pf-browse">${ic('folder')}Выбрать .exe</button><button type="button" class="btn sm" data-act="pf-devices">${ic('refresh')}Обновить список</button><span class="hint">${apps.length?'Запустите игру, если её нет в списке.':dev?'Открытых окон не найдено. Запустите игру и обновите список.':'Загрузка…'}</span></div>`
     :`<div class="mons" role="radiogroup" aria-label="Монитор">${monTiles.map((m,i)=>`<button type="button" class="mon" role="radio" aria-checked="${s.monitor===m.id}" data-act="pf-set" data-k="monitor" data-v='${esc(JSON.stringify(m.id))}'><span class="scr" style="width:${m.w}px;height:${m.h}px">${i===0?'★':i}</span><b>${esc(m.label)}</b><small>${esc(m.detail)}</small></button>`).join('')}</div>`}
@@ -899,7 +955,7 @@ const profiles={
    <section class="card box"><h3>Качество видео</h3>
     <div class="field"><span class="lbl">Кадров в секунду</span>${this.seg('fps',[[24,'24'],[30,'30'],[60,'60'],[90,'90'],[120,'120']])}</div>
     <div class="field"><span class="lbl">Разрешение</span>${this.seg('height',[[0,'Исходное'],[2160,'2160p'],[1440,'1440p'],[1080,'1080p'],[720,'720p']])}</div>
-    <div class="field"><span class="lbl">Режим качества</span>${this.seg('quality_mode',[['quality','Постоянное качество'],['vbr','Переменный битрейт'],['cbr','Постоянный битрейт']])}</div>
+    <div class="field"><span class="lbl">Режим качества</span>${this.seg('quality_mode',[['quality','Качество (CQ)'],['vbr','Битрейт VBR'],['cbr','Битрейт CBR']],{label:'Режим качества'})}<small class="hint">${qualityHints[s.quality_mode]||''}</small></div>
     ${s.quality_mode==='quality'?this.range('cq',14,32,1,'Качество (CQ)'):this.range('mbps',5,200,1,s.quality_mode==='cbr'?'Битрейт':'Средний битрейт')}
     ${s.quality_mode!=='cbr'?this.range('max_mbps',5,200,1,'Предел битрейта'):''}
     <div class="field"><span class="lbl">Нагрузка на систему</span>${this.seg('preset',[['performance','Минимум нагрузки'],['balanced','Баланс'],['quality','Лучшее качество']])}</div>
@@ -907,16 +963,16 @@ const profiles={
     <div class="field"><span class="lbl">Способ захвата</span>${this.seg('capture_backend',[['auto','Авто · видеокарта'],['compatibility','Совместимый']])}</div>
     ${this.sw('cursor','Показывать курсор мыши')}
    </section>
-   <section class="card box"><h3>Повтор</h3>
+   <section class="card box"><h3>Буфер повтора</h3>
     <div class="kv"><label class="lbl" for="pfBuffer">Сколько хранить</label><span class="v" id="pfBufferV">${Math.round(s.seconds/60)} мин</span></div>
     <input type="range" id="pfBuffer" min="0" max="${MINUTES.length-1}" step="1" value="${Math.max(0,MINUTES.indexOf(Math.round(s.seconds/60)))}" data-pf-buffer>
     <div class="ticks" aria-hidden="true">${MINUTES.map(m=>`<span>${m}</span>`).join('')}</div>
     <div class="note"><span>Место на диске для буфера</span><b id="pfDisk">до ${gb.toFixed(1).replace('.',',')} ГБ</b></div>
-    <div class="field"><span class="lbl">Кнопка «Сохранить» сохраняет</span>${this.seg('save_format',[['mp4','Видео MP4'],['gif','GIF без звука']])}</div>
+    <div class="field"><span class="lbl">Формат сохранённого повтора</span>${this.seg('save_format',[['mp4','Видео MP4'],['gif','GIF без звука']],{label:'Формат сохранённого повтора'})}</div>
     ${s.save_format==='gif'?this.range('gif_seconds',2,15,1,'Длина GIF'):''}
     <p class="hint">Быстрые клипы и клавиши — в разделе «Настройки».</p>
    </section>
-   <section class="card box wide"><div class="box-head"><h3>Звук</h3>${this.seg('audio_mode',[['system','Весь звук'],['game','Только игра'],['exclude','Всё кроме игры'],['multitrack','Игра и чат отдельно'],['none','Без звука']],{disabled:audioDisabled})}</div>
+   <section class="card box wide"><div class="box-head"><h3>Звук</h3>${this.seg('audio_mode',[['system','Весь звук'],['game','Только игра'],['exclude','Всё кроме игры'],['multitrack','Игра и чат отдельно'],['none','Без звука']],{disabled:audioDisabled,why:audioWhy,label:'Звук'})}</div>
     <p class="hint">${hints[s.audio_mode]||''}${!procOk&&dev?' Звук отдельных приложений требует Windows 11.':isDefault||!win?' Звук отдельной игры доступен в профиле окна игры.':''}</p>
     ${s.audio_mode==='multitrack'?`<div class="field" style="max-width:420px"><label for="pfChat">Приложение чата</label><select class="input" id="pfChat" data-pf-select="chat_path"><option value="">Discord · найти автоматически</option>${chats.map(a=>`<option value="${esc(a.path)}" ${keyOf(a.path)===keyOf(s.chat_path)?'selected':''} data-i18n-ignore>${esc(a.name)}</option>`).join('')}${s.chat_path&&!chats.some(a=>keyOf(a.path)===keyOf(s.chat_path))?`<option value="${esc(s.chat_path)}" selected>${esc(s.chat_path.split(/[\\/]/).pop())}</option>`:''}</select></div>`:''}
     ${s.audio_mode!=='none'?`<div class="field"><span class="lbl">Качество звука</span>${this.seg('audio_bitrate',[[128,'128 кбит/с'],[192,'192'],[256,'256'],[320,'320']])}</div>`:''}
@@ -926,14 +982,14 @@ const profiles={
      <input type="range" min="0" max="100" value="${s.microphone_gain}" data-pf-range="microphone_gain" aria-label="Громкость микрофона" ${s.microphone_enabled?'':'disabled'}>
      <span class="num" style="text-align:right;font-weight:600" data-out="microphone_gain">${s.microphone_enabled?s.microphone_gain+'%':'—'}</span>
     </div>
-    ${this.sw('microphone_voice_cleanup','Шумоподавление голоса','Убирает фоновый шум микрофона',!s.microphone_enabled)}
+    ${this.sw('microphone_voice_cleanup','Шумоподавление голоса','Убирает фоновый шум микрофона',!s.microphone_enabled,'Сначала включите микрофон')}
     <div class="field" style="max-width:260px"><label for="pfOffset">Сдвиг звука относительно видео, мс</label><input class="input num" id="pfOffset" type="number" min="-2000" max="2000" step="10" value="${s.audio_offset_ms||0}" data-pf-number="audio_offset_ms"></div>
    </section>
   </div>
-  <div class="savebar"><span id="pfStatus" class="hint" style="color:${this.dirty()?'var(--accent)':'var(--muted)'}">${this.dirty()?'Есть несохранённые изменения':'Все изменения сохранены'}</span><span class="grow"></span><button type="button" class="btn" data-act="pf-revert" ${this.dirty()?'':'disabled'}>Отменить</button><button type="button" class="btn primary" data-act="pf-save" ${this.dirty()&&!busy?'':'disabled'}>Сохранить профиль</button></div>`;
+  <div class="savebar"><span id="pfStatus" class="hint" style="color:${this.dirty()?'var(--accent)':'var(--muted)'}">${this.dirty()?'Есть несохранённые изменения':'Изменений нет'}</span><span class="grow"></span><button type="button" class="btn" data-act="pf-revert" ${this.dirty()?'':'disabled title="Изменений нет"'}>Отменить</button><button type="button" class="btn primary" data-act="pf-save" ${this.dirty()&&!busy?'':`disabled title="${busy?'Идёт запись — сохраните после остановки':'Изменений нет'}"`}>Сохранить профиль</button></div>`;
  },
  range(key,min,max,step,label){const v=this.draft.settings[key];return `<div class="field"><div class="kv"><span class="lbl">${label}</span><span class="num" style="font-weight:600" data-out="${key}">${esc(RANGE_FMT[key](v))}</span></div><input type="range" min="${min}" max="${max}" step="${step}" value="${v}" data-pf-range="${key}" aria-label="${label}"></div>`},
- changed(full=true){this.renderList();if(full){const y=window.scrollY;this.renderEdit();window.scrollTo(0,y)}else{const st=$('#pfStatus');if(st){st.textContent=this.dirty()?'Есть несохранённые изменения':'Все изменения сохранены';st.style.color=this.dirty()?'var(--accent)':'var(--muted)'}const sv=$('[data-act=pf-save]');if(sv)sv.disabled=!this.dirty()||busyCapture();const rv=$('[data-act=pf-revert]');if(rv)rv.disabled=!this.dirty()}},
+ changed(full=true){this.renderList();renderShell();if(full){const y=window.scrollY;this.renderEdit();window.scrollTo(0,y)}else{const st=$('#pfStatus');if(st){st.textContent=this.dirty()?'Есть несохранённые изменения':'Изменений нет';st.style.color=this.dirty()?'var(--accent)':'var(--muted)'}const sv=$('[data-act=pf-save]');if(sv){sv.disabled=!this.dirty()||busyCapture();sv.title=!sv.disabled?'':busyCapture()?'Идёт запись — сохраните после остановки':'Изменений нет'}const rv=$('[data-act=pf-revert]');if(rv){rv.disabled=!this.dirty();rv.title=rv.disabled?'Изменений нет':''}}},
  set(key,value){
   const s=this.draft.settings;s[key]=value;
   if(key==='capture_mode'&&value==='window'){s.audio_follow_window=true}
@@ -946,13 +1002,16 @@ const profiles={
   const settings=Object.fromEntries(PF_FIELDS.filter(k=>d.settings[k]!==undefined).map(k=>[k,d.settings[k]]));
   if(d.hwnd)settings.window_hwnd=d.hwnd;
   if(settings.capture_mode==='window'&&!d.path)return toast('Выберите окно игры или файл .exe',true);
+  // Saving takes a moment (the capture is reconfigured): show it and block a second click.
+  if(this.saving)return;this.saving=true;const sv=$('[data-act=pf-save]');if(sv){sv.disabled=true;sv.textContent='Сохраняю…'}
   try{
    const updated=await api('profile_configure',{id:d.id,name:d.name,path:d.path,settings});
    if(!isActive&&wasActive)await api('profile_apply',{path:wasActive}).catch(()=>{});
    if(app&&keyOf(oldPath)!==keyOf(updated.path))await setAutoApp(updated,!!app.enabled&&!!updated.path,oldPath);
    await pollState(true);this.sel=updated.id;this.pick(updated.id);
-   render();toast('Профиль «'+updated.name+'» сохранён');
+   this.saving=false;render();toast('Профиль «'+updated.name+'» сохранён');
   }catch(e){fail(e)}
+  finally{if(this.saving){this.saving=false;this.changed(false);const b=$('[data-act=pf-save]');if(b)b.textContent='Сохранить профиль'}}
  },
 };
 async function setAutoApp(profile,on,oldPath){
@@ -968,7 +1027,36 @@ const HK_ROWS=[['save','Сохранить повтор',true],['record','Нач
 const settingsUI={
  listening:null,cache:null,
  hotkeys(){return {save:'Ctrl+Alt+F10',window:'Ctrl+Alt+F8',...(state.settings.hotkeys||{})}},
- leave(){if(this.listening){this.listening=null;api('hotkeys_edit',{enabled:false}).catch(()=>{})}},
+ leave(){if(this.listening){this.listening=null;api('hotkeys_edit',{enabled:false}).catch(()=>{})}this.observer?.disconnect();this.observer=null},
+ // A section lands where the first one sits: under the sticky header, after the page's top padding.
+ offset(){const b=$('#stBody');return ($('.hd')?.offsetHeight||68)+(b?parseFloat(getComputedStyle(b).paddingTop)||0:28)},
+ // The clicked section is highlighted at once and scrolled exactly under the header.
+ // Sections near the end simply scroll as far as the page goes; the clicked tab stays highlighted.
+ jump(id){
+  const sec=$('#st-'+id);if(!sec)return;
+  this.lockUntil=Date.now()+1500;this.current=id;
+  for(const a of $$('.st-nav a'))a.dataset.id===id?a.setAttribute('aria-current','location'):a.removeAttribute('aria-current');
+  const top=Math.max(0,Math.round(sec.getBoundingClientRect().top+window.scrollY-this.offset()));
+  const still=document.body.classList.contains('no-motion')||matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollTo({top,behavior:still?'auto':'smooth'});
+  // Keyboard users continue from the section they jumped to.
+  sec.setAttribute('tabindex','-1');sec.focus({preventScroll:true});
+ },
+ // The section list on the left marks the section being read, so the long page keeps its bearings.
+ spy(){
+  this.observer?.disconnect();
+  const mark=id=>{if(!id)return;this.current=id;for(const a of $$('.st-nav a'))a.dataset.id===id?a.setAttribute('aria-current','location'):a.removeAttribute('aria-current')};
+  // The current section is the last one whose top has passed under the header;
+  // at the very bottom of the page the last section wins even if it is short.
+  const pick=()=>{const secs=$$('.st-sec');if(!secs.length||Date.now()<(this.lockUntil||0))return;
+   const bottom=window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4;
+   let cur=secs[0];for(const s of secs)if(s.getBoundingClientRect().top<=140)cur=s;
+   // At the bottom keep a section the user jumped to while it is still on screen.
+   const kept=bottom&&this.current&&$('#st-'+this.current),onScreen=kept&&kept.getBoundingClientRect().top<window.innerHeight&&kept.getBoundingClientRect().bottom>68;
+   mark(onScreen?this.current:(bottom?secs[secs.length-1]:cur).id.slice(3))};
+  if(!this.onScroll){this.onScroll=()=>{if(view.screen==='settings')pick()};window.addEventListener('scroll',this.onScroll,{passive:true});window.addEventListener('resize',()=>{if(view.screen==='settings')pick()})}
+  this.observer={disconnect:()=>{}};pick();
+ },
  render(){
   $('#view').innerHTML=`<div class="page"><nav class="st-nav" aria-label="Разделы настроек">${[['general','Общие'],['keys','Горячие клавиши'],['folders','Папки'],['look','Оформление'],['updates','Обновления'],['data','Данные']].map(([id,l])=>`<a href="#st-${id}" data-act="st-jump" data-id="${id}">${l}</a>`).join('')}</nav><div class="st-body" id="stBody"></div></div>`;
   this.paint();if(this.cache===null)api('cache_info').then(r=>{this.cache=r;this.paintData()}).catch(()=>{});
@@ -987,7 +1075,7 @@ const settingsUI={
   </section>
   <section class="card st-sec" id="st-keys"><h2>Горячие клавиши</h2><p class="hint" style="margin:-2px 0 6px">${r.hotkey_ok===false&&r.hotkey_error?esc(r.hotkey_error):'Нажмите на сочетание и введите новое. Esc — отмена, Backspace — убрать необязательное.'}</p>
    ${HK_ROWS.map(([k,label,req],i)=>{const v=hk[k]||'',listen=this.listening===k,dup=v&&used.some(([o,ov])=>o!==k&&ov.toLowerCase()===v.toLowerCase());const quick=k.startsWith('clip_')?Number(k.slice(5))-1:-1;
-    return `<div class="st-row"><span class="t"><b>${label}</b>${quick>=0?`<small>Сохраняет последние секунды записи</small>`:''}${dup?'<small style="color:#FFB4B5">Это сочетание занято другим действием</small>':''}</span>${quick>=0?`<label class="field" style="flex-direction:row;align-items:center;gap:8px"><input class="input num" type="number" min="5" max="1800" step="5" value="${q[quick]}" data-quick="${quick}" style="width:90px" aria-label="Длительность, секунд"><span class="hint">сек</span></label>`:''}<button type="button" class="keybtn ${listen?'listen':''} ${dup?'bad':''}" data-act="st-key" data-hk="${k}" aria-label="${esc(label)}: ${v?esc(v):'не задано'}. Нажмите, чтобы изменить">${listen?'Нажмите сочетание…':v?v.split('+').map(p=>`<kbd>${esc(p)}</kbd>`).join(''):'<span class="hint">Не задано</span>'}</button></div>`}).join('')}
+    return `<div class="st-row"><span class="t"><b>${label}</b>${quick>=0?`<small>Сохраняет последние секунды записи</small>`:''}${dup?'<small style="color:#FFB4B5">Это сочетание занято другим действием</small>':''}</span>${quick>=0?`<label class="field" style="flex-direction:row;align-items:center;gap:8px"><input class="input num" type="number" min="5" max="1800" step="5" value="${q[quick]}" data-quick="${quick}" style="width:90px" aria-label="Длительность, секунд"><span class="hint">сек</span></label>`:''}<button type="button" class="keybtn ${listen?'listen':''} ${dup?'bad':''}" data-act="st-key" data-hk="${k}" aria-label="${esc(label)}: ${v?esc(v):'не задано'}. Нажмите, чтобы изменить">${listen?'Нажмите сочетание…':v?v.split('+').map(p=>`<kbd>${esc(p)}</kbd>`).join(''):'<span class="hint">Не задано · нажмите, чтобы назначить</span>'}</button></div>`}).join('')}
   </section>
   <section class="card st-sec" id="st-folders"><h2>Папки</h2>
    <div class="st-row"><span class="t"><b>Новые повторы, записи и клипы</b><small style="overflow-wrap:anywhere" data-i18n-ignore>${esc(state.storage?.recordings_dir||'')}</small></span><button type="button" class="btn" data-act="st-recdir">Изменить</button><button type="button" class="btn" data-act="st-open" data-target="exports">Открыть</button></div>
@@ -1003,18 +1091,35 @@ const settingsUI={
   </section>
   <section class="card st-sec" id="st-updates"><h2>Обновления</h2><div id="stUpdates"></div></section>
   <section class="card st-sec" id="st-data"><h2>Данные</h2><div id="stData"></div></section>`;
-  this.paintUpdates();this.paintData();
+  this.paintUpdates();this.paintData();this.spy();
  },
  paintUpdates(){
   const box=$('#stUpdates');if(!box)return;const u=state.updates||{},l=u.latest;
-  box.innerHTML=`<div class="st-row"><span class="t"><b>AFTERPLAY ${esc(u.version||'')}</b><small style="color:${u.error?'#FFB4B5':l?.available?'var(--accent)':'var(--muted)'}">${esc(u.error||(l?l.available?'Доступна версия '+l.version:'Установлена последняя версия':'Проверка на GitHub по кнопке'))}</small></span>
-   ${l?.available&&u.supported?`<button type="button" class="btn primary" data-act="st-update-install" ${u.busy?'disabled':''}>${u.prepared?'Перезапустить и обновить':'Скачать и установить'}</button>`:''}
-   <button type="button" class="btn" data-act="st-update-check" ${u.busy?'disabled':''}>Проверить обновления</button></div>
+  const dl=runningJob('Обновление AFTERPLAY'),checking=!!runningJob('Проверка обновлений'),busy=u.busy||!!dl||checking;
+  // One line that always says what is happening right now.
+  let line,color='var(--muted)';
+  if(dl||u.busy){line=dl?.message&&dl.message!=='Подготовка…'?dl.message:'Загрузка обновления…';color='var(--accent)'}
+  else if(checking)line='Проверяю GitHub…';
+  else if(u.error){line=u.error;color='#FFB4B5'}
+  else if(u.prepared){line='Версия '+(l?.version||'')+' скачана и готова к установке';color='var(--accent)'}
+  else if(l){line=l.available?'Доступна версия '+l.version:'Установлена последняя версия';if(l.available)color='var(--accent)'}
+  else line='Проверка на GitHub по кнопке';
+  const pct=dl?clamp(Number(dl.progress)||0,0,100):-1;
+  // Result of the last installation (written by Updater.exe), shown after the restart.
+  const last=u.last_result,lastLine=!last||busy?'':last.success===false?'Прошлое обновление не установлено: '+(last.error||last.message||'подробности в data/logs'):last.success&&last.version===u.version?'Обновлено до версии '+last.version:'';
+  const html=`<div class="st-row"><span class="t"><b>AFTERPLAY ${esc(u.version||'')}</b><small style="color:${color}" role="status">${esc(line)}</small>${lastLine?`<small style="color:${last.success===false?'#FFB4B5':'var(--muted)'}">${esc(lastLine)}</small>`:''}</span>
+   ${l?.available&&u.supported&&!dl&&!u.busy?`<button type="button" class="btn primary" data-act="st-update-install" ${checking?'disabled title="Дождитесь окончания проверки"':''}>${u.prepared?'Перезапустить и обновить':'Скачать и установить'}</button>`:''}
+   <button type="button" class="btn" data-act="st-update-check" ${busy?`disabled title="${dl||u.busy?'Идёт загрузка обновления':'Проверка уже идёт'}"`:''}>${checking?'Проверяю…':'Проверить обновления'}</button></div>
+   ${pct>=0||u.busy?`<div class="st-progress"><div class="bar${pct<0?' indet':''}" role="progressbar" aria-label="Загрузка обновления" ${pct>=0?`aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"`:''}><span style="width:${pct<0?40:pct}%"></span></div><span class="num hint">${pct>=0?pct+'%':''}</span></div>`:''}
    <div class="st-row"><span class="t"><b>Обновлять автоматически</b><small>Только когда запись не идёт</small></span><button type="button" class="switch" role="switch" aria-label="Обновлять автоматически" aria-checked="${!!state.settings.updates?.auto_enabled}" data-act="st-autoupdate"><span class="tr"><span></span></span></button></div>`;
+  // Repaint only on change: polling must not reset hover or keyboard focus every 1.8 s.
+  if(box.dataset.html===html)return;box.dataset.html=html;
+  const focused=document.activeElement?.closest?.('#stUpdates [data-act]')?.dataset.act;
+  box.innerHTML=html;if(focused)box.querySelector(`[data-act="${focused}"]`)?.focus();
  },
  paintData(){
   const box=$('#stData');if(!box)return;const c=this.cache;
-  box.innerHTML=`<div class="st-row"><span class="t"><b>Кэш превью и звуковых волн</b><small>Создаётся заново при необходимости. Старше 30 дней удаляется сам.</small></span><span class="num hint">${c?bytes(c.bytes):'…'}</span><button type="button" class="btn" data-act="st-cache" ${c&&c.bytes?'':'disabled'}>Очистить</button></div>
+  box.innerHTML=`<div class="st-row"><span class="t"><b>Кэш превью и звуковых волн</b><small>Создаётся заново при необходимости. Старше 30 дней удаляется сам.</small></span><span class="num hint">${c?bytes(c.bytes):'…'}</span><button type="button" class="btn" data-act="st-cache" ${c&&c.bytes?'':`disabled title="${c?'Кэш пуст — очищать нечего':'Подсчитываю размер кэша…'}"`}>Очистить</button></div>
    <div class="st-row"><span class="t"><b>Настройки и журналы</b><small>Папка data рядом с программой</small></span><button type="button" class="btn" data-act="st-open" data-target="data">${ic('folder')}Открыть папку</button></div>`;
  },
  combo(e){
@@ -1055,6 +1160,11 @@ async function recordAction(name,el){
   return task('replay_save',seconds?{seconds}:{},{done:r=>{pollState(true);toast(seconds?'Клип сохранён':'Повтор сохранён',false,r?.duration?short(r.duration):'')}});
  }
 }
+// One library scan at a time; its progress shows in the background-task panel.
+async function scanLibrary(){
+ if(runningJob('Индексация видео'))return toast('Библиотека уже обновляется');
+ await task('scan',{},{done:x=>{pollState(true);toast('Библиотека обновлена',false,(x?.count??0)+' видео')}});await pollState(true);
+}
 const ACT={
  noop(){},
  nav(el){libUI.kind=el.dataset.kind;libUI.limit=120;if(view.screen!=='library')go({screen:'library'});else{render()}},
@@ -1089,10 +1199,11 @@ const ACT={
  'ed-play'(){const v=editor.v;v.paused?v.play():v.pause()},'ed-frame'(el){editor.step(Number(el.dataset.d))},
 
  'ed-in'(){editor.setIn()},'ed-out'(){editor.setOut()},'ed-mark'(){editor.addMark()},
- 'ed-q'(el){exportQ[el.dataset.p]=el.dataset.q;localSet('ag.exportQ',JSON.stringify(exportQ));editor.updateQuality(el.dataset.p)},
+ 'ed-q'(el){prefSet('export_quality',{...exportQ(),[el.dataset.p]:el.dataset.q},0);editor.updateQuality(el.dataset.p)},
  'ed-preset'(el){editor.preset=el.dataset.id;editor.renderPresets();editor.renderExport();editor.renderTracks()},
  'ed-track'(el){const on=toggleTrack(editor.tracks.map(t=>t.on),Number(el.dataset.i));editor.tracks.forEach((t,j)=>t.on=on[j]);editor.renderTracks();editor.syncTracks()},
  'ed-export'(){editor.exportNow()},
+ async 'job-cancel'(el){el.disabled=true;el.textContent='Отменяю…';await api('job_cancel',{id:el.dataset.id})},
  async 'ed-cancel'(){if(editor.job&&editor.job!=='starting')await api('job_cancel',{id:editor.job}).catch(fail)},
  async 'ed-copy'(){const id=editor.result?.id;if(!id)return;await api('copy_file',{id});const l=$('#edCopyL');if(l)l.textContent='Скопировано ✓';toast('Файл скопирован','', 'Вставьте его в Discord или проводник')},
  'ed-again'(){editor.result=null;editor.renderExport()},
@@ -1111,7 +1222,7 @@ const ACT={
  'pf-revert'(){profiles.pick(profiles.draft.id);profiles.changed()},
  'pf-save'(){profiles.save()},
  // settings
- 'st-jump'(el,e){e.preventDefault();$('#st-'+el.dataset.id)?.scrollIntoView({behavior:'smooth',block:'start'})},
+ 'st-jump'(el,e){e.preventDefault();settingsUI.jump(el.dataset.id)},
  async 'st-autostart'(){const on=!state.settings.desktop?.clips?.autostart;const r=await api('autostart_config',{enabled:on});state.settings.desktop={...state.settings.desktop,clips:{...state.settings.desktop?.clips,autostart:r.enabled}};settingsUI.paint()},
  async 'st-close'(el){await api('desktop_config',{close_action:el.dataset.v});state.settings.desktop={...state.settings.desktop,clips:{...state.settings.desktop?.clips,close_action:el.dataset.v}};settingsUI.paint()},
  async 'st-exit-save'(){const cur=state.auto_record?.settings||{enabled:false,save_on_exit:false,apps:[]};state.auto_record=await api('auto_config',{...cur,save_on_exit:!cur.save_on_exit});settingsUI.paint()},
@@ -1121,17 +1232,18 @@ const ACT={
  async 'st-recdir'(){const r=await api('browse',{purpose:'recordings'});if(!r.path)return;state.storage=await api('storage_config',{recordings_dir:r.path});settingsUI.paint();toast('Папка для записей изменена')},
  'st-open'(el){return api('open',{target:el.dataset.target})},
  async 'st-root-off'(el){await api('settings',{remove_video_root:el.dataset.path});await pollState(true);settingsUI.paint()},
- async 'st-root-add'(){const r=await api('browse',{purpose:'video'});if(!r.path)return;await api('settings',{video_root:r.path});await pollState(true);settingsUI.paint();task('scan',{},{done:x=>{pollState(true);toast('Библиотека обновлена',false,(x?.count??0)+' видео')}})},
- 'st-scan'(){return task('scan',{},{done:x=>{pollState(true);toast('Библиотека обновлена',false,(x?.count??0)+' видео')}})},
+ async 'st-root-add'(){const r=await api('browse',{purpose:'video'});if(!r.path)return;await api('settings',{video_root:r.path});await pollState(true);settingsUI.paint();scanLibrary()},
+ 'st-scan'(){return scanLibrary()},
  async 'st-accent'(el){state.settings.customization=await api('customize_config',{afterglow_accent:el.dataset.v});applyLook();settingsUI.paint()},
  async 'st-motion'(){state.settings.customization=await api('customize_config',{animation:custom().animation==='off'?'calm':'off'});applyLook();settingsUI.paint()},
  async 'st-corner'(el){state.settings.customization=await api('customize_config',{notice_position:el.dataset.v});settingsUI.paint()},
  'st-notice'(){return api('customize_notice')},
  async 'st-autoupdate'(){const r=await api('updates_config',{auto_enabled:!state.settings.updates?.auto_enabled});state.settings.updates=r;settingsUI.paintUpdates()},
- 'st-update-check'(){return task('update_check',{},{done:async()=>{await pollState(true);settingsUI.paintUpdates()},error:async j=>{await pollState(true);settingsUI.paintUpdates();toast(j.message,true)}})},
+ async 'st-update-check'(){await task('update_check',{},{done:async()=>{await pollState(true);settingsUI.paintUpdates()},error:async j=>{await pollState(true);settingsUI.paintUpdates();toast(j.message,true)}});await pollState(true)},
  async 'st-update-install'(){
   if(state.updates?.prepared){if(await confirmBox('Перезапустить AFTERPLAY?','Программа закроется, обновится и откроется снова.','Обновить',false))await api('update_install');return}
-  task('update_prepare',{},{progress:()=>settingsUI.paintUpdates(),done:async()=>{await pollState(true);settingsUI.paintUpdates();if(await confirmBox('Обновление готово','Перезапустить AFTERPLAY сейчас?','Перезапустить',false))api('update_install').catch(fail)}});
+  await task('update_prepare',{},{progress:()=>settingsUI.paintUpdates(),done:async()=>{await pollState(true);settingsUI.paintUpdates();if(await confirmBox('Обновление готово','Перезапустить AFTERPLAY сейчас?','Перезапустить',false))api('update_install').catch(fail)},error:async j=>{await pollState(true);settingsUI.paintUpdates();toast(j.message||'Обновление не скачалось',true)}});
+  await pollState(true);
  },
  async 'st-cache'(){const r=await api('cache_clear');settingsUI.cache={bytes:0};settingsUI.paintData();toast('Кэш очищен',false,'освобождено '+bytes(r.bytes||0))},
 };
@@ -1140,6 +1252,13 @@ document.addEventListener('click',async e=>{
  if(!fn)return;
  if(el.dataset.act!=='vw-menu'&&viewer.menu&&!el.closest('#vwMenu'))viewer.toggleMenu(false);
  try{await fn(el,e)}catch(error){fail(error)}
+});
+// A settings row with a single switch toggles from anywhere on the row, like Windows Settings:
+// the 36×20 switch alone is too small a target.
+document.addEventListener('click',e=>{
+ const row=e.target.closest('.st-row');if(!row||e.target.closest('button,a,input,select,label,textarea'))return;
+ const controls=row.querySelectorAll('button,a,input,select,textarea'),sw=row.querySelector('.switch');
+ if(sw&&controls.length===1&&!sw.disabled)sw.click();
 });
 document.addEventListener('dblclick',e=>{
  const card=e.target.closest('.clip[data-id]');if(card){go({screen:'viewer',id:card.dataset.id});return}

@@ -48,7 +48,9 @@ def run():
                         candidate=microphone.Capture(chosen,packets,config.get('microphone_gain',100),config.get('microphone_voice_cleanup',True))
                         if closed():candidate.close();break
                         capture=candidate;device=chosen
-                    state='connected' if capture else 'waiting';error=''
+                    state='connected' if capture else 'waiting'
+                    # Say why the track is silent instead of an empty error.
+                    error='' if capture else 'Микрофон не найден: '+(name or 'устройство по умолчанию в Windows')+'. Подключите его — запись подхватит сама.'
                 except Exception as exception:
                     state='waiting';error=str(exception)
             # Status is independent of PCM: hardware mute may stop callbacks.
