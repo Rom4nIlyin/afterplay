@@ -359,6 +359,9 @@ dialog p{margin:0 0 18px;color:var(--muted)}
 dialog .row{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 dialog .dlg-notes{display:flex;flex-direction:column;gap:6px;margin:0 0 18px;font-size:13px;color:var(--muted)}
 dialog .dlg-notes p{margin:0}
+/* Problem report preview */
+textarea.st-log{display:block;width:100%;height:280px;margin-top:10px;padding:10px 12px;resize:vertical;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre;overflow:auto;color:var(--muted)}
+dialog textarea.input{width:100%}
 
 /* Fullscreen viewer: the whole stage goes fullscreen, controls float over the picture */
 #stage.vw:fullscreen{background:#000}
