@@ -89,15 +89,42 @@ class VideoSource:
         except Exception:pass
 
 
+def window_screen_rect(hwnd):
+    """Client area of a window in physical screen pixels: (left, top, right, bottom)."""
+    import ctypes
+    from ctypes import wintypes
+    user=ctypes.windll.user32
+    set_dpi=getattr(user,'SetThreadDpiAwarenessContext',None)
+    if set_dpi:
+        set_dpi.restype=ctypes.c_void_p;set_dpi.argtypes=[ctypes.c_void_p]
+    # Per-monitor aware, like Pillow's screen grab, so both use physical pixels.
+    previous=set_dpi(ctypes.c_void_p(-4)) if set_dpi else None
+    try:
+        rect=wintypes.RECT();origin=wintypes.POINT(0,0)
+        if not user.GetClientRect(wintypes.HWND(hwnd),ctypes.byref(rect)) or not user.ClientToScreen(wintypes.HWND(hwnd),ctypes.byref(origin)):
+            raise RuntimeError('Окно игры закрыто или недоступно')
+        if rect.right<2 or rect.bottom<2:raise RuntimeError('Окно игры свёрнуто или не готово к записи')
+        return origin.x,origin.y,origin.x+rect.right,origin.y+rect.bottom
+    finally:
+        if previous:set_dpi(previous)
+
+
 class GdiVideoSource:
-    """Timestamped compatibility capture without the Windows 10 1903 WGC APIs."""
+    """Timestamped compatibility capture without the Windows 10 1903 WGC APIs.
+
+    A selected window is read from the composed desktop at its client area.
+    Copying from the window's own DC (ImageGrab.grab(window=...)) returns the
+    last GDI-painted image for DirectX/flip-model games, so Windows 10 users
+    got audio over a frozen first frame. The screen copy is live; windows
+    placed on top of the game are recorded too, as in full-screen capture.
+    """
     def __init__(self,*,hwnd=None,monitor=None,fps=30,**_):
         from PIL import ImageGrab
         import numpy as np
         self.lock=threading.Lock();self.closed=False;self.error='';self.received=0;self.dropped=0;self.last_read=0
         self.first=None;self.latest=None;self.serial=0;self.clock_fallback=False;self._stop=threading.Event()
         def grab():
-            if hwnd:image=ImageGrab.grab(window=int(hwnd))
+            if hwnd:image=ImageGrab.grab(bbox=window_screen_rect(int(hwnd)),all_screens=True)
             else:
                 area=monitor or {}
                 x=area.get('x',area.get('left'));y=area.get('y',area.get('top'))
@@ -136,7 +163,7 @@ def create_video_source(*,hwnd=None,monitor=None,fps=60,cursor=True):
             source=VideoSource(hwnd=hwnd,monitor_index=None if hwnd else monitor['wgc_index'],fps=fps,cursor=cursor)
             return source,'Windows Graphics Capture'
         except Exception:
-            # GDI uses PrintWindow for a selected HWND, never a desktop crop.
+            # GDI reads the selected window's area from the composed desktop.
             pass
     return GdiVideoSource(hwnd=hwnd,monitor=monitor,fps=fps),'GDI · совместимый захват'
 
