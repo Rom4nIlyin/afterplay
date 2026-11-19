@@ -56,6 +56,71 @@ def native_source_allowed(graph,windows_build):
     return windows_build>=22000 or graph.startswith('ddagrab=')
 
 
+def _monitor_rect(handle):
+    class Info(ctypes.Structure):
+        _fields_=[('cbSize',wintypes.DWORD),('rcMonitor',wintypes.RECT),('rcWork',wintypes.RECT),
+                  ('dwFlags',wintypes.DWORD),('szDevice',wintypes.WCHAR*32)]
+    info=Info();info.cbSize=ctypes.sizeof(info)
+    if not ctypes.windll.user32.GetMonitorInfoW(wintypes.HMONITOR(handle),ctypes.byref(info)):return None
+    r=info.rcMonitor
+    return info.szDevice,(r.left,r.top,r.right,r.bottom)
+
+
+def desktop_region(window=None,monitor=None):
+    """DXGI output and capture area, in physical pixels, for Windows 10.
+
+    A window is the part of its monitor under the window's client area; the
+    whole monitor otherwise. None when the area is not on the first adapter,
+    which is the only one ddagrab can open.
+    """
+    user=ctypes.windll.user32
+    set_dpi=getattr(user,'SetThreadDpiAwarenessContext',None)
+    if set_dpi:
+        set_dpi.restype=ctypes.c_void_p;set_dpi.argtypes=[ctypes.c_void_p]
+    previous=set_dpi(ctypes.c_void_p(-4)) if set_dpi else None
+    try:
+        if window:
+            from capture_media import window_screen_rect
+            left,top,right,bottom=window_screen_rect(int(window['hwnd']))
+            user.MonitorFromWindow.restype=wintypes.HMONITOR;user.MonitorFromWindow.argtypes=[wintypes.HWND,wintypes.DWORD]
+            found=_monitor_rect(user.MonitorFromWindow(wintypes.HWND(int(window['hwnd'])),2))
+            if not found:return None
+            device,(mx,my,mr,mb)=found
+            left,top,right,bottom=max(left,mx),max(top,my),min(right,mr),min(bottom,mb)
+        else:
+            device=monitor['id'];found=None
+            callback=ctypes.WINFUNCTYPE(wintypes.BOOL,wintypes.HMONITOR,wintypes.HDC,ctypes.POINTER(wintypes.RECT),wintypes.LPARAM)
+            def visit(handle,*_):
+                nonlocal found
+                item=_monitor_rect(handle)
+                if item and item[0]==device:found=item
+                return True
+            user.EnumDisplayMonitors(None,None,callback(visit),0)
+            if not found:return None
+            mx,my,mr,mb=found[1];left,top,right,bottom=mx,my,mr,mb
+    finally:
+        if previous:set_dpi(previous)
+    adapter,output=desktop_output(device)
+    if adapter!=0:return None
+    width=(right-left)//2*2;height=(bottom-top)//2*2
+    if width<16 or height<16:return None
+    return {'output':output,'x':left-mx,'y':top-my,'width':width,'height':height,
+            'full':(left,top,right,bottom)==(mx,my,mr,mb) and (width,height)==(mr-mx,mb-my)}
+
+
+def desktop_filter(cfg,region,*,gpu_frames):
+    """Desktop Duplication: no WGC frame on Windows 10 and no CPU copy in Python.
+
+    Frames stay on the GPU for NVENC at native size; otherwise FFmpeg downloads
+    them once and scales/encodes on its own threads, never in the game's way.
+    """
+    graph=(f'ddagrab=output_idx={region["output"]}:framerate={cfg["fps"]}'
+           f':draw_mouse={int(cfg["cursor"])}:dup_frames=1')
+    if not region['full']:
+        graph+=f':video_size={region["width"]}x{region["height"]}:offset_x={region["x"]}:offset_y={region["y"]}'
+    return graph if gpu_frames else graph+',hwdownload,format=bgra'
+
+
 def source_filter(cfg,window,monitor,size,*,idle_frames=False):
     if not window and size==(monitor['width'],monitor['height']):
         adapter,output=desktop_output(monitor['id'])

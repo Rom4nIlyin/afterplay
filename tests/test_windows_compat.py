@@ -4,26 +4,48 @@ from capture_media import create_video_source
 
 class WindowsCompatibilityTests(unittest.TestCase):
     def test_gdi_preserves_negative_monitor_coordinates_and_bgra_frames(self):
-        from PIL import Image
+        import numpy as np
         from capture_media import GdiVideoSource
-        with patch('PIL.ImageGrab.grab',return_value=Image.new('RGB',(4,2),(10,20,30))) as grabbed:
+        frame=np.full((800,1200,4),(30,20,10,255),dtype=np.uint8)
+        with patch('capture_media.ScreenCopier.copy',return_value=frame) as copied:
             source=GdiVideoSource(monitor={'x':-1200,'y':25,'width':1200,'height':800},fps=1)
             try:
-                self.assertEqual(grabbed.call_args.kwargs['bbox'],(-1200,25,0,825))
+                copied.assert_called_with(-1200,25,0,825)
                 self.assertEqual(source.first[1][0,0].tolist(),[30,20,10,255])
                 self.assertGreater(source.first[0],0)
             finally:source.stop()
     def test_gdi_window_reads_live_desktop_at_its_client_area(self):
         # The window's own DC freezes on the first frame for DirectX games.
-        from PIL import Image
+        import numpy as np
         from capture_media import GdiVideoSource
-        with patch('capture_media.window_screen_rect',return_value=(-800,40,-400,240)) as rect,              patch('PIL.ImageGrab.grab',return_value=Image.new('RGB',(400,200))) as grabbed:
+        with patch('capture_media.window_screen_rect',return_value=(-800,40,-400,240)) as rect,              patch('capture_media.ScreenCopier.copy',return_value=np.zeros((200,400,4),dtype=np.uint8)) as copied:
             source=GdiVideoSource(hwnd=123,fps=1)
             try:
-                self.assertEqual(grabbed.call_args.kwargs,{'bbox':(-800,40,-400,240),'all_screens':True})
+                copied.assert_called_with(-800,40,-400,240)
                 rect.assert_called_with(123)
                 self.assertEqual((source.width,source.height),(400,200))
             finally:source.stop()
+    def test_screen_copier_returns_opaque_bgra_of_the_area(self):
+        from capture_media import ScreenCopier
+        copier=ScreenCopier()
+        try:
+            frame=copier.copy(0,0,64,32)
+            self.assertEqual(frame.shape,(32,64,4));self.assertTrue((frame[:,:,3]==255).all())
+            self.assertEqual(copier.copy(0,0,40,20).shape,(20,40,4))
+            with self.assertRaises(RuntimeError):copier.copy(5,5,5,5)
+        finally:copier.release()
+    def test_windows_10_desktop_duplication_crops_window_and_downloads_for_cpu_scaling(self):
+        import gpu_capture
+        region={'output':1,'x':40,'y':20,'width':1280,'height':720,'full':False}
+        gpu=gpu_capture.desktop_filter({'fps':60,'cursor':True},region,gpu_frames=True)
+        self.assertEqual(gpu,'ddagrab=output_idx=1:framerate=60:draw_mouse=1:dup_frames=1:video_size=1280x720:offset_x=40:offset_y=20')
+        cpu=gpu_capture.desktop_filter({'fps':30,'cursor':False},{**region,'full':True},gpu_frames=False)
+        self.assertEqual(cpu,'ddagrab=output_idx=1:framerate=30:draw_mouse=0:dup_frames=1,hwdownload,format=bgra')
+        self.assertTrue(gpu_capture.native_source_allowed(gpu,19045))
+    def test_desktop_region_skips_areas_off_the_first_adapter(self):
+        import gpu_capture
+        with patch('gpu_capture.desktop_output',return_value=(1,0)):
+            self.assertIsNone(gpu_capture.desktop_region(None,{'id':'nope'}) or gpu_capture.desktop_region({'hwnd':gpu_capture.ctypes.windll.user32.GetDesktopWindow()},None))
     def test_window_screen_rect_follows_a_real_window(self):
         import ctypes
         from capture_media import window_screen_rect

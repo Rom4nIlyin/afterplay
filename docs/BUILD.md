@@ -67,7 +67,7 @@ python scripts/build_translations.py
 
 ```powershell
 python scripts/build_portable.py                 # версия из src/version.py
-python scripts/build_portable.py --version 1.16.1
+python scripts/build_portable.py --version 1.16.2
 ```
 
 Результат — `dist/AFTERPLAY-<версия>-Portable-Win64.zip` и `.sha256`. Сборка кладёт внутрь Python, закреплённые зависимости, FFmpeg (закреплённый URL и SHA-256) и подписанный установщик WebView2. Загрузки кэшируются в `build/downloads`. Скрипт не перезаписывает существующую папку сборки: для повторной сборки той же версии переименуйте прежние `build/portable-<версия>` и ZIP в `dist`.

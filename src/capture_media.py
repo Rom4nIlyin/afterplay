@@ -109,29 +109,99 @@ def window_screen_rect(hwnd):
         if previous:set_dpi(previous)
 
 
+class ScreenCopier:
+    """BitBlt of one screen area straight into a reused BGRA DIB section.
+
+    Pillow's grab copies the whole virtual desktop and converts it to RGB on
+    every call (~100 ms for 1080p); this copies only the area (~15 ms).
+    """
+    SRCCOPY=0x00CC0020;CAPTUREBLT=0x40000000
+
+    def __init__(self):
+        import ctypes
+        from ctypes import wintypes
+        self.ctypes=ctypes;self.size=None;self.memory=None;self.bitmap=None;self.pixels=None
+        user=ctypes.windll.user32;gdi=ctypes.windll.gdi32
+        user.GetDC.restype=wintypes.HDC;user.GetDC.argtypes=[wintypes.HWND]
+        user.ReleaseDC.argtypes=[wintypes.HWND,wintypes.HDC]
+        gdi.CreateCompatibleDC.restype=wintypes.HDC;gdi.CreateCompatibleDC.argtypes=[wintypes.HDC]
+        gdi.CreateDIBSection.restype=wintypes.HBITMAP
+        gdi.CreateDIBSection.argtypes=[wintypes.HDC,ctypes.c_void_p,wintypes.UINT,ctypes.POINTER(ctypes.c_void_p),wintypes.HANDLE,wintypes.DWORD]
+        gdi.SelectObject.restype=wintypes.HGDIOBJ;gdi.SelectObject.argtypes=[wintypes.HDC,wintypes.HGDIOBJ]
+        gdi.DeleteObject.argtypes=[wintypes.HGDIOBJ];gdi.DeleteDC.argtypes=[wintypes.HDC]
+        gdi.BitBlt.argtypes=[wintypes.HDC,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int,wintypes.HDC,ctypes.c_int,ctypes.c_int,wintypes.DWORD]
+        self.user=user;self.gdi=gdi
+        self.set_dpi=getattr(user,'SetThreadDpiAwarenessContext',None)
+        if self.set_dpi:self.set_dpi.restype=ctypes.c_void_p;self.set_dpi.argtypes=[ctypes.c_void_p]
+
+    def _allocate(self,width,height):
+        import numpy as np
+        ctypes=self.ctypes
+        self.release()
+        class Header(ctypes.Structure):
+            _fields_=[('size',ctypes.c_uint32),('width',ctypes.c_int32),('height',ctypes.c_int32),('planes',ctypes.c_uint16),
+                      ('bits',ctypes.c_uint16),('compression',ctypes.c_uint32),('image',ctypes.c_uint32),('xppm',ctypes.c_int32),
+                      ('yppm',ctypes.c_int32),('used',ctypes.c_uint32),('important',ctypes.c_uint32)]
+        header=Header(ctypes.sizeof(Header),width,-height,1,32,0,0,0,0,0,0);bits=ctypes.c_void_p()
+        screen=self.user.GetDC(None)
+        try:
+            self.memory=self.gdi.CreateCompatibleDC(screen)
+            self.bitmap=self.gdi.CreateDIBSection(screen,ctypes.byref(header),0,ctypes.byref(bits),None,0)
+        finally:self.user.ReleaseDC(None,screen)
+        if not self.memory or not self.bitmap or not bits.value:
+            self.release();raise RuntimeError('Не удалось подготовить совместимый захват')
+        self.gdi.SelectObject(self.memory,self.bitmap)
+        self.pixels=np.ctypeslib.as_array((ctypes.c_ubyte*(width*height*4)).from_address(bits.value)).reshape(height,width,4)
+        self.size=(width,height)
+
+    def copy(self,left,top,right,bottom):
+        width,height=right-left,bottom-top
+        if width<2 or height<2:raise RuntimeError('Область записи пуста')
+        if self.size!=(width,height):self._allocate(width,height)
+        previous=self.set_dpi(self.ctypes.c_void_p(-4)) if self.set_dpi else None
+        screen=self.user.GetDC(None)
+        try:
+            if not self.gdi.BitBlt(self.memory,0,0,width,height,screen,left,top,self.SRCCOPY|self.CAPTUREBLT):
+                raise RuntimeError('Windows не отдал изображение экрана')
+        finally:
+            self.user.ReleaseDC(None,screen)
+            if previous:self.set_dpi(previous)
+        frame=self.pixels.copy();frame[:,:,3]=255
+        return frame
+
+    def release(self):
+        if self.bitmap:self.gdi.DeleteObject(self.bitmap);self.bitmap=None
+        if self.memory:self.gdi.DeleteDC(self.memory);self.memory=None
+        self.pixels=None;self.size=None
+
+
+def _virtual_screen():
+    import ctypes
+    user=ctypes.windll.user32
+    x,y=user.GetSystemMetrics(76),user.GetSystemMetrics(77)
+    return x,y,x+user.GetSystemMetrics(78),y+user.GetSystemMetrics(79)
+
+
 class GdiVideoSource:
     """Timestamped compatibility capture without the Windows 10 1903 WGC APIs.
 
     A selected window is read from the composed desktop at its client area.
-    Copying from the window's own DC (ImageGrab.grab(window=...)) returns the
-    last GDI-painted image for DirectX/flip-model games, so Windows 10 users
-    got audio over a frozen first frame. The screen copy is live; windows
-    placed on top of the game are recorded too, as in full-screen capture.
+    Copying from the window's own DC returns the last GDI-painted image for
+    DirectX/flip-model games, so Windows 10 users got audio over a frozen
+    first frame. The screen copy is live; windows placed on top of the game
+    are recorded too, as in full-screen capture.
     """
     def __init__(self,*,hwnd=None,monitor=None,fps=30,**_):
-        from PIL import ImageGrab
-        import numpy as np
         self.lock=threading.Lock();self.closed=False;self.error='';self.received=0;self.dropped=0;self.last_read=0
         self.first=None;self.latest=None;self.serial=0;self.clock_fallback=False;self._stop=threading.Event()
+        copier=ScreenCopier();self._copier=copier
+        def area():
+            if hwnd:return window_screen_rect(int(hwnd))
+            item=monitor or {}
+            x=item.get('x',item.get('left'));y=item.get('y',item.get('top'))
+            return (x,y,x+item['width'],y+item['height']) if x is not None and y is not None else _virtual_screen()
         def grab():
-            if hwnd:image=ImageGrab.grab(bbox=window_screen_rect(int(hwnd)),all_screens=True)
-            else:
-                area=monitor or {}
-                x=area.get('x',area.get('left'));y=area.get('y',area.get('top'))
-                bbox=(x,y,x+area['width'],y+area['height']) if x is not None and y is not None else None
-                image=ImageGrab.grab(bbox=bbox,all_screens=True)
-            image=image.convert('RGB');rgb=np.asarray(image);pixels=np.empty((*rgb.shape[:2],4),dtype=np.uint8)
-            pixels[:,:,:3]=rgb[:,:,::-1];pixels[:,:,3]=255
+            pixels=copier.copy(*area())
             with self.lock:
                 self.serial+=1;self.received+=1
                 if self.latest and self.last_read<self.latest[2]:self.dropped+=1
@@ -154,6 +224,7 @@ class GdiVideoSource:
 
     def stop(self):
         self.closed=True;self._stop.set();self.thread.join(timeout=2)
+        if not self.thread.is_alive():self._copier.release()
 
 
 def create_video_source(*,hwnd=None,monitor=None,fps=60,cursor=True):
