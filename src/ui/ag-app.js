@@ -1292,7 +1292,9 @@ async function pollState(force=false){
  if(polling){if(!force)return;while(polling)await new Promise(r=>setTimeout(r,40));return pollState(true)}
  const hidden=document.hidden||window.customNativeHidden;
  if(hidden&&!force&&++pollSkips<5)return;pollSkips=0;polling=true;
- try{state=await api('state');onState()}catch{}finally{polling=false}
+ // visible:false (tray or minimized) tells the app not to scan library folders;
+ // the first poll after the window is shown again scans at once.
+ try{state=await api('state',{visible:!hidden});onState()}catch{}finally{polling=false}
 }
 function onState(){
  applyLook();processJobs();renderShell();
