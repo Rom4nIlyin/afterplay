@@ -1094,7 +1094,10 @@ class Suite:
             if not self.replay:raise ValueError('Запись недоступна')
             return self.replay.add_marker()
         if action == 'state':
-            self.prune_missing_soon()
+            # Library folders are checked only while the window is open; in the tray
+            # or minimized nothing is scanned. The sync runs on its own thread, so a
+            # poll never waits for it.
+            if arg.get('visible',True) is not False:self.prune_missing_soon()
             return {'settings': self.cfg, 'jobs':list(self.jobs.values())[-15:], 'clips':self.clips(),
                     'storage':storage.state(self),'updates':self.updater.state(), 'auto_record':self.auto.state() if self.auto else None,
                     'replay':self.replay.state() if self.replay else None}

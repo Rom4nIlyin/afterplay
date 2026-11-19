@@ -66,6 +66,17 @@ class LibrarySyncTests(unittest.TestCase):
         self.assertEqual(self.suite.sync_library(), 0)
 
 
+class VisibleWindowSyncTests(unittest.TestCase):
+    def test_folders_are_scanned_only_while_the_window_is_visible(self):
+        # 1.15.5: in the tray or minimized the UI polls with visible=False and no scan starts.
+        with tempfile.TemporaryDirectory() as temp:
+            suite = Suite(temp)
+            with patch.object(suite, 'prune_missing_soon') as scan:
+                suite.dispatch('state', {'visible': False}); scan.assert_not_called()
+                suite.dispatch('state', {'visible': True}); scan.assert_called_once()
+                suite.dispatch('state', {}); self.assertEqual(scan.call_count, 2)
+
+
 class QuietServerTests(unittest.TestCase):
     def test_client_that_drops_the_connection_leaves_no_traceback(self):
         with tempfile.TemporaryDirectory() as temp:
