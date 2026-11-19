@@ -1307,7 +1307,7 @@ class Suite:
             if op=='hotkey':
                 if not self.replay or not (self.replay.hotkeys and self.replay.hotkeys.ok):raise ValueError('Горячая клавиша не зарегистрирована')
                 binding=arg.get('action','save')
-                if binding not in {'save','clip_1','clip_2','inputs'}:raise ValueError('Unsupported shortcut')
+                if binding not in {'save','clip_1','clip_2','mic'}:raise ValueError('Unsupported shortcut')
                 identifier=next(i for i,a in self.replay.hotkeys.actions.items() if a==binding)
                 ctypes.windll.user32.PostThreadMessageW(self.replay.hotkey_tid,0x0312,identifier,0)
                 return {'ok':True}

@@ -26,8 +26,12 @@ def windows_version():
     if get_version(ctypes.byref(info))!=0:raise RuntimeError('Не удалось определить версию Windows')
     return info.major,info.minor,info.build
 
+# Process loopback (AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK) activates on
+# Windows 10 2004 (build 19041) and later, including 20H2-22H2 (19042-19045).
+PROCESS_LOOPBACK_BUILD=19041
+
 def supported():
-    return windows_version()[2] >= 20348
+    return windows_version()[2] >= PROCESS_LOOPBACK_BUILD
 
 def is_alive(pid):
     kernel=ctypes.windll.kernel32
@@ -123,7 +127,7 @@ def resolve_chat(settings):
     raise ValueError('Открыто несколько приложений чата. Выберите нужный процесс в списке')
 
 def open_capture(pid,exclude=False):
-    if not supported():raise ValueError('Звук отдельного приложения требует Windows 11 или Windows build 20348+. Выбери весь звук устройства.')
+    if not supported():raise ValueError('Звук отдельного приложения требует Windows 10 версии 2004 или новее. Выбери весь звук устройства.')
     import clr
     clr.AddReference(str(Path(__file__).parent/'ProcessAudio.dll'))
     from AfterplayAudio import ProcessCapture

@@ -286,7 +286,7 @@ class Replay:
         if cfg['capture_mode']=='window' and cfg['audio_follow_window'] and cfg['audio_mode'] in {'game','multitrack'}:
             cfg['game_pid']=cfg['window_pid'];cfg['game_path']=cfg['window_path']
         if cfg['audio_mode'] in {'game','exclude','multitrack'}:
-            if not process_audio.supported():raise ValueError('Звук отдельного приложения требует Windows 11 или build 20348+')
+            if not process_audio.supported():raise ValueError('Звук отдельного приложения требует Windows 10 версии 2004 или новее')
             if not cfg['game_path']:raise ValueError('Выбери игру или приложение для записи звука')
         self.settings=cfg
         if persist:
@@ -348,10 +348,30 @@ class Replay:
         profile) kept the track silent for whole sessions with no sign in the UI.
         """
         if not self.settings.get('microphone_enabled'):return {'enabled':False}
+        import microphone
         source=next((s for s in self._optional_audio if s.get('optional')=='microphone'),None)
         capture=source.get('_capture') if source else None
         state=getattr(capture,'last_state',None)
-        return {'enabled':True,'connected':bool(state and state[0]=='connected'),'error':str(getattr(capture,'error','') or '')}
+        return {'enabled':True,'connected':bool(state and state[0]=='connected'),'error':str(getattr(capture,'error','') or ''),
+                'muted':microphone.MUTED.is_set()}
+
+    def toggle_microphone(self):
+        """Hotkey mute for the recorded microphone; Discord and Windows are untouched."""
+        import microphone
+        desktop=self.suite.desktop
+        if not self.settings.get('microphone_enabled'):
+            if desktop:desktop.notify('Микрофон не записывается','Включите микрофон в профиле записи','error')
+            return {'muted':microphone.MUTED.is_set(),'enabled':False}
+        if microphone.MUTED.is_set():microphone.MUTED.clear()
+        else:microphone.MUTED.set()
+        muted=microphone.MUTED.is_set()
+        self.suite.log('microphone_muted' if muted else 'microphone_unmuted')
+        if desktop:desktop.notify('Микрофон выключен' if muted else 'Микрофон включён',
+                                  'В запись идёт тишина вместо голоса' if muted else 'Голос снова записывается',
+                                  'success',feedback=False)
+        import customization
+        customization.sound(self.suite,'mark')
+        return {'muted':muted,'enabled':True}
 
     def add_marker(self):
         import live_markers
@@ -1033,7 +1053,7 @@ class Replay:
         from hotkeys import GlobalHotkeys,DEFAULTS,validate
         if os.name!='nt':return
         from quick_clips import ACTIONS,durations
-        callbacks={'save':self.save_job,'record':self.recording_job,'window':lambda:self.suite.desktop and self.suite.desktop.toggle(),'mark':self.add_marker,'inputs':self.toggle_inputs}
+        callbacks={'save':self.save_job,'record':self.recording_job,'window':lambda:self.suite.desktop and self.suite.desktop.toggle(),'mark':self.add_marker,'mic':self.toggle_microphone}
         callbacks.update({key:lambda i=i:self.save_job(durations(self.suite.cfg.get('quick_clips'))[i]) for i,key in enumerate(ACTIONS)})
         self.hotkeys=GlobalHotkeys(callbacks,self.suite.log)
         try:self.hotkeys.configure(validate(self.suite.cfg.get('hotkeys',DEFAULTS)))

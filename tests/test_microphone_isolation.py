@@ -50,6 +50,13 @@ class MicrophoneIsolationTests(unittest.TestCase):
         self.assertEqual(self.worker.error,'device missing');self.assertTrue(self.worker.is_active())
         self.phase.write_text('voice','utf-8');self.sample(.125)
 
+    def test_hotkey_mute_records_silence_and_unmute_restores_voice(self):
+        self.addCleanup(microphone.MUTED.clear)
+        self.start();self.sample(.125)
+        microphone.MUTED.set();self.sample(0.)
+        self.assertEqual(self.worker.peak,0.);self.assertTrue(self.worker.is_active())
+        microphone.MUTED.clear();self.sample(.125)
+
     def test_hung_driver_starts_without_waiting_and_is_restarted(self):
         self.phase.write_text('hang','utf-8');self.start()
         deadline=time.monotonic()+2

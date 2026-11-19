@@ -12,6 +12,9 @@ from functools import lru_cache
 PACKET_HEADER=struct.Struct('<BI')
 AUDIO_PACKET=1
 STATE_PACKET=2
+# Hotkey mute: the track keeps running and receives silence, so timing,
+# saved clips and the mix stay intact. Not persisted: every launch starts live.
+MUTED=threading.Event()
 
 
 def _child_job(process):
@@ -87,6 +90,9 @@ class OptionalInput:
         python=runtime if runtime.is_file() else Path(sys.executable)
         return [str(python),'-u',str(app/self.WORKER)]
 
+    def _muted(self):
+        return MUTED.is_set()
+
     def _state(self,event,error=''):
         self.error=error
         if (event,error)==self.last_state:return
@@ -107,9 +113,10 @@ class OptionalInput:
                 self.last_message=time.monotonic()
                 if kind==AUDIO_PACKET:
                     if length<8 or (length-8)%8:raise ValueError('Invalid microphone PCM')
-                    value=(struct.unpack_from('<d',body)[0],body[8:])
+                    pcm=bytes(length-8) if self._muted() else body[8:]
+                    value=(struct.unpack_from('<d',body)[0],pcm)
                     import array
-                    samples=array.array('f');samples.frombytes(body[8:])
+                    samples=array.array('f');samples.frombytes(pcm)
                     self.peak=max((abs(x) for x in samples[::16]),default=0.)
                     if self.peak>.00003:self.last_signal=time.monotonic()
                     try:self.destination.put_nowait(value)

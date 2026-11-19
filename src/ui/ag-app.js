@@ -250,6 +250,7 @@ function dockState(){
  // A silent microphone track used to go unnoticed for whole sessions.
  const micMissing=live&&r.microphone?.enabled&&!r.microphone.connected&&(r.elapsed||0)>3;
  if(micMissing&&!r.saving)sub='⚠ Микрофон не подключён';
+ else if(live&&r.microphone?.enabled&&r.microphone.muted&&!r.saving)sub='Микрофон выключен'+(keys.mic?' · '+keys.mic:'');
  const fill=mode==='replay'?Math.min(100,Math.round((r.buffer_seconds||0)/(r.settings?.seconds||300)*100)):0;
  const canSave=live&&!busy&&(r.save_queue||0)<8;
  // A disabled button says why, so "Сохранить" never looks broken.
@@ -932,7 +933,7 @@ const profiles={
   const hints={system:'Записывается всё, что слышно в колонках или наушниках.',game:'Только звук выбранной игры: музыка и Discord в запись не попадут.',exclude:'Весь звук, кроме выбранной игры.',multitrack:'Общий звук, игра и чат — на отдельных дорожках. При монтаже громкость каждой меняется отдельно.',none:'Видео без звука.'};
   const procModes=['game','exclude','multitrack'];
   const audioDisabled=v=>procModes.includes(v)&&(!procOk||!win||!d.path||isDefault);
-  const audioWhy=()=>!procOk&&dev?'Нужна Windows 11':isDefault?'Доступно в профиле игры — создайте новый профиль':!win?'Сначала выберите «Окно приложения»':!d.path?'Сначала выберите окно игры':'';
+  const audioWhy=()=>!procOk&&dev?'Нужна Windows 10 версии 2004 или новее':isDefault?'Доступно в профиле игры — создайте новый профиль':!win?'Сначала выберите «Окно приложения»':!d.path?'Сначала выберите окно игры':'';
   const qualityHints={quality:'Качество держится ровным, размер файла зависит от сцены. Подходит почти всегда.',vbr:'Средний битрейт с верхним пределом: размер файла предсказуем.',cbr:'Битрейт не меняется: стабильный поток, но файл больше.'};
   const chats=[...new Map((dev?.audio_applications||[]).map(a=>[keyOf(a.path),a])).values()];
   const mics=dev?.microphones||[];
@@ -973,7 +974,7 @@ const profiles={
     <p class="hint">Быстрые клипы и клавиши — в разделе «Настройки».</p>
    </section>
    <section class="card box wide"><div class="box-head"><h3>Звук</h3>${this.seg('audio_mode',[['system','Весь звук'],['game','Только игра'],['exclude','Всё кроме игры'],['multitrack','Игра и чат отдельно'],['none','Без звука']],{disabled:audioDisabled,why:audioWhy,label:'Звук'})}</div>
-    <p class="hint">${hints[s.audio_mode]||''}${!procOk&&dev?' Звук отдельных приложений требует Windows 11.':isDefault||!win?' Звук отдельной игры доступен в профиле окна игры.':''}</p>
+    <p class="hint">${hints[s.audio_mode]||''}${!procOk&&dev?' Звук отдельных приложений требует Windows 10 версии 2004 или новее.':isDefault||!win?' Звук отдельной игры доступен в профиле окна игры.':''}</p>
     ${s.audio_mode==='multitrack'?`<div class="field" style="max-width:420px"><label for="pfChat">Приложение чата</label><select class="input" id="pfChat" data-pf-select="chat_path"><option value="">Discord · найти автоматически</option>${chats.map(a=>`<option value="${esc(a.path)}" ${keyOf(a.path)===keyOf(s.chat_path)?'selected':''} data-i18n-ignore>${esc(a.name)}</option>`).join('')}${s.chat_path&&!chats.some(a=>keyOf(a.path)===keyOf(s.chat_path))?`<option value="${esc(s.chat_path)}" selected>${esc(s.chat_path.split(/[\\/]/).pop())}</option>`:''}</select></div>`:''}
     ${s.audio_mode!=='none'?`<div class="field"><span class="lbl">Качество звука</span>${this.seg('audio_bitrate',[[128,'128 кбит/с'],[192,'192'],[256,'256'],[320,'320']])}</div>`:''}
     <div style="display:grid;grid-template-columns:auto minmax(0,260px) minmax(0,1fr) 50px;align-items:center;gap:14px;padding:12px;border-radius:10px;background:var(--side)">
@@ -1023,7 +1024,7 @@ async function setAutoApp(profile,on,oldPath){
 }
 
 // ---------- Settings
-const HK_ROWS=[['save','Сохранить повтор',true],['record','Начать или остановить запись',false],['mark','Поставить метку',false],['window','Показать или скрыть окно',true],['clip_1','Быстрый клип 1',false],['clip_2','Быстрый клип 2',false]];
+const HK_ROWS=[['save','Сохранить повтор',true],['record','Начать или остановить запись',false],['mark','Поставить метку',false],['mic','Выключить или включить микрофон',false],['window','Показать или скрыть окно',true],['clip_1','Быстрый клип 1',false],['clip_2','Быстрый клип 2',false]];
 const settingsUI={
  listening:null,cache:null,
  hotkeys(){return {save:'Ctrl+Alt+F10',window:'Ctrl+Alt+F8',...(state.settings.hotkeys||{})}},
