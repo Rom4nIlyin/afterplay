@@ -20,6 +20,9 @@ class OptionalOutput(OptionalInput):
     SOURCE_NAME='output audio'
     WORKER='loopback_worker.py'
 
+    def _muted(self):
+        return False
+
     def _configuration(self,settings):
         return {'audio':str(settings.get('audio','default'))}
 

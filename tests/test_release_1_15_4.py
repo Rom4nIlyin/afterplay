@@ -130,7 +130,7 @@ class MicrophoneStatusTests(unittest.TestCase):
             rec.settings['microphone_enabled'] = True
             capture = SimpleNamespace(last_state=('waiting', 'Микрофон не найден'), error='Микрофон не найден')
             rec._optional_audio = [{'optional': 'microphone', '_capture': capture}]
-            self.assertEqual(rec._microphone_status(), {'enabled': True, 'connected': False, 'error': 'Микрофон не найден'})
+            self.assertEqual(rec._microphone_status(), {'enabled': True, 'connected': False, 'error': 'Микрофон не найден', 'muted': False})
             capture.last_state = ('connected', ''); capture.error = ''
             self.assertTrue(rec._microphone_status()['connected'])
 

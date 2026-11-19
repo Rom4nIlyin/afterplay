@@ -53,7 +53,7 @@ class StorageTests(unittest.TestCase):
 class PlatformTests(unittest.TestCase):
     @unittest.skipUnless(__import__('os').name=='nt','Windows version check')
     def test_old_manifest_version_does_not_disable_modern_process_audio(self):
-        if process_audio.windows_version()[2]<20348:self.skipTest('Process audio not supported by the host OS')
+        if not process_audio.supported():self.skipTest('Process audio not supported by the host OS')
         with patch.object(process_audio.sys,'getwindowsversion',return_value=SimpleNamespace(build=9200)):
             self.assertTrue(process_audio.supported())
 
