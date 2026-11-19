@@ -1,0 +1,15 @@
+name = "afterplay-reports"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+REPOSITORY = "Rom4nIlyin/afterplay"
+
+# At most 3 reports per minute from one IP address.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 3
+  period = 60

@@ -1058,8 +1058,9 @@ const settingsUI={
   this.observer={disconnect:()=>{}};pick();
  },
  render(){
-  $('#view').innerHTML=`<div class="page"><nav class="st-nav" aria-label="Разделы настроек">${[['general','Общие'],['keys','Горячие клавиши'],['folders','Папки'],['look','Оформление'],['updates','Обновления'],['data','Данные']].map(([id,l])=>`<a href="#st-${id}" data-act="st-jump" data-id="${id}">${l}</a>`).join('')}</nav><div class="st-body" id="stBody"></div></div>`;
+  $('#view').innerHTML=`<div class="page"><nav class="st-nav" aria-label="Разделы настроек">${[['general','Общие'],['keys','Горячие клавиши'],['folders','Папки'],['look','Оформление'],['updates','Обновления'],['data','Данные'],['report','Журнал']].map(([id,l])=>`<a href="#st-${id}" data-act="st-jump" data-id="${id}">${l}</a>`).join('')}</nav><div class="st-body" id="stBody"></div></div>`;
   this.paint();if(this.cache===null)api('cache_info').then(r=>{this.cache=r;this.paintData()}).catch(()=>{});
+  this.loadReport();
  },
  paint(){
   const box=$('#stBody');if(!box)return;const d=state.settings.desktop?.clips||{},auto=state.auto_record?.settings||{},c=custom(),hk=this.hotkeys(),q=quickValues(),r=state.replay||{};
@@ -1090,8 +1091,9 @@ const settingsUI={
    <div class="st-row"><span class="t"><b>Уведомления</b><small>Угол экрана для всплывающих уведомлений</small></span><div class="corners" role="radiogroup" aria-label="Угол уведомлений">${[['top-left','Слева сверху','top:8px;left:8px'],['top-right','Справа сверху','top:8px;right:8px'],['bottom-left','Слева снизу','bottom:8px;left:8px'],['bottom-right','Справа снизу','bottom:8px;right:8px']].map(([v,l,pos])=>`<button type="button" role="radio" aria-label="${l}" aria-checked="${(c.notice_position||'top-right')===v}" data-act="st-corner" data-v="${v}" style="${pos}"></button>`).join('')}</div><button type="button" class="btn sm" data-act="st-notice">Показать пример</button></div>
   </section>
   <section class="card st-sec" id="st-updates"><h2>Обновления</h2><div id="stUpdates"></div></section>
-  <section class="card st-sec" id="st-data"><h2>Данные</h2><div id="stData"></div></section>`;
-  this.paintUpdates();this.paintData();this.spy();
+  <section class="card st-sec" id="st-data"><h2>Данные</h2><div id="stData"></div></section>
+  <section class="card st-sec" id="st-report"><h2>Журнал</h2><div id="stReport"></div></section>`;
+  this.paintUpdates();this.paintData();this.paintReport();this.spy();
  },
  paintUpdates(){
   const box=$('#stUpdates');if(!box)return;const u=state.updates||{},l=u.latest;
@@ -1121,6 +1123,39 @@ const settingsUI={
   const box=$('#stData');if(!box)return;const c=this.cache;
   box.innerHTML=`<div class="st-row"><span class="t"><b>Кэш превью и звуковых волн</b><small>Создаётся заново при необходимости. Старше 30 дней удаляется сам.</small></span><span class="num hint">${c?bytes(c.bytes):'…'}</span><button type="button" class="btn" data-act="st-cache" ${c&&c.bytes?'':`disabled title="${c?'Кэш пуст — очищать нечего':'Подсчитываю размер кэша…'}"`}>Очистить</button></div>
    <div class="st-row"><span class="t"><b>Настройки и журналы</b><small>Папка data рядом с программой</small></span><button type="button" class="btn" data-act="st-open" data-target="data">${ic('folder')}Открыть папку</button></div>`;
+ },
+ // Problem report: the journal tail with personal paths and names removed by the app.
+ report:null,reportOpen:false,reportSent:null,
+ async loadReport(){
+  try{this.report=await api('report_preview')}catch(e){this.report={error:e.message||String(e)}}
+  this.paintReport();
+ },
+ paintReport(){
+  const box=$('#stReport');if(!box)return;const r=this.report,sent=this.reportSent,sending=!!runningJob('Отправка отчёта');
+  const line=!r?'Читаю журнал…':r.error?r.error:r.errors?`${r.events} событий, ошибок: ${r.errors}. Последняя: ${r.last_error}`:`${r.events} событий, ошибок нет`;
+  const noSend=!r||r.error?'Журнал ещё не прочитан':!r.can_send?'Отправка ещё не настроена — скопируйте отчёт и пришлите его разработчику':'';
+  box.innerHTML=`<div class="st-row"><span class="t"><b>Отчёт о проблеме</b><small style="overflow-wrap:anywhere;${r?.errors?'color:#FFB4B5':''}">${esc(line)}</small><small>Пути к файлам, имена пользователя и компьютера, названия клипов и окон заменяются метками.</small></span>
+    <button type="button" class="btn" data-act="st-report-view" aria-expanded="${this.reportOpen}" ${r&&!r.error?'':'disabled'}>${this.reportOpen?'Скрыть':'Показать'}</button>
+    <button type="button" class="btn" data-act="st-report-copy" ${r&&!r.error?'':'disabled'}>Скопировать</button>
+    <button type="button" class="btn primary" data-act="st-report-send" ${noSend||sending?`disabled title="${esc(sending?'Отчёт отправляется':noSend)}"`:''}>${sending?'Отправляю…':'Отправить разработчику'}</button></div>
+   ${sent?`<div class="st-row"><span class="t"><b>${sent.duplicate?'Добавлено к известной проблеме':'Отчёт отправлен'}</b><small>Номер на GitHub: ${esc(String(sent.number||''))}</small></span>${sent.number?`<button type="button" class="btn" data-act="st-report-issue" data-n="${esc(String(sent.number))}">Открыть на GitHub</button>`:''}</div>`:''}
+   ${this.reportOpen&&r&&!r.error?`<textarea class="input st-log" readonly aria-label="Текст отчёта" data-i18n-ignore>${esc(r.text)}</textarea>`:''}`;
+ },
+ async copyReport(){
+  await api('report_copy');this.loadReport();
+  toast('Отчёт скопирован',false,'Вставьте его в сообщение разработчику');
+ },
+ async sendReport(){
+  await this.loadReport();const r=this.report;if(!r||r.error||!r.can_send)return;
+  const body=`<p>Отчёт попадёт в открытый список проблем AFTERPLAY на GitHub. Перед отправкой его можно просмотреть кнопкой «Показать».</p>
+   <label class="field" style="display:flex;flex-direction:column;gap:6px;margin:0 0 18px"><span>Что вы делали, когда возникла проблема? <span class="hint">необязательно</span></span><textarea class="input" id="rpDesc" maxlength="4000" rows="5" style="height:auto;padding:10px 12px;resize:vertical" placeholder="Например: включил повтор в игре, нажал Ctrl+Alt+F10 — клип не сохранился"></textarea></label>
+   <div class="dlg-notes"><p>Не пишите сюда пароли, почту и другие личные данные.</p></div>`;
+  const ok=await chooseBox('Отправить отчёт разработчику?',body,[{v:'send',label:'Отправить',cls:'primary',focus:true}]);
+  const description=$('#rpDesc')?.value||'';if(ok!=='send')return;
+  await task('report_send',{description},{
+   done:x=>{this.reportSent=x;this.paintReport();toast(x?.duplicate?'Отчёт добавлен к известной проблеме':'Отчёт отправлен',false,x?.number?'#'+x.number:'')},
+   error:j=>{this.paintReport();toast(j.message||'Отчёт не отправлен',true)}});
+  this.paintReport();
  },
  combo(e){
   const map={Space:'Space',Insert:'Insert',Delete:'Delete',Home:'Home',End:'End',PageUp:'PageUp',PageDown:'PageDown',ArrowUp:'Up',ArrowDown:'Down',ArrowLeft:'Left',ArrowRight:'Right',Pause:'Pause'};
@@ -1245,6 +1280,10 @@ const ACT={
   await task('update_prepare',{},{progress:()=>settingsUI.paintUpdates(),done:async()=>{await pollState(true);settingsUI.paintUpdates();if(await confirmBox('Обновление готово','Перезапустить AFTERPLAY сейчас?','Перезапустить',false))api('update_install').catch(fail)},error:async j=>{await pollState(true);settingsUI.paintUpdates();toast(j.message||'Обновление не скачалось',true)}});
   await pollState(true);
  },
+ async 'st-report-view'(){settingsUI.reportOpen=!settingsUI.reportOpen;if(settingsUI.reportOpen)await settingsUI.loadReport();else settingsUI.paintReport()},
+ 'st-report-copy'(){return settingsUI.copyReport()},
+ 'st-report-send'(){return settingsUI.sendReport()},
+ 'st-report-issue'(el){return api('open',{target:'issue',number:Number(el.dataset.n)})},
  async 'st-cache'(){const r=await api('cache_clear');settingsUI.cache={bytes:0};settingsUI.paintData();toast('Кэш очищен',false,'освобождено '+bytes(r.bytes||0))},
 };
 document.addEventListener('click',async e=>{

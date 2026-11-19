@@ -1389,6 +1389,31 @@ class Suite:
             result=run(['powershell.exe','-NoProfile','-NonInteractive','-Command','Set-Clipboard -LiteralPath $env:AFTERPLAY_COPY'],env=env,timeout=20)
             if result.returncode:raise ValueError('Не удалось скопировать файл: '+result.stderr.decode('utf-8','replace')[-300:])
             return {'ok':True}
+        if action=='report_preview':
+            import bug_report
+            return bug_report.build(self,ROOT,errors_only=bool(arg.get('errors_only')))
+        if action=='report_copy':
+            import bug_report
+            if os.name!='nt':raise ValueError('Копирование доступно в Windows')
+            # WebView clipboard access is not guaranteed; Windows' own clipboard is.
+            text=bug_report.build(self,ROOT)['text']
+            path=self.data/'logs'/f'report-{uuid.uuid4().hex}.txt'
+            path.parent.mkdir(parents=True,exist_ok=True)
+            try:
+                path.write_text(text,encoding='utf-8')
+                env={**os.environ,'AFTERPLAY_COPY':str(path)}
+                result=run(['powershell.exe','-NoProfile','-NonInteractive','-Command','Set-Clipboard -Value (Get-Content -LiteralPath $env:AFTERPLAY_COPY -Raw -Encoding UTF8)'],env=env,timeout=20)
+            finally:
+                try:path.unlink()
+                except OSError:pass
+            if result.returncode:raise ValueError('Не удалось скопировать отчёт: '+result.stderr.decode('utf-8','replace')[-300:])
+            return {'ok':True,'bytes':len(text.encode('utf-8'))}
+        if action=='report_send':
+            import bug_report
+            with self.lock:running=any(job.get('label')=='Отправка отчёта' and job.get('status')=='running' for job in self.jobs.values())
+            if running:raise ValueError('Отчёт уже отправляется')
+            description=str(arg.get('description') or '')
+            return self.job('Отправка отчёта',lambda j:bug_report.send(self,description,ROOT))
         if action=='cache_info':
             return {'bytes':self.cache_bytes()}
         if action=='cache_clear':
@@ -1409,6 +1434,12 @@ class Suite:
             if target=='github':
                 from app_update import REPOSITORY
                 os.startfile('https://github.com/'+REPOSITORY)
+                return {'ok':True}
+            if target=='issue':
+                from app_update import REPOSITORY
+                number=int(arg.get('number') or 0)
+                if not 0<number<10**7:raise ValueError('Неизвестный номер отчёта')
+                os.startfile(f'https://github.com/{REPOSITORY}/issues/{number}')
                 return {'ok':True}
             if target=='exports': p=self.recordings_dir()
             elif target=='data': p=self.data
