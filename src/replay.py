@@ -175,7 +175,7 @@ class Replay:
             self.settings['audio']='default'
         self.encoder='h264_nvenc'
         self.video_source=None;self.muxer=None;self.mux_thread=None
-        self.native_gpu=False;self.backend_note=''
+        self.native_gpu=False;self.gpu_frames=False;self.desktop_duplication=False;self.backend_note=''
         self.duplicate_frames=0;self.dropped_frames=0
         self._audio_queue=queue.Queue(maxsize=64)
         self.input_track=None;self.input_recorder=None;self.input_error=''
@@ -400,12 +400,41 @@ class Replay:
             cmd+=['-af','aresample=async=1000:first_pts=0','-c:a','aac','-b:a',f'{cfg["audio_bitrate"]}k']
             if self.native_gpu:cmd+=['-shortest']
         else:cmd+=['-an']
-        cmd+=video_quality.encoder_options(cfg,self.encoder,monitor['width'],monitor['height'],gpu_frames=self.native_gpu)
+        cmd+=video_quality.encoder_options(cfg,self.encoder,monitor['width'],monitor['height'],gpu_frames=self.gpu_frames)
         cmd+=[
               '-f','segment','-segment_time','1','-reset_timestamps','0','-segment_format','mpegts',
               '-segment_list',str(self.session/'segments.csv'),'-segment_list_type','csv',
               '-progress','pipe:1','-nostats','-y',str(self.session/'seg-%07d.ts')]
         return cmd
+
+    def _desktop_duplication(self,window,monitor):
+        """Windows 10: DXGI Desktop Duplication for a window or a screen.
+
+        GDI copies in Python capped recordings at 10-20 fps and took CPU time
+        from the game. DDA is what OBS uses there: no yellow WGC frame, frames
+        come from the GPU. The window's area is fixed at start, as in OBS
+        display capture. Returns the captured size, or None for GDI.
+        """
+        try:region=gpu_capture.desktop_region(window,monitor)
+        except Exception as error:region=None;self.backend_note='Windows 10: '+str(error)
+        if not region:
+            self.backend_note=self.backend_note or 'Windows 10: окно на другом видеоадаптере; включён совместимый захват.'
+            return None
+        size=(region['width'],region['height'])
+        self.output_size=video_quality.output_size(self.settings,*size)
+        gpu=self.encoder=='h264_nvenc' and self.output_size==size
+        graph=gpu_capture.desktop_filter(self.settings,region,gpu_frames=gpu)
+        command=[self.suite.ff(),'-hide_banner','-loglevel','error','-f','lavfi','-i',graph,'-frames:v','3']
+        command+=(['-c:v','h264_nvenc','-preset','p1','-delay','0'] if gpu else [])+['-f','null','-']
+        try:probe=subprocess.run(command,stdin=subprocess.DEVNULL,capture_output=True,creationflags=NO_WINDOW,timeout=5)
+        except subprocess.TimeoutExpired:
+            self.backend_note='Windows 10: Desktop Duplication не выдаёт кадры; включён совместимый захват.';return None
+        if probe.returncode:
+            self.backend_note='Windows 10: Desktop Duplication недоступен; включён совместимый захват. '+probe.stderr.decode('utf-8','replace')[-400:]
+            return None
+        self.capture_graph=graph;self.native_gpu=True;self.gpu_frames=gpu;self.desktop_duplication=True
+        if window:self.backend_note='Windows 10: окно записывается с экрана по его положению при старте.'
+        return size
 
     def start(self,continuous=False):
         with self.lock:
@@ -419,7 +448,8 @@ class Replay:
             self.interval_start=0.
             self.session_marks=[]
             self.duplicate_frames=0;self.dropped_frames=0
-            self.native_gpu=False;self.backend_note='';self.muxer=None;self.mux_thread=None
+            self.native_gpu=False;self.gpu_frames=False;self.desktop_duplication=False
+            self.backend_note='';self.muxer=None;self.mux_thread=None
         try:
             bitrate=self.settings['mbps'] if self.settings['quality_mode']=='cbr' else self.settings['max_mbps']
             from quick_clips import retention
@@ -449,7 +479,10 @@ class Replay:
             if choice=='h264_nvenc' and check.returncode:raise ValueError('NVENC недоступен. Выберите автоматический кодировщик или CPU.')
             self.encoder=('h264_nvenc' if check.returncode==0 else 'libx264') if choice=='auto' else choice
             windows_build=process_audio.windows_version()[2]
-            if (self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto'
+            size=None
+            if self.settings['capture_backend']=='auto' and 18362<=windows_build<22000:
+                size=self._desktop_duplication(window,monitor)
+            elif (self.encoder=='h264_nvenc' and self.settings['capture_backend']=='auto'
                     and windows_build>=18362 and (not window or can_use_wgc(window['hwnd'],windows_build))):
                 if gpu_capture.available(self.suite.ff()):
                     size=gpu_capture.source_size(window,monitor)
@@ -472,11 +505,12 @@ class Replay:
                     except subprocess.TimeoutExpired:
                         self.backend_note='Источник не обновляет изображение; включён совместимый режим для неподвижных окон.'
                 else:self.backend_note='Для GPU-захвата нужен FFmpeg с фильтром gfxcapture; включён совместимый режим.'
-            if window and not can_use_wgc(window['hwnd'],process_audio.windows_version()[2]):
-                self.backend_note='Windows 10: запись отдельного окна без системной рамки через GDI. Некоторые игры могут не поддерживать этот захват.'
+            if not self.native_gpu and window and not can_use_wgc(window['hwnd'],windows_build):
+                self.backend_note=(self.backend_note+' ' if self.backend_note else '')+'Windows 10: запись отдельного окна через GDI.'
+            if self.native_gpu and not self.desktop_duplication:self.gpu_frames=True
             self.session=self.root/uuid.uuid4().hex;self.session.mkdir()
             (self.session/'.afterplay-buffer').write_text('Owned rolling buffer; no original media.',encoding='utf-8')
-            self.engine=('D3D11 → NVENC · ' if self.native_gpu else 'Windows Graphics Capture · совместимый · ')+('окно' if window else 'экран')
+            self.engine=('DXGI Desktop Duplication · ' if self.desktop_duplication else 'D3D11 → NVENC · ' if self.native_gpu else 'Windows Graphics Capture · совместимый · ')+('окно' if window else 'экран')
             self._audio_queue=queue.Queue(maxsize=256)
             self._audio_stream=None;self._audio_manager=None;self._process_capture=None
             self._process_reader=None;self.audio_error=''
